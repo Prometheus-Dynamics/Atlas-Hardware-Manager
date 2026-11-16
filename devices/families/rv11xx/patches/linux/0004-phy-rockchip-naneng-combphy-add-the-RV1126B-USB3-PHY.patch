@@ -1,0 +1,218 @@
+diff --git a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+--- a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
++++ b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+@@ -146,7 +146,8 @@
+ struct rockchip_combphy_priv;
+ 
+ struct combphy_reg {
+-	u16 offset;
++	/* u32: the RV1126B pipe-phy-grf offsets (0x18000 and up) do not fit in 16 bits */
++	u32 offset;
+ 	u16 bitend;
+ 	u16 bitstart;
+ 	u16 disable;
+@@ -1393,6 +1394,105 @@
+ 	.combphy_cfg	= rk3588_combphy_cfg,
+ };
+ 
++static int rv1126b_combphy_cfg(struct rockchip_combphy_priv *priv)
++{
++	const struct rockchip_combphy_grfcfg *cfg = priv->cfg->grfcfg;
++	unsigned long rate;
++
++	switch (priv->type) {
++	case PHY_TYPE_USB3:
++		/* Set SSC downward spread spectrum */
++		rockchip_combphy_updatel(priv, GENMASK(5, 4), BIT(4), 0x1f << 2);
++
++		/* Enable adaptive CTLE for USB3.0 Rx */
++		rockchip_combphy_updatel(priv, GENMASK(0, 0), BIT(0), 0x0e << 2);
++
++		/* Set PLL KVCO fine tuning signals */
++		rockchip_combphy_updatel(priv, GENMASK(4, 2), 0x2 << 2, 0x20 << 2);
++
++		/* Set PLL LPF R1 to su_trim[10:7]=1001 */
++		writel(0x4, priv->mmio + (0x0b << 2));
++
++		/* Set PLL input clock divider 1/2 */
++		rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x05 << 2);
++
++		/* Set PLL loop divider */
++		writel(0x32, priv->mmio + (0x11 << 2));
++
++		/* Set PLL KVCO to min and set PLL charge pump current to max */
++		writel(0xf0, priv->mmio + (0x0a << 2));
++
++		/* Set Rx squelch input filler bandwidth */
++		writel(0x0e, priv->mmio + (0x14 << 2));
++
++		/* Set Full Txswing and Txmargin 1200mV and -6dB De-emphasis */
++		regmap_write(priv->phy_grf, 0x1800c, GENMASK(18, 16) | 0x0007);
++		regmap_write(priv->phy_grf, 0x18004, GENMASK(26, 21) | 0x0100);
++
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_sel_usb, true);
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txcomp_sel, false);
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_txelec_sel, false);
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->usb_mode_set, true);
++		rockchip_combphy_param_write(priv->pipe_grf, &cfg->u3otg0_port_en, true);
++		break;
++	default:
++		dev_err(priv->dev, "incompatible PHY type\n");
++		return -EINVAL;
++	}
++
++	rate = clk_get_rate(priv->refclk);
++
++	switch (rate) {
++	case 24000000:
++		if (priv->type == PHY_TYPE_USB3) {
++			/* Set ssc_cnt[9:0]=0101111101 & 31.5KHz */
++			rockchip_combphy_updatel(priv, GENMASK(7, 6), BIT(6), 0x0e << 2);
++			rockchip_combphy_updatel(priv, GENMASK(7, 0), 0x5f, 0x0f << 2);
++		}
++		break;
++	case 25000000:
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_25m, true);
++		break;
++	case 100000000:
++		rockchip_combphy_param_write(priv->phy_grf, &cfg->pipe_clk_100m, true);
++		break;
++	default:
++		dev_err(priv->dev, "Unsupported rate: %lu\n", rate);
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static const struct rockchip_combphy_grfcfg rv1126b_combphy_grfcfgs = {
++	/* pipe-phy-grf */
++	.usb_mode_set		= { 0x18000, 5, 0, 0x00, 0x04 },
++	.pipe_rxterm_set	= { 0x18000, 12, 12, 0x00, 0x01 },
++	.pipe_txelec_set	= { 0x18004, 1, 1, 0x00, 0x01 },
++	.pipe_txcomp_set	= { 0x18004, 4, 4, 0x00, 0x01 },
++	.pipe_clk_25m		= { 0x18004, 14, 13, 0x00, 0x01 },
++	.pipe_clk_100m		= { 0x18004, 14, 13, 0x00, 0x02 },
++	.pipe_phymode_sel	= { 0x18008, 1, 1, 0x00, 0x01 },
++	.pipe_rate_sel		= { 0x18008, 2, 2, 0x00, 0x01 },
++	.pipe_rxterm_sel	= { 0x18008, 8, 8, 0x00, 0x01 },
++	.pipe_txelec_sel	= { 0x18008, 12, 12, 0x00, 0x01 },
++	.pipe_txcomp_sel	= { 0x18008, 15, 15, 0x00, 0x01 },
++	.pipe_clk_ext		= { 0x1800c, 9, 8, 0x02, 0x01 },
++	.pipe_sel_usb		= { 0x1800c, 14, 13, 0x00, 0x01 },
++	.pipe_phy_status	= { 0x18034, 6, 6, 0x01, 0x00 },
++	/* pipe-grf (the BSP's peri-grf, offset 0x1003c) */
++	.u3otg0_port_en		= { 0x1003c, 15, 0, 0x0189, 0x1100 },
++};
++
++static const struct rockchip_combphy_cfg rv1126b_combphy_cfgs = {
++	.num_phys = 1,
++	.phy_ids = {
++		0x21410000,
++	},
++	.grfcfg		= &rv1126b_combphy_grfcfgs,
++	.combphy_cfg	= rv1126b_combphy_cfg,
++};
++
+ static const struct of_device_id rockchip_combphy_of_match[] = {
+ 	{
+ 		.compatible = "rockchip,rk3528-naneng-combphy",
+@@ -1411,6 +1511,10 @@
+ 		.data = &rk3576_combphy_cfgs,
+ 	},
+ 	{
++		.compatible = "rockchip,rv1126b-usb3-phy",
++		.data = &rv1126b_combphy_cfgs,
++	},
++	{
+ 		.compatible = "rockchip,rk3588-naneng-combphy",
+ 		.data = &rk3588_combphy_cfgs,
+ 	},
+diff --git a/Documentation/devicetree/bindings/phy/phy-rockchip-naneng-combphy.yaml b/Documentation/devicetree/bindings/phy/phy-rockchip-naneng-combphy.yaml
+--- a/Documentation/devicetree/bindings/phy/phy-rockchip-naneng-combphy.yaml
++++ b/Documentation/devicetree/bindings/phy/phy-rockchip-naneng-combphy.yaml
+@@ -17,21 +17,18 @@
+       - rockchip,rk3568-naneng-combphy
+       - rockchip,rk3576-naneng-combphy
+       - rockchip,rk3588-naneng-combphy
++      - rockchip,rv1126b-usb3-phy
+ 
+   reg:
+     maxItems: 1
+ 
+   clocks:
+-    items:
+-      - description: reference clock
+-      - description: apb clock
+-      - description: pipe clock
++    minItems: 2
++    maxItems: 3
+ 
+   clock-names:
+-    items:
+-      - const: ref
+-      - const: apb
+-      - const: pipe
++    minItems: 2
++    maxItems: 3
+ 
+   resets:
+     minItems: 1
+@@ -39,9 +36,7 @@
+ 
+   reset-names:
+     minItems: 1
+-    items:
+-      - const: phy
+-      - const: apb
++    maxItems: 2
+ 
+   phy-supply:
+     description: Single PHY regulator
+@@ -94,6 +89,46 @@
+   - "#phy-cells"
+ 
+ allOf:
++  # RV1126B: two clocks (refclk, apbclk) and two resets (combphy-apb, combphy), from the vendor
++  # dtsi's usb3-phy node. Every other compatible keeps the three clocks and two resets below.
++  - if:
++      properties:
++        compatible:
++          contains:
++            const: rockchip,rv1126b-usb3-phy
++    then:
++      properties:
++        clocks:
++          maxItems: 2
++        clock-names:
++          items:
++            - const: refclk
++            - const: apbclk
++        resets:
++          maxItems: 2
++        reset-names:
++          items:
++            - const: combphy-apb
++            - const: combphy
++  - if:
++      properties:
++        compatible:
++          not:
++            contains:
++              const: rockchip,rv1126b-usb3-phy
++    then:
++      properties:
++        clocks:
++          minItems: 3
++        clock-names:
++          items:
++            - const: ref
++            - const: apb
++            - const: pipe
++        reset-names:
++          items:
++            - const: phy
++            - const: apb
+   - if:
+       properties:
+         compatible:

@@ -1,0 +1,8 @@
+# Luckfox Aura (RV1126B): the kernel options this board's bench slot image needs. Each line says why.
+# CONFIG_PSTORE, PSTORE_RAM, PSTORE_CONSOLE: the crash log kept across a reset (Lemnos BB3 refuses a slot board without them).
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+# CONFIG_USB_GADGET and the DWC3 driver: the USB 3 OTG Type-C is the bench's access port (a USB 2 gadget, peripheral mode).
+CONFIG_USB_GADGET=y
+CONFIG_USB_DWC3=y

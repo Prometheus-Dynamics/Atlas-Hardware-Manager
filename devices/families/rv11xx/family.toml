@@ -1,0 +1,76 @@
+# Rockchip RV11xx family: the RV1126B (quad Cortex-A53, aarch64) and the small
+# RV1106 boards. Boards take their SoC's CPU, device tree and rkbin files; the
+# family holds what they share: mainline Linux with the RV1126B SoC series,
+# U-Boot v2026.10 (the SoC port is not written yet), TF-A, and a maskrom flash.
+#
+# Pins are mainline's. Linux is v7.3.4 (peeled commit, the same pin as the
+# sun60i family), U-Boot is v2026.10, TF-A is v2.15.0 (as the rk35xx family).
+# Nothing here is booted on a board: the bench Aura is the first (AU1, untested).
+#
+# UNVERIFIED: the RV1126B U-Boot port and its boot-flow config fragment do not exist
+# yet (docs/prs/AU1-aura.md, "U-Boot"). Until they do, no U-Boot binary can be built
+# for this family, so no image of it can be planned.
+version = 1
+
+[target]
+arch = "aarch64"
+os = "linux"
+
+[sources.linux]
+git = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
+
+[sources.u-boot]
+git = "https://github.com/u-boot/u-boot.git"
+ref = "v2026.10"
+
+[sources.tf-a]
+git = "https://github.com/ARM-software/arm-trusted-firmware.git"
+ref = "v2.15.0"
+
+[kernel]
+source = "linux"
+# The starting configuration: arm64's defconfig, then the trim the rk35xx family uses.
+defconfig = "defconfig"
+fragments = ["../rk35xx/assets/trim.fragment"]
+# The SD host a slot boots from, built in: the RV1126B's dw-mshc is bound through
+# the rk3288 fallback, so the Rockchip DW MMC driver is the one that binds.
+storage_drivers = ["CONFIG_MMC_DW_ROCKCHIP"]
+# The RV1126B series, applied in `series` order (else sorted), on top of linux.
+# Each patch says what it adds; the rest of the SoC port is listed in the PR.
+patches = [
+  { file = "patches/linux/0001-pinctrl-rockchip-add-the-RV1126B-pin-banks-and-tables.patch" },
+  { file = "patches/linux/0002-arm64-dts-rockchip-add-the-RV1126B-pin-groups.patch" },
+  { file = "patches/linux/0003-phy-rockchip-inno-usb2-add-the-RV1126B-USB2-PHY.patch" },
+  { file = "patches/linux/0004-phy-rockchip-naneng-combphy-add-the-RV1126B-USB3-PHY.patch" },
+  { file = "patches/linux/0005-i2c-rk3x-add-the-RV1126B-soc-data.patch" },
+  { file = "patches/linux/0006-arm64-dts-rockchip-add-the-RV1126B-SoC-dtsi.patch" },
+  { file = "patches/linux/0007-net-stmmac-dwmac-rk-add-the-RV1126B-GMAC-glue.patch" },
+  { file = "patches/linux/0008-nvmem-rockchip-otp-add-the-RV1126B-byte-addressed-read.patch" },
+  { file = "patches/linux/0009-thermal-rockchip-add-the-RV1126B-tsadc.patch" },
+  { file = "patches/linux/0010-iio-adc-rockchip-saradc-add-the-RV1126B-v3-non-DMA-path.patch" },
+  { file = "patches/linux/0011-arm64-dts-rockchip-add-the-Luckfox-Aura-board-dts.patch" },
+]
+
+[bootloader]
+source = "u-boot"
+# The RV1126B U-Boot series (AU1): SoC code, clock, pinctrl, device tree, the Aura board, rkcommon row.
+# Applied in order by Gaia on the v2026.10 baseline (patch -p1 --fuzz=0).
+patches = [
+  { file = "patches/uboot/0001-rv1126b-SoC-code-Kconfig-and-common-header-1-of-6.patch" },
+  { file = "patches/uboot/0002-rv1126b-clock-driver-2-of-6.patch" },
+  { file = "patches/uboot/0003-rv1126b-pinctrl-3-of-6.patch" },
+  { file = "patches/uboot/0004-rv1126b-device-tree-set-for-U-Boot-4-of-6.patch" },
+  { file = "patches/uboot/0005-rv1126b-Luckfox-Aura-board-defconfig-and-link-fixes-.patch" },
+  { file = "patches/uboot/0006-rv1126b-rkcommon-row-for-the-RV1126B-V2-idblock-and-.patch" },
+  { file = "patches/uboot/0007-rv1126b-align-the-Aura-U-Boot-data-with-the-vendor-S.patch" },
+]
+
+[bootloader.trusted_firmware]
+source = "tf-a"
+# Upstream TF-A's RV1126B platform (plat/rockchip/rv1126b). UNVERIFIED: it has
+# not been built. The rkbin closed bl31 is the fallback, used only if this fails.
+platform = "rv1126b"
+
+[flash]
+methods = ["maskrom", "sd-card"]

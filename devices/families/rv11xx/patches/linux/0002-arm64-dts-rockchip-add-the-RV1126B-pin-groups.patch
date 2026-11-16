@@ -1,0 +1,266 @@
+diff --git a/arch/arm64/boot/dts/rockchip/rv1126b-pinctrl.dtsi b/arch/arm64/boot/dts/rockchip/rv1126b-pinctrl.dtsi
+new file mode 100644
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rv1126b-pinctrl.dtsi
+@@ -0,0 +1,261 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * RV1126B pin configurations and the pin groups the Luckfox Aura's boot set uses (UART2, SD on
++ * sdmmc0, and I2C0). Copied from Rockchip's RV1126B pinctrl and pinconf dtsi (kernel-develop-6.12),
++ * as the mainline form: the pcfg nodes the groups reference, then the groups. Only the groups used by
++ * the boot set are here; the rest of the table is left for later.
++ * Mux values are as the vendor writes them. The RV1126B pinctrl driver (patch 0001) decodes them.
++ */
++
++#include <dt-bindings/pinctrl/rockchip.h>
++
++&pinctrl {
++	pcfg_pull_up: pcfg-pull-up {
++		bias-pull-up;
++	};
++
++	pcfg_pull_down: pcfg-pull-down {
++		bias-pull-down;
++	};
++
++	pcfg_pull_none: pcfg-pull-none {
++		bias-disable;
++	};
++
++	pcfg_pull_up_drv_level_2_75: pcfg-pull-up-drv-level-2-75 {
++		bias-pull-up;
++		drive-strength = <0x0f>;
++	};
++
++	pcfg_pull_none_smt: pcfg-pull-none-smt {
++		bias-disable;
++		input-schmitt-enable;
++	};
++
++	i2c0 {
++		/omit-if-no-ref/
++		i2c0m0_pins: i2c0m0-pins {
++			rockchip,pins =
++				/* i2c0_scl_m0 */
++				<0 RK_PC2 4 &pcfg_pull_none_smt>,
++				/* i2c0_sda_m0 */
++				<0 RK_PC3 4 &pcfg_pull_none_smt>;
++		};
++
++		/omit-if-no-ref/
++		i2c0m1_pins: i2c0m1-pins {
++			rockchip,pins =
++				/* i2c0_scl_m1 */
++				<2 RK_PA1 3 &pcfg_pull_none_smt>,
++				/* i2c0_sda_m1 */
++				<2 RK_PA0 3 &pcfg_pull_none_smt>;
++		};
++	};
++
++	sdmmc0 {
++		/omit-if-no-ref/
++		sdmmc0_bus4_pins: sdmmc0-bus4-pins {
++			rockchip,pins =
++				/* sdmmc0_d0 */
++				<2 RK_PA0 1 &pcfg_pull_up_drv_level_2_75>,
++				/* sdmmc0_d1 */
++				<2 RK_PA1 1 &pcfg_pull_up_drv_level_2_75>,
++				/* sdmmc0_d2 */
++				<2 RK_PA2 1 &pcfg_pull_up_drv_level_2_75>,
++				/* sdmmc0_d3 */
++				<2 RK_PA3 1 &pcfg_pull_up_drv_level_2_75>;
++		};
++
++		/omit-if-no-ref/
++		sdmmc0_cmd_pins: sdmmc0-cmd-pins {
++			rockchip,pins =
++				/* sdmmc0_cmd */
++				<2 RK_PA5 1 &pcfg_pull_up_drv_level_2_75>;
++		};
++
++		/omit-if-no-ref/
++		sdmmc0_clk_pins: sdmmc0-clk-pins {
++			rockchip,pins =
++				/* sdmmc0_clk */
++				<2 RK_PA4 1 &pcfg_pull_up_drv_level_2_75>;
++		};
++
++		/omit-if-no-ref/
++		sdmmc0_detn_pins: sdmmc0-detn-pins {
++			rockchip,pins =
++				/* sdmmc0_detn */
++				<0 RK_PA5 1 &pcfg_pull_up>;
++		};
++	};
++
++	sdmmc0 {
++		/omit-if-no-ref/
++		sdmmc0_idle_pins: sdmmc0-idle-pins {
++			rockchip,pins =
++				<2 RK_PA0 RK_FUNC_GPIO &pcfg_pull_down>,
++				<2 RK_PA1 RK_FUNC_GPIO &pcfg_pull_down>,
++				<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_down>,
++				<2 RK_PA3 RK_FUNC_GPIO &pcfg_pull_down>,
++				<2 RK_PA4 RK_FUNC_GPIO &pcfg_pull_down>,
++				<2 RK_PA5 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++
++	uart2 {
++		/omit-if-no-ref/
++		uart2m0_xfer_pins: uart2m0-xfer-pins {
++			rockchip,pins =
++				/* uart2_rx_m0 */
++				<3 RK_PB0 4 &pcfg_pull_up>,
++				/* uart2_tx_m0 */
++				<3 RK_PB1 4 &pcfg_pull_up>;
++		};
++
++		/omit-if-no-ref/
++		uart2m0_ctsn_pins: uart2m0-ctsn-pins {
++			rockchip,pins =
++				/* uart2m0_ctsn */
++				<3 RK_PA7 4 &pcfg_pull_none>;
++		};
++		/omit-if-no-ref/
++		uart2m0_rtsn_pins: uart2m0-rtsn-pins {
++			rockchip,pins =
++				/* uart2m0_rtsn */
++				<3 RK_PA6 4 &pcfg_pull_none>;
++		};
++
++		/omit-if-no-ref/
++		uart2m1_xfer_pins: uart2m1-xfer-pins {
++			rockchip,pins =
++				/* uart2_rx_m1 */
++				<7 RK_PB0 6 &pcfg_pull_up>,
++				/* uart2_tx_m1 */
++				<7 RK_PB1 6 &pcfg_pull_up>;
++		};
++
++		/omit-if-no-ref/
++		uart2m1_ctsn_pins: uart2m1-ctsn-pins {
++			rockchip,pins =
++				/* uart2m1_ctsn */
++				<7 RK_PA4 6 &pcfg_pull_none>;
++		};
++		/omit-if-no-ref/
++		uart2m1_rtsn_pins: uart2m1-rtsn-pins {
++			rockchip,pins =
++				/* uart2m1_rtsn */
++				<7 RK_PA7 6 &pcfg_pull_none>;
++		};
++	};
++};
++
++/*
++ * GMAC1 (eth) on the M0 route, for an external RGMII PHY (the Luckfox Aura, U25).
++ * Source: Rockchip's RV1126B pinctrl dtsi, the eth node (ref/rv1126b-pinctrl.dtsi 247-302: MDIO
++ * 249-255, mclk 258-262, rx 265-273, tx 276-285, rgmii clk 287-293, rgmii bus 296-307) and the
++ * eth_clk_25m node (397-403); all on function 2. Pull-config nodes: BSP pinconf 107-110 and 137-140.
++ * UNTESTED ON BOARD. TRM not read. Routing per the Aura schematic's GMAC1_*_M0 nets (see the AU1 doc).
++ */
++&pinctrl {
++	pcfg_pull_none_drv_level_3_75: pcfg-pull-none-drv-level-3-75 {
++		bias-disable;
++		drive-strength = <0x1f>;
++	};
++
++	pcfg_pull_none_drv_level_5_00: pcfg-pull-none-drv-level-5-00 {
++		bias-disable;
++		drive-strength = <0x3c>;
++	};
++
++	eth {
++		ethm0_miim_pins: ethm0-miim-pins {
++			rockchip,pins =
++				<6 RK_PC0 2 &pcfg_pull_none_drv_level_3_75>,
++				<6 RK_PB7 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++
++		ethm0_rx_bus2_pins: ethm0-rx-bus2-pins {
++			rockchip,pins =
++				<6 RK_PB5 2 &pcfg_pull_none>,
++				<6 RK_PB2 2 &pcfg_pull_none>,
++				<6 RK_PB3 2 &pcfg_pull_none>;
++		};
++
++		ethm0_tx_bus2_pins: ethm0-tx-bus2-pins {
++			rockchip,pins =
++				<6 RK_PB1 2 &pcfg_pull_none>,
++				<6 RK_PA7 2 &pcfg_pull_none_drv_level_3_75>,
++				<6 RK_PB0 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++
++		ethm0_rgmii_clk_pins: ethm0-rgmii-clk-pins {
++			rockchip,pins =
++				<6 RK_PC3 2 &pcfg_pull_none>,
++				<6 RK_PC2 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++
++		ethm0_rgmii_bus_pins: ethm0-rgmii-bus-pins {
++			rockchip,pins =
++				<6 RK_PA3 2 &pcfg_pull_none>,
++				<6 RK_PA4 2 &pcfg_pull_none>,
++				<6 RK_PA5 2 &pcfg_pull_none_drv_level_3_75>,
++				<6 RK_PA6 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++	};
++};
++
++/*
++ * Aura groups from the vendor Aura dtsi (rv1126b-luckfox-aura.dtsi, Rockchip SDK 202611, the
++ * "pmic" and "usb" nodes at 674-691, and the sdmmc0_pwren node in the board dts at 97-101), and the
++ * vendor pinctrl for uart0m0 (rv1126b-pinctrl.dtsi 2038-2045) and eth_clk_25m (397-403). Pin numbers
++ * as the vendor writes them. TRM not read; UNTESTED ON BOARD.
++ */
++&pinctrl {
++	/* vendor rv1126b-pinconf.dtsi 616-619 */
++	pcfg_output_high: pcfg-output-high {
++		output-high;
++	};
++
++	pmic {
++		pmic_int: pmic-int {
++			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		soc_pwrctrl_reset: soc-pwrctrl-reset {
++			rockchip,pins = <0 RK_PC1 RK_FUNC_GPIO &pcfg_output_high>;
++		};
++	};
++
++	usb {
++		typec5v_pwren: typec5v-pwren {
++			rockchip,pins = <0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++
++		vcc5v0_host_en: vcc5v0-host-en {
++			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++	};
++
++	uart0 {
++		uart0m0_xfer_pins: uart0m0-xfer-pins {
++			rockchip,pins =
++				/* uart0_rx_m0 */
++				<2 RK_PA0 2 &pcfg_pull_up>,
++				/* uart0_tx_m0 */
++				<2 RK_PA1 2 &pcfg_pull_up>;
++		};
++	};
++
++	eth_clk_25m {
++		eth_clk_25mm0_out_pins: eth-clk-25mm0-out-pins {
++			rockchip,pins =
++				/* eth_clk_25m_out_m0 */
++				<6 RK_PC1 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++	};
++
++	sdmmc0 {
++		sdmmc0_pwren: sdmmc0-pwren {
++			rockchip,pins = <0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++};

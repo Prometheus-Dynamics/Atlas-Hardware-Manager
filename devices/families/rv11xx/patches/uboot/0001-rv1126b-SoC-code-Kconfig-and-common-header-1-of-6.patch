@@ -1,0 +1,1642 @@
+From 6585ce9bf17c3eff0af40982fa0129324fca1f29 Mon Sep 17 00:00:00 2001
+From: "Claude Haiku 5.5" <a@b>
+Date: Mon, 16 Nov 2026 03:41:00 -0700
+Subject: [PATCH] rv1126b: SoC code, Kconfig and common header (1 of 6)
+
+Adds the RV1126B SoC support for U-Boot v2026.10 (AArch64), ported from Rockchip
+u-boot-next-dev at 1c535d65:
+- arch/arm/mach-rockchip/rv1126b/rv1126b.c: memory map (seed 137-170), debug UART (183-185),
+  the sdmmc0 pinmux and SPL card power-cycle as rv1126b_sdmmc0_iomux_init() (seed 188-215;
+  mainline has no board_set_iomux hook), STIMER (seed 291-305), storages finish (seed 307-315).
+  arch_cpu_init is the minimum: the seed's secure, firewall, TSADC, USB and PHY writes (seed
+  417-...) are NOT ported yet.
+- Kconfig: ROCKCHIP_RV1126B (seed 722-744, ARM64 by default, as the seed's select does),
+  SoC layout defaults with seed line numbers (SPL_TEXT_BASE 0x4fe00000 matches the loader ini
+  LOAD_ADDR, RKBOOT/RV1126BMINIALL.ini line 20).
+- include/configs/rv1126b_common.h: the SDRAM window and the boot environment layout (seed
+  lines 82-86, 109-121). The secure-OTP block (seed 38-93) is not ported.
+- Shared code, minimal: ROCKCHIP_SYSCON_IOC appended to the syscon enum in
+  arch/arm/include/asm/arch-rockchip/clock.h. Existing values do not move.
+
+Build (scratch, aarch64-linux-gnu-gcc, the seed defconfig minus the EVB board, NO_PYTHON=1
+because swig is not installed): rv1126b.o and syscon_rv1126b.o build with 0 warnings.
+The full defconfig does not link until the board patch (6 of 6).
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+---
+ arch/arm/include/asm/arch-rockchip/clock.h    |   1 +
+ .../include/asm/arch-rockchip/cru_rv1126b.h   | 404 ++++++++++++++++
+ .../include/asm/arch-rockchip/grf_rv1126b.h   | 327 +++++++++++++
+ .../include/asm/arch-rockchip/ioc_rv1126b.h   | 457 ++++++++++++++++++
+ arch/arm/mach-rockchip/Kconfig                |  29 ++
+ arch/arm/mach-rockchip/Makefile               |   1 +
+ arch/arm/mach-rockchip/rv1126b/Kconfig        |  59 +++
+ arch/arm/mach-rockchip/rv1126b/Makefile       |  10 +
+ arch/arm/mach-rockchip/rv1126b/rv1126b.c      | 136 ++++++
+ .../mach-rockchip/rv1126b/syscon_rv1126b.c    |  25 +
+ include/configs/rv1126b_common.h              |  51 ++
+ 11 files changed, 1500 insertions(+)
+ create mode 100644 arch/arm/include/asm/arch-rockchip/cru_rv1126b.h
+ create mode 100644 arch/arm/include/asm/arch-rockchip/grf_rv1126b.h
+ create mode 100644 arch/arm/include/asm/arch-rockchip/ioc_rv1126b.h
+ create mode 100644 arch/arm/mach-rockchip/rv1126b/Kconfig
+ create mode 100644 arch/arm/mach-rockchip/rv1126b/Makefile
+ create mode 100644 arch/arm/mach-rockchip/rv1126b/rv1126b.c
+ create mode 100644 arch/arm/mach-rockchip/rv1126b/syscon_rv1126b.c
+ create mode 100644 include/configs/rv1126b_common.h
+
+diff --git a/arch/arm/include/asm/arch-rockchip/clock.h b/arch/arm/include/asm/arch-rockchip/clock.h
+index 95b08bfd..94a89de7 100644
+--- a/arch/arm/include/asm/arch-rockchip/clock.h
++++ b/arch/arm/include/asm/arch-rockchip/clock.h
+@@ -39,6 +39,7 @@ enum {
+ 	ROCKCHIP_SYSCON_PIPE_PHY2_GRF,
+ 	ROCKCHIP_SYSCON_VOP_GRF,
+ 	ROCKCHIP_SYSCON_VO_GRF,
++	ROCKCHIP_SYSCON_IOC,	/* RV1126B IOC GRF (seed 1c535d65 syscon_rv1126b.c:14); appended, so no existing value moves */
+ };
+ 
+ /* Standard Rockchip clock numbers */
+diff --git a/arch/arm/include/asm/arch-rockchip/cru_rv1126b.h b/arch/arm/include/asm/arch-rockchip/cru_rv1126b.h
+new file mode 100644
+index 00000000..5922fbfc
+--- /dev/null
++++ b/arch/arm/include/asm/arch-rockchip/cru_rv1126b.h
+@@ -0,0 +1,404 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (c) 2025 Rockchip Electronics Co. Ltd.
++ * Author: Elaine Zhang <zhangqing@rock-chips.com>
++ */
++
++#ifndef _ASM_ARCH_CRU_RV1126B_H
++#define _ASM_ARCH_CRU_RV1126B_H
++
++#include <linux/bitops.h>
++
++#define MHz		1000000
++#define KHz		1000
++#define OSC_HZ		(24 * MHz)
++#define RC_OSC_HZ	(125 * MHz)
++
++#define GPLL_HZ		(1188 * MHz)
++#define AUPLL_HZ	(983040000)
++#define CPLL_HZ		(1000 * MHz)
++
++/* RV1126B pll id */
++enum rv1126b_pll_id {
++	GPLL,
++	AUPLL,
++	CPLL,
++	PLL_COUNT,
++};
++
++struct rv1126b_clk_info {
++	unsigned long id;
++	char *name;
++	bool is_cru;
++};
++
++struct rv1126b_clk_priv {
++	struct rv1126b_cru *cru;
++	struct rv1126b_grf *grf;
++	ulong gpll_hz;
++	ulong aupll_hz;
++	ulong cpll_hz;
++	ulong armclk_hz;
++	ulong armclk_enter_hz;
++	ulong armclk_init_hz;
++	bool sync_kernel;
++	bool set_armclk_rate;
++};
++
++struct rv1126b_grf_clk_priv {
++	struct rv1126b_grf *grf;
++};
++
++struct rv1126b_pll {
++	unsigned int con0;
++	unsigned int con1;
++	unsigned int con2;
++	unsigned int con3;
++	unsigned int con4;
++	unsigned int reserved0[3];
++};
++
++struct rv1126b_cru {
++	struct rv1126b_pll pll[2];
++	unsigned int reserved0[176];
++	unsigned int clksel_con[71];
++	unsigned int reserved1[249];
++	unsigned int clkgate_con[16];
++	unsigned int reserved2[112];
++	unsigned int softrst_con[16];
++	unsigned int reserved3[112];
++	unsigned int glb_cnt_th;
++	unsigned int glb_rst_st;
++	unsigned int glb_srst_fst;
++	unsigned int glb_srst_snd;
++	unsigned int glb_rst_con[3];
++	unsigned int reserved4[41];
++	unsigned int clk_cm_frac0_div_h;
++	unsigned int clk_cm_frac1_div_h;
++	unsigned int clk_cm_frac2_div_h;
++	unsigned int clk_uart_frac0_div_h;
++	unsigned int clk_uart_frac1_div_h;
++	unsigned int clk_audio_frac0_div_h;
++	unsigned int clk_audio_frac1_div_h;
++	unsigned int reserved5[15753];
++	unsigned int bus_clksel_con[4];
++	unsigned int reserved6[316];
++	unsigned int bus_clkgate_con[7];
++	unsigned int reserved7[121];
++	unsigned int bus_softrst_con[8];
++	unsigned int reserved8[15928];
++	unsigned int peri_clksel_con[2];
++	unsigned int reserved9[318];
++	unsigned int peri_clkgate_con[2];
++	unsigned int reserved10[126];
++	unsigned int peri_softrst_con[2];
++	unsigned int reserved11[15934];
++	unsigned int core_clksel_con[3];
++	unsigned int reserved12[317];
++	unsigned int core_clkgate_con[2];
++	unsigned int reserved13[126];
++	unsigned int core_softrst_con[2];
++	unsigned int reserved14[15934];
++	unsigned int pmu_clksel_con[9];
++	unsigned int reserved15[311];
++	unsigned int pmu_clkgate_con[4];
++	unsigned int reserved16[124];
++	unsigned int pmu_softrst_con[4];
++	unsigned int reserved17[15932];
++	unsigned int pmu1_clksel_con[2];
++	unsigned int reserved18[318];
++	unsigned int pmu1_clkgate_con[2];
++	unsigned int reserved19[126];
++	unsigned int pmu1_softrst_con[2];
++	unsigned int reserved20[32318];
++	unsigned int vi_clksel_con[1];
++	unsigned int reserved21[319];
++	unsigned int vi_clkgate_con[5];
++	unsigned int reserved22[123];
++	unsigned int vi_softrst_con[4];
++};
++
++check_member(rv1126b_cru, clksel_con[0], 0x300);
++check_member(rv1126b_cru, clkgate_con[0], 0x800);
++check_member(rv1126b_cru, softrst_con[0], 0xa00);
++check_member(rv1126b_cru, clk_cm_frac0_div_h, 0xcc0);
++check_member(rv1126b_cru, bus_clksel_con[0], 0x10300);
++check_member(rv1126b_cru, bus_clkgate_con[0], 0x10800);
++check_member(rv1126b_cru, bus_softrst_con[0], 0x10a00);
++check_member(rv1126b_cru, peri_clksel_con[0], 0x20300);
++check_member(rv1126b_cru, peri_clkgate_con[0], 0x20800);
++check_member(rv1126b_cru, peri_softrst_con[0], 0x20a00);
++check_member(rv1126b_cru, core_clksel_con[0], 0x30300);
++check_member(rv1126b_cru, core_clkgate_con[0], 0x30800);
++check_member(rv1126b_cru, core_softrst_con[0], 0x30a00);
++check_member(rv1126b_cru, pmu_clksel_con[0], 0x40300);
++check_member(rv1126b_cru, pmu_clkgate_con[0], 0x40800);
++check_member(rv1126b_cru, pmu_softrst_con[0], 0x40a00);
++check_member(rv1126b_cru, pmu1_clksel_con[0], 0x50300);
++check_member(rv1126b_cru, pmu1_clkgate_con[0], 0x50800);
++check_member(rv1126b_cru, pmu1_softrst_con[0], 0x50a00);
++check_member(rv1126b_cru, vi_clksel_con[0], 0x70300);
++check_member(rv1126b_cru, vi_clkgate_con[0], 0x70800);
++check_member(rv1126b_cru, vi_softrst_con[0], 0x70a00);
++
++struct pll_rate_table {
++	unsigned long rate;
++	unsigned int fbdiv;
++	unsigned int postdiv1;
++	unsigned int refdiv;
++	unsigned int postdiv2;
++	unsigned int dsmpd;
++	unsigned int frac;
++};
++
++#define RV1126B_CRU_BASE		0x20000000
++#define RV1126B_TOPCRU_BASE		0x0
++#define RV1126B_BUSCRU_BASE		0x10000
++#define RV1126B_PERICRU_BASE		0x20000
++#define RV1126B_CORECRU_BASE		0x30000
++#define RV1126B_PMUCRU_BASE		0x40000
++#define RV1126B_PMU1CRU_BASE		0x50000
++#define RV1126B_DDRCRU_BASE		0x60000
++#define RV1126B_SUBDDRCRU_BASE		0x68000
++#define RV1126B_VICRU_BASE		0x70000
++#define RV1126B_VEPUCRU_BASE		0x80000
++#define RV1126B_NPUCRU_BASE		0x90000
++#define RV1126B_VDOCRU_BASE		0xA0000
++#define RV1126B_VCPCRU_BASE		0xB0000
++#define RV1126B_SBUSCRU_BASE		0x200000
++
++#define RV1126B_PLL_CON(x)		((x) * 0x4 + RV1126B_TOPCRU_BASE)
++#define RV1126B_MODE_CON		(0x280 + RV1126B_TOPCRU_BASE)
++#define RV1126B_CLKSEL_CON(x)		((x) * 0x4 + 0x300 + RV1126B_TOPCRU_BASE)
++#define RV1126B_PERIPLL_CON(x)		((x) * 0x4 + RV1126B_PERICRU_BASE)
++#define RV1126B_SUBDDRPLL_CON(x)	((x) * 0x4 + RV1126B_SUBDDRCRU_BASE)
++#define RV1126B_SBUSCLKGATE_CON(x)	((x) * 0x4 + 0x800 + RV1126B_SBUSCRU_BASE)
++
++enum {
++	/* CRU_CLK_SEL10_CON */
++	CLK_AUDIO_FRAC1_SRC_SEL_SHIFT		= 12,
++	CLK_AUDIO_FRAC1_SRC_SEL_MASK		= 0x3 << CLK_AUDIO_FRAC1_SRC_SEL_SHIFT,
++	CLK_AUDIO_FRAC0_SRC_SEL_SHIFT		= 10,
++	CLK_AUDIO_FRAC0_SRC_SEL_MASK		= 0x3 << CLK_AUDIO_FRAC0_SRC_SEL_SHIFT,
++	CLK_UART_FRAC1_SRC_SEL_SHIFT		= 8,
++	CLK_UART_FRAC1_SRC_SEL_MASK		= 0x3 << CLK_UART_FRAC1_SRC_SEL_SHIFT,
++	CLK_UART_FRAC0_SRC_SEL_SHIFT		= 6,
++	CLK_UART_FRAC0_SRC_SEL_MASK		= 0x3 << CLK_UART_FRAC0_SRC_SEL_SHIFT,
++	CLK_CM_FRAC2_SRC_SEL_SHIFT		= 4,
++	CLK_CM_FRAC2_SRC_SEL_MASK		= 0x3 << CLK_CM_FRAC2_SRC_SEL_SHIFT,
++	CLK_CM_FRAC1_SRC_SEL_SHIFT		= 2,
++	CLK_CM_FRAC1_SRC_SEL_MASK		= 0x3 << CLK_CM_FRAC1_SRC_SEL_SHIFT,
++	CLK_CM_FRAC0_SRC_SEL_SHIFT		= 0,
++	CLK_CM_FRAC0_SRC_SEL_MASK		= 0x3 << CLK_CM_FRAC0_SRC_SEL_SHIFT,
++	CLK_FRAC_SRC_SEL_24M			= 0,
++	CLK_FRAC_SRC_SEL_GPLL,
++	CLK_FRAC_SRC_SEL_AUPLL,
++	CLK_FRAC_SRC_SEL_CPLL,
++
++	/* CRU_CLK_SEL12_CON */
++	SCLK_UART1_SEL_SHIFT			= 13,
++	SCLK_UART1_SEL_MASK			= 0x7 << SCLK_UART1_SEL_SHIFT,
++	SCLK_UART1_DIV_SHIFT			= 8,
++	SCLK_UART1_DIV_MASK			= 0x1f << SCLK_UART1_DIV_SHIFT,
++	SCLK_UART0_SRC_SEL_SHIFT		= 5,
++	SCLK_UART0_SRC_SEL_MASK			= 0x7 << SCLK_UART0_SRC_SEL_SHIFT,
++	SCLK_UART_SEL_OSC			= 0,
++	SCLK_UART_SEL_CM_FRAC0,
++	SCLK_UART_SEL_CM_FRAC1,
++	SCLK_UART_SEL_CM_FRAC2,
++	SCLK_UART_SEL_UART_FRAC0,
++	SCLK_UART_SEL_UART_FRAC1,
++	SCLK_UART0_SRC_DIV_SHIFT		= 0,
++	SCLK_UART0_SRC_DIV_MASK			= 0x1f << SCLK_UART0_SRC_DIV_SHIFT,
++
++	/* CRU_CLK_SEL13_CON */
++	SCLK_UART3_SEL_SHIFT			= 13,
++	SCLK_UART3_SEL_MASK			= 0x7 << SCLK_UART3_SEL_SHIFT,
++	SCLK_UART3_DIV_SHIFT			= 8,
++	SCLK_UART3_DIV_MASK			= 0x1f << SCLK_UART3_DIV_SHIFT,
++	SCLK_UART2_SEL_SHIFT			= 5,
++	SCLK_UART2_SEL_MASK			= 0x7 << SCLK_UART2_SEL_SHIFT,
++	SCLK_UART2_DIV_SHIFT			= 0,
++	SCLK_UART2_DIV_MASK			= 0x1f << SCLK_UART2_DIV_SHIFT,
++
++	/* CRU_CLK_SEL14_CON */
++	SCLK_UART5_SEL_SHIFT			= 13,
++	SCLK_UART5_SEL_MASK			= 0x7 << SCLK_UART5_SEL_SHIFT,
++	SCLK_UART5_DIV_SHIFT			= 8,
++	SCLK_UART5_DIV_MASK			= 0x1f << SCLK_UART5_DIV_SHIFT,
++	SCLK_UART4_SEL_SHIFT			= 5,
++	SCLK_UART4_SEL_MASK			= 0x7 << SCLK_UART4_SEL_SHIFT,
++	SCLK_UART4_DIV_SHIFT			= 0,
++	SCLK_UART4_DIV_MASK			= 0x1f << SCLK_UART4_DIV_SHIFT,
++
++	/* CRU_CLK_SEL15_CON */
++	SCLK_UART7_SEL_SHIFT			= 13,
++	SCLK_UART7_SEL_MASK			= 0x7 << SCLK_UART7_SEL_SHIFT,
++	SCLK_UART7_DIV_SHIFT			= 8,
++	SCLK_UART7_DIV_MASK			= 0x1f << SCLK_UART7_DIV_SHIFT,
++	SCLK_UART6_SEL_SHIFT			= 5,
++	SCLK_UART6_SEL_MASK			= 0x7 << SCLK_UART6_SEL_SHIFT,
++	SCLK_UART6_DIV_SHIFT			= 0,
++	SCLK_UART6_DIV_MASK			= 0x1f << SCLK_UART6_DIV_SHIFT,
++
++	/* CRU_CLK_SEL25_CON */
++	CLK_FRAC_NUMERATOR_SHIFT		= 16,
++	CLK_FRAC_NUMERATOR_MASK			= 0xffff << 16,
++	CLK_FRAC_DENOMINATOR_SHIFT		= 0,
++	CLK_FRAC_DENOMINATOR_MASK		= 0xffff,
++	CLK_FRAC_H_NUMERATOR_SHIFT		= 8,
++	CLK_FRAC_H_NUMERATOR_MASK		= 0xff << 8,
++	CLK_FRAC_H_DENOMINATOR_SHIFT		= 0,
++	CLK_FRAC_H_DENOMINATOR_MASK		= 0xff,
++
++	/* CRU_CLK_SEL43_CON */
++	DCLK_VOP_SEL_SHIFT			= 8,
++	DCLK_VOP_SEL_MASK			= 0x1 << DCLK_VOP_SEL_SHIFT,
++	DCLK_VOP_SEL_GPLL			= 0,
++	DCLK_VOP_SEL_CPLL,
++	DCLK_VOP_DIV_SHIFT			= 0,
++	DCLK_VOP_DIV_MASK			= 0xff << DCLK_VOP_DIV_SHIFT,
++
++	/* CRU_CLK_SEL44_CON */
++	HCLK_BUS_SEL_SHIFT			= 10,
++	HCLK_BUS_SEL_MASK			= 0x1 << HCLK_BUS_SEL_SHIFT,
++	HCLK_BUS_SEL_200M			= 0,
++	HCLK_BUS_SEL_100M,
++	ACLK_BUS_SEL_SHIFT			= 8,
++	ACLK_BUS_SEL_MASK			= 0x3 << ACLK_BUS_SEL_SHIFT,
++	ACLK_BUS_SEL_400M			= 0,
++	ACLK_BUS_SEL_300M,
++	ACLK_BUS_SEL_200M,
++	ACLK_TOP_SEL_SHIFT			= 6,
++	ACLK_TOP_SEL_MASK			= 0x3 << ACLK_TOP_SEL_SHIFT,
++	ACLK_TOP_SEL_600M			= 0,
++	ACLK_TOP_SEL_400M,
++	ACLK_TOP_SEL_200M,
++
++	/* CRU_CLK_SEL45_CON */
++	CLK_GMAC_PTP_REF_SRC_DIV_SHIFT		= 11,
++	CLK_GMAC_PTP_REF_SRC_DIV_MASK		= 0x1f << CLK_GMAC_PTP_REF_SRC_DIV_SHIFT,
++	CLK_GMAC_PTP_REF_SRC_SEL_SHIFT		= 10,
++	CLK_GMAC_PTP_REF_SRC_SEL_MASK		= 0x1 << CLK_GMAC_PTP_REF_SRC_SEL_SHIFT,
++	CLK_GMAC_PTP_REF_SRC_SEL_CPLL		= 0,
++	CLK_GMAC_PTP_REF_SRC_SEL_24M,
++	CLK_SDMMC_SEL_SHIFT			= 8,
++	CLK_SDMMC_SEL_MASK			= 0x3 << CLK_SDMMC_SEL_SHIFT,
++	CLK_SDMMC_SEL_GPLL			= 0,
++	CLK_SDMMC_SEL_CPLL,
++	CLK_SDMMC_SEL_24M,
++	CLK_SDMMC_DIV_SHIFT			= 0,
++	CLK_SDMMC_DIV_MASK			= 0xff << CLK_SDMMC_DIV_SHIFT,
++
++	/* CRU_CLK_SEL46_CON */
++	TCLK_WDT_HPMCU_SEL_SHIFT		= 14,
++	TCLK_WDT_HPMCU_SEL_MASK			= 0x1 << TCLK_WDT_HPMCU_SEL_SHIFT,
++	TCLK_WDT_S_SEL_SHIFT			= 13,
++	TCLK_WDT_S_SEL_MASK			= 0x1 << TCLK_WDT_S_SEL_SHIFT,
++	TCLK_WDT_NS_SEL_SHIFT			= 12,
++	TCLK_WDT_NS_SEL_MASK			= 0x1 << TCLK_WDT_NS_SEL_SHIFT,
++	TCLK_WDT_SEL_100M			= 0,
++	TCLK_WDT_SEL_OSC,
++
++	/* CRU_CLK_SEL47_CON */
++	ACLK_PERI_SEL_SHIFT			= 13,
++	ACLK_PERI_SEL_MASK			= 0x1 << ACLK_PERI_SEL_SHIFT,
++	ACLK_PERI_SEL_200M			= 0,
++	ACLK_PERI_SEL_24M,
++	PCLK_PERI_SEL_SHIFT			= 12,
++	PCLK_PERI_SEL_MASK			= 0x1 << PCLK_PERI_SEL_SHIFT,
++	PCLK_PERI_SEL_100M			= 0,
++	PCLK_PERI_SEL_24M,
++
++	/* CRU_CLK_SEL50_CON */
++	ACLK_RKCE_SEL_SHIFT			= 13,
++	ACLK_RKCE_SEL_MASK			= 0x1 << ACLK_RKCE_SEL_SHIFT,
++	ACLK_RKCE_SEL_200M			= 0,
++	ACLK_RKCE_SEL_24M,
++	CLK_PKA_RKCE_SEL_SHIFT			= 12,
++	CLK_PKA_RKCE_SEL_MASK			= 0x1 << CLK_PKA_RKCE_SEL_SHIFT,
++	CLK_PKA_RKCE_SEL_300M			= 0,
++	CLK_PKA_RKCE_SEL_200M,
++	CLK_PWM3_SEL_SHIFT			= 11,
++	CLK_PWM3_SEL_MASK			= 0x1 << CLK_PWM3_SEL_SHIFT,
++	CLK_PWM2_SEL_SHIFT			= 10,
++	CLK_PWM2_SEL_MASK			= 0x1 << CLK_PWM2_SEL_SHIFT,
++	CLK_PWM0_SEL_SHIFT			= 8,
++	CLK_PWM0_SEL_MASK			= 0x1 << CLK_PWM0_SEL_SHIFT,
++	CLK_PWM_SEL_100M			= 0,
++	CLK_PWM_SEL_24M,
++	CLK_SPI1_SEL_SHIFT			= 4,
++	CLK_SPI1_SEL_MASK			= 0x3 << CLK_SPI1_SEL_SHIFT,
++	CLK_SPI0_SEL_SHIFT			= 2,
++	CLK_SPI0_SEL_MASK			= 0x3 << CLK_SPI0_SEL_SHIFT,
++	CLK_SPI0_SEL_200M			= 0,
++	CLK_SPI0_SEL_100M,
++	CLK_SPI0_SEL_50M,
++	CLK_SPI0_SEL_24M,
++	CLK_I2C_SEL_SHIFT			= 1,
++	CLK_I2C_SEL_MASK			= 0x1 << CLK_I2C_SEL_SHIFT,
++	CLK_I2C_SEL_200M			= 0,
++	CLK_I2C_SEL_24M,
++
++	/* CRU_CLK_SEL63_CON */
++	CLK_SARADC2_SEL_SHIFT			= 14,
++	CLK_SARADC2_SEL_MASK			= 0x1 << CLK_SARADC2_SEL_SHIFT,
++	CLK_SARADC1_SEL_SHIFT			= 13,
++	CLK_SARADC1_SEL_MASK			= 0x1 << CLK_SARADC1_SEL_SHIFT,
++	CLK_SARADC0_SEL_SHIFT			= 12,
++	CLK_SARADC0_SEL_MASK			= 0x1 << CLK_SARADC0_SEL_SHIFT,
++	CLK_SARADC_SEL_200M			= 0,
++	CLK_SARADC_SEL_24M,
++	CLK_SARADC2_DIV_SHIFT			= 8,
++	CLK_SARADC2_DIV_MASK			= 0x7 << CLK_SARADC2_DIV_SHIFT,
++	CLK_SARADC1_DIV_SHIFT			= 4,
++	CLK_SARADC1_DIV_MASK			= 0x7 << CLK_SARADC1_DIV_SHIFT,
++	CLK_SARADC0_DIV_SHIFT			= 0,
++	CLK_SARADC0_DIV_MASK			= 0x7 << CLK_SARADC0_DIV_SHIFT,
++
++	/* CRU_CLK_SEL69_CON */
++	CLK_MAC_OUT2IO_DIV_SHIFT		= 8,
++	CLK_MAC_OUT2IO_DIV_MASK			= 0x7f << CLK_MAC_OUT2IO_DIV_SHIFT,
++	CLK_MAC_OUT2IO_SEL_SHIFT		= 6,
++	CLK_MAC_OUT2IO_SEL_MASK			= 0x3 << CLK_MAC_OUT2IO_SEL_SHIFT,
++	CLK_MAC_OUT2IO_SEL_GPLL			= 0,
++	CLK_MAC_OUT2IO_SEL_CPLL,
++	CLK_MAC_OUT2IO_SEL_24M,
++
++	/* PMUCRU_CLK_SEL2_CON */
++	CLK_I2C2_SEL_SHIFT			= 14,
++	CLK_I2C2_SEL_MASK			= 0x3 << CLK_I2C2_SEL_SHIFT,
++	CLK_I2C2_SEL_24M			= 0,
++	CLK_I2C2_SEL_RCOSC,
++	CLK_I2C2_SEL_100M,
++	CLK_PWM1_SEL_SHIFT			= 8,
++	CLK_PWM1_SEL_MASK			= 0x3 << CLK_PWM1_SEL_SHIFT,
++	CLK_PWM1_SEL_24M			= 0,
++	CLK_PWM1_SEL_RCOSC,
++	CLK_PWM1_SEL_100M,
++	CLK_PWM1_DIV_SHIFT			= 6,
++	CLK_PWM1_DIV_MASK			= 0x3 << CLK_PWM1_DIV_SHIFT,
++
++	/* PMUCRU_CLK_SEL3_CON */
++	TCLK_WDT_LPMCU_SEL_SHIFT		= 6,
++	TCLK_WDT_LPMCU_SEL_MASK			= 0x3 << TCLK_WDT_LPMCU_SEL_SHIFT,
++	TCLK_WDT_LPMCU_SEL_OSC			= 0,
++	TCLK_WDT_LPMCU_SEL_RCOSC,
++	TCLK_WDT_LPMCU_SEL_100M,
++	TCLK_WDT_LPMCU_SEL_32K,
++	SCLK_UART0_SEL_SHIFT			= 0,
++	SCLK_UART0_SEL_MASK			= 0x3 << SCLK_UART0_SEL_SHIFT,
++	SCLK_UART0_SEL_UART0_SRC		= 0,
++	SCLK_UART0_SEL_OSC,
++	SCLK_UART0_SEL_RCOSC,
++
++	/* PMU1CRU_CLK_SEL0_CON */
++	SCLK_1X_FSPI1_DIV_SHIFT			= 2,
++	SCLK_1X_FSPI1_DIV_MASK			= 0x7 << SCLK_1X_FSPI1_DIV_SHIFT,
++	SCLK_1X_FSPI1_SEL_SHIFT			= 0,
++	SCLK_1X_FSPI1_SEL_MASK			= 0x3 << SCLK_1X_FSPI1_SEL_SHIFT,
++	SCLK_1X_FSPI1_SEL_24M			= 0,
++	SCLK_1X_FSPI1_SEL_RCOSC,
++	SCLK_1X_FSPI1_SEL_100M,
++};
++#endif
+diff --git a/arch/arm/include/asm/arch-rockchip/grf_rv1126b.h b/arch/arm/include/asm/arch-rockchip/grf_rv1126b.h
+new file mode 100644
+index 00000000..d0d7e444
+--- /dev/null
++++ b/arch/arm/include/asm/arch-rockchip/grf_rv1126b.h
+@@ -0,0 +1,327 @@
++/*
++ * (C) Copyright 2025 Rockchip Electronics Co., Ltd.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++#ifndef _ASM_ARCH_GRF_RV1126B_H
++#define _ASM_ARCH_GRF_RV1126B_H
++
++#include <linux/bitops.h>
++
++/* cpu_grf register structure define */
++struct rv1126b_cpu_grf_reg {
++	uint32_t con0;                               /* address offset: 0x0000 */
++	uint32_t con1;                               /* address offset: 0x0004 */
++	uint32_t mem_cfg_uhdspra;                    /* address offset: 0x0008 */
++	uint32_t status0;                            /* address offset: 0x000c */
++	uint32_t status1;                            /* address offset: 0x0010 */
++};
++
++check_member(rv1126b_cpu_grf_reg, status1, 0x0010);
++
++/* ddr_grf register structure define */
++struct rv1126b_ddr_grf_reg {
++	uint32_t con0;                               /* address offset: 0x0000 */
++	uint32_t con1;                               /* address offset: 0x0004 */
++	uint32_t reserved0008[2];                    /* address offset: 0x0008 */
++	uint32_t con4;                               /* address offset: 0x0010 */
++	uint32_t reserved0014[7];                    /* address offset: 0x0014 */
++	uint32_t con12;                              /* address offset: 0x0030 */
++	uint32_t con13;                              /* address offset: 0x0034 */
++	uint32_t con14;                              /* address offset: 0x0038 */
++	uint32_t con15;                              /* address offset: 0x003c */
++	uint32_t con16;                              /* address offset: 0x0040 */
++	uint32_t con17;                              /* address offset: 0x0044 */
++	uint32_t con18;                              /* address offset: 0x0048 */
++	uint32_t reserved004c;                       /* address offset: 0x004c */
++	uint32_t con20;                              /* address offset: 0x0050 */
++	uint32_t con21;                              /* address offset: 0x0054 */
++	uint32_t con22;                              /* address offset: 0x0058 */
++	uint32_t con23;                              /* address offset: 0x005c */
++	uint32_t reserved0060[8];                    /* address offset: 0x0060 */
++	uint32_t probe_ctrl;                         /* address offset: 0x0080 */
++	uint32_t reserved0084[31];                   /* address offset: 0x0084 */
++	uint32_t status0;                            /* address offset: 0x0100 */
++	uint32_t status1;                            /* address offset: 0x0104 */
++	uint32_t status2;                            /* address offset: 0x0108 */
++	uint32_t status3;                            /* address offset: 0x010c */
++	uint32_t status4;                            /* address offset: 0x0110 */
++	uint32_t status5;                            /* address offset: 0x0114 */
++	uint32_t status6;                            /* address offset: 0x0118 */
++	uint32_t status7;                            /* address offset: 0x011c */
++	uint32_t status8;                            /* address offset: 0x0120 */
++	uint32_t status9;                            /* address offset: 0x0124 */
++	uint32_t status10;                           /* address offset: 0x0128 */
++	uint32_t status11;                           /* address offset: 0x012c */
++	uint32_t status12;                           /* address offset: 0x0130 */
++	uint32_t status13;                           /* address offset: 0x0134 */
++	uint32_t status14;                           /* address offset: 0x0138 */
++	uint32_t status15;                           /* address offset: 0x013c */
++	uint32_t status16;                           /* address offset: 0x0140 */
++	uint32_t status17;                           /* address offset: 0x0144 */
++	uint32_t reserved0148;                       /* address offset: 0x0148 */
++	uint32_t status19;                           /* address offset: 0x014c */
++	uint32_t reserved0150[10];                   /* address offset: 0x0150 */
++	uint32_t status30;                           /* address offset: 0x0178 */
++};
++
++check_member(rv1126b_ddr_grf_reg, status30, 0x0178);
++
++/* pmu_grf register structure define */
++struct rv1126b_pmu_grf_reg {
++	uint32_t soc_con0;                           /* address offset: 0x0000 */
++	uint32_t soc_con1;                           /* address offset: 0x0004 */
++	uint32_t soc_con2;                           /* address offset: 0x0008 */
++	uint32_t soc_con3;                           /* address offset: 0x000c */
++	uint32_t soc_con4;                           /* address offset: 0x0010 */
++	uint32_t soc_con5;                           /* address offset: 0x0014 */
++	uint32_t soc_con6;                           /* address offset: 0x0018 */
++	uint32_t soc_con7;                           /* address offset: 0x001c */
++	uint32_t soc_con8;                           /* address offset: 0x0020 */
++	uint32_t soc_con9;                           /* address offset: 0x0024 */
++	uint32_t soc_con10;                          /* address offset: 0x0028 */
++	uint32_t soc_con11;                          /* address offset: 0x002c */
++	uint32_t soc_con12;                          /* address offset: 0x0030 */
++	uint32_t soc_con13;                          /* address offset: 0x0034 */
++	uint32_t soc_con14;                          /* address offset: 0x0038 */
++	uint32_t soc_con15;                          /* address offset: 0x003c */
++	uint32_t reserved0040[16];                   /* address offset: 0x0040 */
++	uint32_t aad_con0;                           /* address offset: 0x0080 */
++	uint32_t reserved0084[47];                   /* address offset: 0x0084 */
++	uint32_t men_con0;                           /* address offset: 0x0140 */
++	uint32_t men_con1;                           /* address offset: 0x0144 */
++	uint32_t men_con2;                           /* address offset: 0x0148 */
++	uint32_t reserved014c;                       /* address offset: 0x014c */
++	uint32_t soc_special0;                       /* address offset: 0x0150 */
++	uint32_t reserved0154[3];                    /* address offset: 0x0154 */
++	uint32_t soc_aov_int_con;                    /* address offset: 0x0160 */
++	uint32_t reserved0164[3];                    /* address offset: 0x0164 */
++	uint32_t soc_status0;                        /* address offset: 0x0170 */
++	uint32_t soc_status1;                        /* address offset: 0x0174 */
++	uint32_t soc_status2;                        /* address offset: 0x0178 */
++	uint32_t reserved017c[33];                   /* address offset: 0x017c */
++	uint32_t os_reg0;                            /* address offset: 0x0200 */
++	uint32_t os_reg1;                            /* address offset: 0x0204 */
++	uint32_t os_reg2;                            /* address offset: 0x0208 */
++	uint32_t os_reg3;                            /* address offset: 0x020c */
++	uint32_t os_reg4;                            /* address offset: 0x0210 */
++	uint32_t os_reg5;                            /* address offset: 0x0214 */
++	uint32_t os_reg6;                            /* address offset: 0x0218 */
++	uint32_t os_reg7;                            /* address offset: 0x021c */
++	uint32_t os_reg8;                            /* address offset: 0x0220 */
++	uint32_t os_reg9;                            /* address offset: 0x0224 */
++	uint32_t os_reg10;                           /* address offset: 0x0228 */
++	uint32_t os_reg11;                           /* address offset: 0x022c */
++	uint32_t reset_function_status;              /* address offset: 0x0230 */
++	uint32_t reset_function_clr;                 /* address offset: 0x0234 */
++	uint32_t reserved0238[82];                   /* address offset: 0x0238 */
++	uint32_t sig_detect_con;                     /* address offset: 0x0380 */
++	uint32_t reserved0384[3];                    /* address offset: 0x0384 */
++	uint32_t sig_detect_status;                  /* address offset: 0x0390 */
++	uint32_t reserved0394[3];                    /* address offset: 0x0394 */
++	uint32_t sig_detect_status_clear;            /* address offset: 0x03a0 */
++	uint32_t reserved03a4[3];                    /* address offset: 0x03a4 */
++	uint32_t sdmmc_det_counter;                  /* address offset: 0x03b0 */
++};
++
++check_member(rv1126b_pmu_grf_reg, sdmmc_det_counter, 0x03b0);
++
++/* npu_grf register structure define */
++struct rv1126b_npu_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t npu_grf_cbuf_mem_soft_gate;         /* address offset: 0x0008 */
++	uint32_t npu_grf_cfg_nsp_slv_addr;           /* address offset: 0x000c */
++	uint32_t npu_grf_nsp_mem_soft_gate;          /* address offset: 0x0010 */
++	uint32_t npu_grf_cfg_use_nsp;                /* address offset: 0x0014 */
++	uint32_t npu_grf_shape;                      /* address offset: 0x0018 */
++};
++
++check_member(rv1126b_npu_grf_reg, npu_grf_shape, 0x0018);
++
++/* peri_grf register structure define */
++struct rv1126b_peri_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t reserved0008;                       /* address offset: 0x0008 */
++	uint32_t usb3_grf_con_pending;               /* address offset: 0x000c */
++	uint32_t reserved0010;                       /* address offset: 0x0010 */
++	uint32_t mem_gate_grf_con;                   /* address offset: 0x0014 */
++	uint32_t hprot_grf_con;                      /* address offset: 0x0018 */
++	uint32_t usbhostphy_con0;                    /* address offset: 0x001c */
++	uint32_t usbotgphy_con0;                     /* address offset: 0x0020 */
++	uint32_t usbotgphy_con1;                     /* address offset: 0x0024 */
++	uint32_t usbotgphy_con2;                     /* address offset: 0x0028 */
++	uint32_t usbotgphy_con3;                     /* address offset: 0x002c */
++	uint32_t host0_con0;                         /* address offset: 0x0030 */
++	uint32_t host0_con1;                         /* address offset: 0x0034 */
++	uint32_t usb3otg0_con0;                      /* address offset: 0x0038 */
++	uint32_t usb3otg0_con1;                      /* address offset: 0x003c */
++	uint32_t reserved0040[13];                   /* address offset: 0x0040 */
++	uint32_t otgphy_int_en;                      /* address offset: 0x0074 */
++	uint32_t otgphy_int_st;                      /* address offset: 0x0078 */
++	uint32_t otgphy_int_st_clr;                  /* address offset: 0x007c */
++	uint32_t otgphy_ls_con;                      /* address offset: 0x0080 */
++	uint32_t otgphy_dis_con;                     /* address offset: 0x0084 */
++	uint32_t otgphy_bvalid_con;                  /* address offset: 0x0088 */
++	uint32_t otgphy_id_con;                      /* address offset: 0x008c */
++	uint32_t hostphy_int_en;                     /* address offset: 0x0090 */
++	uint32_t hostphy_int_st;                     /* address offset: 0x0094 */
++	uint32_t hostphy_int_st_clr;                 /* address offset: 0x0098 */
++	uint32_t hostphy_ls_con;                     /* address offset: 0x009c */
++	uint32_t hostphy_dis_con;                    /* address offset: 0x00a0 */
++	uint32_t hostphy_bvalid_con;                 /* address offset: 0x00a4 */
++	uint32_t hostphy_id_con;                     /* address offset: 0x00a8 */
++	uint32_t reserved00ac[21];                   /* address offset: 0x00ac */
++	uint32_t usb3otg0_status;                    /* address offset: 0x0100 */
++	uint32_t usb3otg0_status_cb;                 /* address offset: 0x0104 */
++	uint32_t usb3otg0_status_lat0;               /* address offset: 0x0108 */
++	uint32_t usb3otg0_status_lat1;               /* address offset: 0x010c */
++	uint32_t usbphy_st;                          /* address offset: 0x0110 */
++	uint32_t host0_st;                           /* address offset: 0x0114 */
++	uint32_t usb3_host_utmi_st;                  /* address offset: 0x0118 */
++	uint32_t rtc_grf_st;                         /* address offset: 0x011c */
++};
++
++check_member(rv1126b_peri_grf_reg, rtc_grf_st, 0x011c);
++
++/* usb3_phy_grf register structure define */
++struct rv1126b_usb3_phy_grf_reg {
++	uint32_t pipe_con0;                          /* address offset: 0x0000 */
++	uint32_t pipe_con1;                          /* address offset: 0x0004 */
++	uint32_t pipe_con2;                          /* address offset: 0x0008 */
++	uint32_t pipe_con3;                          /* address offset: 0x000c */
++	uint32_t pipe_con4;                          /* address offset: 0x0010 */
++	uint32_t reserved0014[8];                    /* address offset: 0x0014 */
++	uint32_t pipe_status1;                       /* address offset: 0x0034 */
++	uint32_t reserved0038[18];                   /* address offset: 0x0038 */
++	uint32_t lfps_det_con;                       /* address offset: 0x0080 */
++	uint32_t reserved0084[7];                    /* address offset: 0x0084 */
++	uint32_t phy_int_en;                         /* address offset: 0x00a0 */
++	uint32_t phy_int_status;                     /* address offset: 0x00a4 */
++};
++
++check_member(rv1126b_usb3_phy_grf_reg, phy_int_status, 0x00a4);
++
++/* sys_grf register structure define */
++struct rv1126b_sys_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t mem_grf_rom;                        /* address offset: 0x0008 */
++	uint32_t bus_grf_misc;                       /* address offset: 0x000c */
++	uint32_t mem_con_gate;                       /* address offset: 0x0010 */
++	uint32_t bus_grf_hprot_stall;                /* address offset: 0x0014 */
++	uint32_t hpmcu_cache_misc;                   /* address offset: 0x0018 */
++	uint32_t hpmcu_cache_addr_start;             /* address offset: 0x001c */
++	uint32_t hpmcu_cache_addr_end;               /* address offset: 0x0020 */
++	uint32_t hpmcu_code_addr_start;              /* address offset: 0x0024 */
++	uint32_t hpmcu_sram_addr_start;              /* address offset: 0x0028 */
++	uint32_t hpmcu_exsram_addr_start;            /* address offset: 0x002c */
++	uint32_t biu_con0;                           /* address offset: 0x0030 */
++	uint32_t biu_con1;                           /* address offset: 0x0034 */
++	uint32_t uart_grf_rts_cts;                   /* address offset: 0x0038 */
++	uint32_t uart_grf_dma_bypass;                /* address offset: 0x003c */
++	uint32_t audio_con0;                         /* address offset: 0x0040 */
++	uint32_t reserved0044;                       /* address offset: 0x0044 */
++	uint32_t audio_con2;                         /* address offset: 0x0048 */
++	uint32_t otp_con;                            /* address offset: 0x004c */
++	uint32_t tsadc_grf_con0;                     /* address offset: 0x0050 */
++	uint32_t tsadc_grf_con1;                     /* address offset: 0x0054 */
++	uint32_t tsadc_grf_con2;                     /* address offset: 0x0058 */
++	uint32_t tsadc_grf_con3;                     /* address offset: 0x005c */
++	uint32_t tsadc_grf_con4;                     /* address offset: 0x0060 */
++	uint32_t tsadc_grf_con5;                     /* address offset: 0x0064 */
++	uint32_t tsadc_grf_con6;                     /* address offset: 0x0068 */
++	uint32_t reserved006c[37];                   /* address offset: 0x006c */
++	uint32_t biu_status0;                        /* address offset: 0x0100 */
++	uint32_t biu_status1;                        /* address offset: 0x0104 */
++	uint32_t biu_status2;                        /* address offset: 0x0108 */
++	uint32_t hpmcu_cache_status;                 /* address offset: 0x010c */
++	uint32_t tsadc_grf_status0;                  /* address offset: 0x0110 */
++	uint32_t tsadc_grf_status1;                  /* address offset: 0x0114 */
++	uint32_t sys_status;                         /* address offset: 0x0118 */
++	uint32_t reserved011c[441];                  /* address offset: 0x011c */
++	uint32_t chip_id;                            /* address offset: 0x0800 */
++	uint32_t chip_version;                       /* address offset: 0x0804 */
++};
++
++check_member(rv1126b_sys_grf_reg, chip_version, 0x0804);
++
++/* vcp_grf register structure define */
++struct rv1126b_vcp_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t vcp_grf_aisp_mem_con;               /* address offset: 0x0008 */
++};
++
++check_member(rv1126b_vcp_grf_reg, vcp_grf_aisp_mem_con, 0x0008);
++
++/* vdo_grf register structure define */
++struct rv1126b_vdo_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t mem_gate_grf_con;                   /* address offset: 0x0008 */
++	uint32_t dsi_grf_con;                        /* address offset: 0x000c */
++	uint32_t dsiphy_grf_con;                     /* address offset: 0x0010 */
++	uint32_t rkmmu_grf_con;                      /* address offset: 0x0014 */
++	uint32_t reserved0018[14];                   /* address offset: 0x0018 */
++	uint32_t vdo_grf_status0;                    /* address offset: 0x0050 */
++	uint32_t vdo_grf_status1;                    /* address offset: 0x0054 */
++};
++
++check_member(rv1126b_vdo_grf_reg, vdo_grf_status1, 0x0054);
++
++/* vepu_grf register structure define */
++struct rv1126b_vepu_grf_reg {
++	uint32_t mem_grf_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_grf_dpra;                       /* address offset: 0x0004 */
++	uint32_t vepu_grf_con0;                      /* address offset: 0x0008 */
++	uint32_t saradc0_grf_con0;                   /* address offset: 0x000c */
++	uint32_t saradc0_grf_con1;                   /* address offset: 0x0010 */
++	uint32_t saradc0_grf_con2;                   /* address offset: 0x0014 */
++	uint32_t reserved0018[3];                    /* address offset: 0x0018 */
++	uint32_t sdmmc1_det_cnt;                     /* address offset: 0x0024 */
++	uint32_t sdmmc1_sig_detect_con;              /* address offset: 0x0028 */
++	uint32_t sdmmc1_sig_detect_status;           /* address offset: 0x002c */
++	uint32_t sdmmc1_status_clr;                  /* address offset: 0x0030 */
++};
++
++check_member(rv1126b_vepu_grf_reg, sdmmc1_status_clr, 0x0030);
++
++/* vi_grf register structure define */
++struct rv1126b_vi_grf_reg {
++	uint32_t mem_con_spra;                       /* address offset: 0x0000 */
++	uint32_t mem_con_dpra;                       /* address offset: 0x0004 */
++	uint32_t vi_grf_status;                      /* address offset: 0x0008 */
++	uint32_t reserved000c;                       /* address offset: 0x000c */
++	uint32_t csiphy0_grf_con;                    /* address offset: 0x0010 */
++	uint32_t csiphy1_grf_con;                    /* address offset: 0x0014 */
++	uint32_t csiphy0_grf_status;                 /* address offset: 0x0018 */
++	uint32_t csiphy1_grf_status;                 /* address offset: 0x001c */
++	uint32_t misc_grf_con;                       /* address offset: 0x0020 */
++	uint32_t reserved0024[11];                   /* address offset: 0x0024 */
++	uint32_t gmac_grf_con0;                      /* address offset: 0x0050 */
++	uint32_t gmac_dma_ack;                       /* address offset: 0x0054 */
++	uint32_t reserved0058[2];                    /* address offset: 0x0058 */
++	uint32_t gmac_grf_status0;                   /* address offset: 0x0060 */
++	uint32_t gmac_grf_status1;                   /* address offset: 0x0064 */
++	uint32_t gmac_grf_status2;                   /* address offset: 0x0068 */
++	uint32_t reserved006c[5];                    /* address offset: 0x006c */
++	uint32_t saradc1_grf_con0;                   /* address offset: 0x0080 */
++	uint32_t saradc1_grf_con1;                   /* address offset: 0x0084 */
++	uint32_t saradc1_grf_con2;                   /* address offset: 0x0088 */
++	uint32_t reserved008c;                       /* address offset: 0x008c */
++	uint32_t saradc2_grf_con0;                   /* address offset: 0x0090 */
++	uint32_t saradc2_grf_con1;                   /* address offset: 0x0094 */
++	uint32_t saradc2_grf_con2;                   /* address offset: 0x0098 */
++	uint32_t reserved009c[6];                    /* address offset: 0x009c */
++	uint32_t rkmacphy_grf_con0;                  /* address offset: 0x00b4 */
++	uint32_t rkmacphy_grf_con1;                  /* address offset: 0x00b8 */
++	uint32_t rkmacphy_grf_con2;                  /* address offset: 0x00bc */
++	uint32_t rkmacphy_grf_status;                /* address offset: 0x00c0 */
++	uint32_t rkmacphy_calib_con;                 /* address offset: 0x00c4 */
++};
++
++check_member(rv1126b_vi_grf_reg, rkmacphy_calib_con, 0x00c4);
++
++#endif /*  _ASM_ARCH_GRF_RV1126B_H  */
+diff --git a/arch/arm/include/asm/arch-rockchip/ioc_rv1126b.h b/arch/arm/include/asm/arch-rockchip/ioc_rv1126b.h
+new file mode 100644
+index 00000000..b5219276
+--- /dev/null
++++ b/arch/arm/include/asm/arch-rockchip/ioc_rv1126b.h
+@@ -0,0 +1,457 @@
++/*
++ * (C) Copyright 2025 Rockchip Electronics Co., Ltd.
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++#ifndef _ASM_ARCH_IOC_RV1126B_H
++#define _ASM_ARCH_IOC_RV1126B_H
++
++#include <linux/bitops.h>
++
++/* pmuio0_ioc register structure define */
++struct rv1126b_pmuio0_ioc_reg {
++	uint32_t gpio0a_iomux_sel_0;                 /* address offset: 0x0000 */
++	uint32_t gpio0a_iomux_sel_1;                 /* address offset: 0x0004 */
++	uint32_t gpio0b_iomux_sel_0;                 /* address offset: 0x0008 */
++	uint32_t gpio0b_iomux_sel_1;                 /* address offset: 0x000c */
++	uint32_t reserved0010[60];                   /* address offset: 0x0010 */
++	uint32_t gpio0a_ds_0;                        /* address offset: 0x0100 */
++	uint32_t gpio0a_ds_1;                        /* address offset: 0x0104 */
++	uint32_t gpio0a_ds_2;                        /* address offset: 0x0108 */
++	uint32_t gpio0a_ds_3;                        /* address offset: 0x010c */
++	uint32_t gpio0b_ds_0;                        /* address offset: 0x0110 */
++	uint32_t gpio0b_ds_1;                        /* address offset: 0x0114 */
++	uint32_t gpio0b_ds_2;                        /* address offset: 0x0118 */
++	uint32_t reserved011c[121];                  /* address offset: 0x011c */
++	uint32_t gpio0a_pull;                        /* address offset: 0x0300 */
++	uint32_t gpio0b_pull;                        /* address offset: 0x0304 */
++	uint32_t reserved0308[62];                   /* address offset: 0x0308 */
++	uint32_t gpio0a_ie;                          /* address offset: 0x0400 */
++	uint32_t gpio0b_ie;                          /* address offset: 0x0404 */
++	uint32_t reserved0408[62];                   /* address offset: 0x0408 */
++	uint32_t gpio0a_smt;                         /* address offset: 0x0500 */
++	uint32_t gpio0b_smt;                         /* address offset: 0x0504 */
++	uint32_t reserved0508[62];                   /* address offset: 0x0508 */
++	uint32_t gpio0a_sus;                         /* address offset: 0x0600 */
++	uint32_t gpio0b_sus;                         /* address offset: 0x0604 */
++	uint32_t reserved0608[62];                   /* address offset: 0x0608 */
++	uint32_t gpio0a_sl;                          /* address offset: 0x0700 */
++	uint32_t gpio0b_sl;                          /* address offset: 0x0704 */
++	uint32_t reserved0708[62];                   /* address offset: 0x0708 */
++	uint32_t gpio0a_od;                          /* address offset: 0x0800 */
++	uint32_t gpio0b_od;                          /* address offset: 0x0804 */
++	uint32_t reserved0808[62];                   /* address offset: 0x0808 */
++	uint32_t io_vsel;                            /* address offset: 0x0900 */
++	uint32_t grf_jtag_con0;                      /* address offset: 0x0904 */
++	uint32_t grf_jtag_con1;                      /* address offset: 0x0908 */
++	uint32_t reserved090c;                       /* address offset: 0x090c */
++	uint32_t xin_con;                            /* address offset: 0x0910 */
++	uint32_t reserved0914[187];                  /* address offset: 0x0914 */
++	uint32_t grf_gpio0_filter_con0;              /* address offset: 0x0c00 */
++	uint32_t grf_gpio0_filter_con1;              /* address offset: 0x0c04 */
++	uint32_t grf_gpio0_filter_con2;              /* address offset: 0x0c08 */
++	uint32_t grf_gpio0_filter_con3;              /* address offset: 0x0c0c */
++	uint32_t grf_gpio0_filter_con4;              /* address offset: 0x0c10 */
++	uint32_t grf_gpio0_filter_con5;              /* address offset: 0x0c14 */
++};
++
++check_member(rv1126b_pmuio0_ioc_reg, grf_gpio0_filter_con5, 0x0c14);
++
++/* pmuio1_ioc register structure define */
++struct rv1126b_pmuio1_ioc_reg {
++	uint32_t reserved0000[4];                    /* address offset: 0x0000 */
++	uint32_t gpio0c_iomux_sel_0;                 /* address offset: 0x0010 */
++	uint32_t gpio0c_iomux_sel_1;                 /* address offset: 0x0014 */
++	uint32_t gpio0d_iomux_sel_0;                 /* address offset: 0x0018 */
++	uint32_t reserved001c[65];                   /* address offset: 0x001c */
++	uint32_t gpio0c_ds_0;                        /* address offset: 0x0120 */
++	uint32_t gpio0c_ds_1;                        /* address offset: 0x0124 */
++	uint32_t gpio0c_ds_2;                        /* address offset: 0x0128 */
++	uint32_t gpio0c_ds_3;                        /* address offset: 0x012c */
++	uint32_t gpio0d_ds_0;                        /* address offset: 0x0130 */
++	uint32_t reserved0134[117];                  /* address offset: 0x0134 */
++	uint32_t gpio0c_pull;                        /* address offset: 0x0308 */
++	uint32_t gpio0d_pull;                        /* address offset: 0x030c */
++	uint32_t reserved0310[62];                   /* address offset: 0x0310 */
++	uint32_t gpio0c_ie;                          /* address offset: 0x0408 */
++	uint32_t gpio0d_ie;                          /* address offset: 0x040c */
++	uint32_t reserved0410[62];                   /* address offset: 0x0410 */
++	uint32_t gpio0c_smt;                         /* address offset: 0x0508 */
++	uint32_t gpio0d_smt;                         /* address offset: 0x050c */
++	uint32_t reserved0510[62];                   /* address offset: 0x0510 */
++	uint32_t gpio0c_sus;                         /* address offset: 0x0608 */
++	uint32_t gpio0d_sus;                         /* address offset: 0x060c */
++	uint32_t reserved0610[62];                   /* address offset: 0x0610 */
++	uint32_t gpio0c_sl;                          /* address offset: 0x0708 */
++	uint32_t gpio0d_sl;                          /* address offset: 0x070c */
++	uint32_t reserved0710[62];                   /* address offset: 0x0710 */
++	uint32_t gpio0c_od;                          /* address offset: 0x0808 */
++	uint32_t gpio0d_od;                          /* address offset: 0x080c */
++	uint32_t reserved0810[60];                   /* address offset: 0x0810 */
++	uint32_t io_vsel;                            /* address offset: 0x0900 */
++};
++
++check_member(rv1126b_pmuio1_ioc_reg, io_vsel, 0x0900);
++
++/* vccio1_ioc register structure define */
++struct rv1126b_vccio1_ioc_reg {
++	uint32_t reserved0000[8];                    /* address offset: 0x0000 */
++	uint32_t gpio1a_iomux_sel_0;                 /* address offset: 0x0020 */
++	uint32_t gpio1a_iomux_sel_1;                 /* address offset: 0x0024 */
++	uint32_t gpio1b_iomux_sel_0;                 /* address offset: 0x0028 */
++	uint32_t gpio1b_iomux_sel_1;                 /* address offset: 0x002c */
++	uint32_t reserved0030[68];                   /* address offset: 0x0030 */
++	uint32_t gpio1a_ds_0;                        /* address offset: 0x0140 */
++	uint32_t gpio1a_ds_1;                        /* address offset: 0x0144 */
++	uint32_t gpio1a_ds_2;                        /* address offset: 0x0148 */
++	uint32_t gpio1a_ds_3;                        /* address offset: 0x014c */
++	uint32_t gpio1b_ds_0;                        /* address offset: 0x0150 */
++	uint32_t gpio1b_ds_1;                        /* address offset: 0x0154 */
++	uint32_t gpio1b_ds_2;                        /* address offset: 0x0158 */
++	uint32_t gpio1b_ds_3;                        /* address offset: 0x015c */
++	uint32_t reserved0160[108];                  /* address offset: 0x0160 */
++	uint32_t gpio1a_pull;                        /* address offset: 0x0310 */
++	uint32_t gpio1b_pull;                        /* address offset: 0x0314 */
++	uint32_t reserved0318[62];                   /* address offset: 0x0318 */
++	uint32_t gpio1a_ie;                          /* address offset: 0x0410 */
++	uint32_t gpio1b_ie;                          /* address offset: 0x0414 */
++	uint32_t reserved0418[62];                   /* address offset: 0x0418 */
++	uint32_t gpio1a_smt;                         /* address offset: 0x0510 */
++	uint32_t gpio1b_smt;                         /* address offset: 0x0514 */
++	uint32_t reserved0518[62];                   /* address offset: 0x0518 */
++	uint32_t gpio1a_sus;                         /* address offset: 0x0610 */
++	uint32_t gpio1b_sus;                         /* address offset: 0x0614 */
++	uint32_t reserved0618[62];                   /* address offset: 0x0618 */
++	uint32_t gpio1a_sl;                          /* address offset: 0x0710 */
++	uint32_t gpio1b_sl;                          /* address offset: 0x0714 */
++	uint32_t reserved0718[62];                   /* address offset: 0x0718 */
++	uint32_t gpio1a_od;                          /* address offset: 0x0810 */
++	uint32_t gpio1b_od;                          /* address offset: 0x0814 */
++	uint32_t reserved0818[60];                   /* address offset: 0x0818 */
++	uint32_t io1_vsel;                           /* address offset: 0x0908 */
++	uint32_t reserved090c[61];                   /* address offset: 0x090c */
++	uint32_t ioc_misc_con0;                      /* address offset: 0x0a00 */
++	uint32_t ioc_misc_con1;                      /* address offset: 0x0a04 */
++	uint32_t ioc_misc_con2;                      /* address offset: 0x0a08 */
++	uint32_t ioc_misc_con3;                      /* address offset: 0x0a0c */
++	uint32_t ioc_misc_con4;                      /* address offset: 0x0a10 */
++	uint32_t ioc_misc_con5;                      /* address offset: 0x0a14 */
++	uint32_t ioc_misc_con6;                      /* address offset: 0x0a18 */
++};
++
++check_member(rv1126b_vccio1_ioc_reg, ioc_misc_con6, 0x0a18);
++
++/* vccio2_ioc register structure define */
++struct rv1126b_vccio2_ioc_reg {
++	uint32_t reserved0000[16];                   /* address offset: 0x0000 */
++	uint32_t gpio2a_iomux_sel_0;                 /* address offset: 0x0040 */
++	uint32_t gpio2a_iomux_sel_1;                 /* address offset: 0x0044 */
++	uint32_t reserved0048[78];                   /* address offset: 0x0048 */
++	uint32_t gpio2a_ds_0;                        /* address offset: 0x0180 */
++	uint32_t gpio2a_ds_1;                        /* address offset: 0x0184 */
++	uint32_t gpio2a_ds_2;                        /* address offset: 0x0188 */
++	uint32_t reserved018c[101];                  /* address offset: 0x018c */
++	uint32_t gpio2a_pull;                        /* address offset: 0x0320 */
++	uint32_t reserved0324[63];                   /* address offset: 0x0324 */
++	uint32_t gpio2a_ie;                          /* address offset: 0x0420 */
++	uint32_t reserved0424[63];                   /* address offset: 0x0424 */
++	uint32_t gpio2a_smt;                         /* address offset: 0x0520 */
++	uint32_t reserved0524[63];                   /* address offset: 0x0524 */
++	uint32_t gpio2a_sus;                         /* address offset: 0x0620 */
++	uint32_t reserved0624[63];                   /* address offset: 0x0624 */
++	uint32_t gpio2a_sl;                          /* address offset: 0x0720 */
++	uint32_t reserved0724[63];                   /* address offset: 0x0724 */
++	uint32_t gpio2a_od;                          /* address offset: 0x0820 */
++	uint32_t reserved0824[58];                   /* address offset: 0x0824 */
++	uint32_t io_vsel;                            /* address offset: 0x090c */
++	uint32_t reserved0910[159];                  /* address offset: 0x0910 */
++	uint32_t grf_sddet_dly_con;                  /* address offset: 0x0b8c */
++	uint32_t grf_jtag_con;                       /* address offset: 0x0b90 */
++	uint32_t reserved0b94[27];                   /* address offset: 0x0b94 */
++	uint32_t grf_gpio2_filter_con0;              /* address offset: 0x0c00 */
++	uint32_t grf_gpio2_filter_con1;              /* address offset: 0x0c04 */
++	uint32_t grf_gpio2_filter_con2;              /* address offset: 0x0c08 */
++	uint32_t grf_gpio2_filter_con3;              /* address offset: 0x0c0c */
++	uint32_t grf_gpio2_filter_con4;              /* address offset: 0x0c10 */
++	uint32_t grf_gpio2_filter_con5;              /* address offset: 0x0c14 */
++};
++
++check_member(rv1126b_vccio2_ioc_reg, grf_gpio2_filter_con5, 0x0c14);
++
++/* vccio3_ioc register structure define */
++struct rv1126b_vccio3_ioc_reg {
++	uint32_t reserved0000[24];                   /* address offset: 0x0000 */
++	uint32_t gpio3a_iomux_sel_0;                 /* address offset: 0x0060 */
++	uint32_t gpio3a_iomux_sel_1;                 /* address offset: 0x0064 */
++	uint32_t gpio3b_iomux_sel_0;                 /* address offset: 0x0068 */
++	uint32_t gpio3b_iomux_sel_1;                 /* address offset: 0x006c */
++	uint32_t reserved0070[84];                   /* address offset: 0x0070 */
++	uint32_t gpio3a_ds_0;                        /* address offset: 0x01c0 */
++	uint32_t gpio3a_ds_1;                        /* address offset: 0x01c4 */
++	uint32_t gpio3a_ds_2;                        /* address offset: 0x01c8 */
++	uint32_t gpio3a_ds_3;                        /* address offset: 0x01cc */
++	uint32_t gpio3b_ds_0;                        /* address offset: 0x01d0 */
++	uint32_t gpio3b_ds_1;                        /* address offset: 0x01d4 */
++	uint32_t gpio3b_ds_2;                        /* address offset: 0x01d8 */
++	uint32_t gpio3b_ds_3;                        /* address offset: 0x01dc */
++	uint32_t reserved01e0[84];                   /* address offset: 0x01e0 */
++	uint32_t gpio3a_pull;                        /* address offset: 0x0330 */
++	uint32_t gpio3b_pull;                        /* address offset: 0x0334 */
++	uint32_t reserved0338[62];                   /* address offset: 0x0338 */
++	uint32_t gpio3a_ie;                          /* address offset: 0x0430 */
++	uint32_t gpio3b_ie;                          /* address offset: 0x0434 */
++	uint32_t reserved0438[62];                   /* address offset: 0x0438 */
++	uint32_t gpio3a_smt;                         /* address offset: 0x0530 */
++	uint32_t gpio3b_smt;                         /* address offset: 0x0534 */
++	uint32_t reserved0538[62];                   /* address offset: 0x0538 */
++	uint32_t gpio3a_sus;                         /* address offset: 0x0630 */
++	uint32_t gpio3b_sus;                         /* address offset: 0x0634 */
++	uint32_t reserved0638[62];                   /* address offset: 0x0638 */
++	uint32_t gpio3a_sl;                          /* address offset: 0x0730 */
++	uint32_t gpio3b_sl;                          /* address offset: 0x0734 */
++	uint32_t reserved0738[62];                   /* address offset: 0x0738 */
++	uint32_t gpio3a_od;                          /* address offset: 0x0830 */
++	uint32_t gpio3b_od;                          /* address offset: 0x0834 */
++	uint32_t reserved0838[54];                   /* address offset: 0x0838 */
++	uint32_t io3_vsel;                           /* address offset: 0x0910 */
++	uint32_t reserved0914[59];                   /* address offset: 0x0914 */
++	uint32_t ioc_misc_con0;                      /* address offset: 0x0a00 */
++	uint32_t ioc_misc_con1;                      /* address offset: 0x0a04 */
++	uint32_t ioc_misc_con2;                      /* address offset: 0x0a08 */
++	uint32_t ioc_misc_con3;                      /* address offset: 0x0a0c */
++	uint32_t ioc_misc_con4;                      /* address offset: 0x0a10 */
++	uint32_t ioc_misc_con5;                      /* address offset: 0x0a14 */
++	uint32_t ioc_misc_con6;                      /* address offset: 0x0a18 */
++};
++
++check_member(rv1126b_vccio3_ioc_reg, ioc_misc_con6, 0x0a18);
++
++/* vccio4_ioc register structure define */
++struct rv1126b_vccio4_ioc_reg {
++	uint32_t reserved0000[32];                   /* address offset: 0x0000 */
++	uint32_t gpio4a_iomux_sel_0;                 /* address offset: 0x0080 */
++	uint32_t gpio4a_iomux_sel_1;                 /* address offset: 0x0084 */
++	uint32_t gpio4b_iomux_sel_0;                 /* address offset: 0x0088 */
++	uint32_t reserved008c[93];                   /* address offset: 0x008c */
++	uint32_t gpio4a_ds_0;                        /* address offset: 0x0200 */
++	uint32_t gpio4a_ds_1;                        /* address offset: 0x0204 */
++	uint32_t gpio4a_ds_2;                        /* address offset: 0x0208 */
++	uint32_t gpio4a_ds_3;                        /* address offset: 0x020c */
++	uint32_t gpio4b_ds_0;                        /* address offset: 0x0210 */
++	uint32_t reserved0214[75];                   /* address offset: 0x0214 */
++	uint32_t gpio4a_pull;                        /* address offset: 0x0340 */
++	uint32_t gpio4b_pull;                        /* address offset: 0x0344 */
++	uint32_t reserved0348[62];                   /* address offset: 0x0348 */
++	uint32_t gpio4a_ie;                          /* address offset: 0x0440 */
++	uint32_t gpio4b_ie;                          /* address offset: 0x0444 */
++	uint32_t reserved0448[62];                   /* address offset: 0x0448 */
++	uint32_t gpio4a_smt;                         /* address offset: 0x0540 */
++	uint32_t gpio4b_smt;                         /* address offset: 0x0544 */
++	uint32_t reserved0548[62];                   /* address offset: 0x0548 */
++	uint32_t gpio4a_sus;                         /* address offset: 0x0640 */
++	uint32_t gpio4b_sus;                         /* address offset: 0x0644 */
++	uint32_t reserved0648[62];                   /* address offset: 0x0648 */
++	uint32_t gpio4a_sl;                          /* address offset: 0x0740 */
++	uint32_t gpio4b_sl;                          /* address offset: 0x0744 */
++	uint32_t reserved0748[62];                   /* address offset: 0x0748 */
++	uint32_t gpio4a_od;                          /* address offset: 0x0840 */
++	uint32_t gpio4b_od;                          /* address offset: 0x0844 */
++	uint32_t reserved0848[51];                   /* address offset: 0x0848 */
++	uint32_t io_vsel;                            /* address offset: 0x0914 */
++	uint32_t reserved0918[194];                  /* address offset: 0x0918 */
++	uint32_t grf_gpio4_filter_con0;              /* address offset: 0x0c20 */
++	uint32_t grf_gpio4_filter_con1;              /* address offset: 0x0c24 */
++	uint32_t grf_gpio4_filter_con2;              /* address offset: 0x0c28 */
++	uint32_t grf_gpio4_filter_con3;              /* address offset: 0x0c2c */
++	uint32_t grf_gpio4_filter_con4;              /* address offset: 0x0c30 */
++	uint32_t grf_gpio4_filter_con5;              /* address offset: 0x0c34 */
++};
++
++check_member(rv1126b_vccio4_ioc_reg, grf_gpio4_filter_con5, 0x0c34);
++
++/* vccio5_ioc register structure define */
++struct rv1126b_vccio5_ioc_reg {
++	uint32_t reserved0000[40];                   /* address offset: 0x0000 */
++	uint32_t gpio5a_iomux_sel_0;                 /* address offset: 0x00a0 */
++	uint32_t gpio5a_iomux_sel_1;                 /* address offset: 0x00a4 */
++	uint32_t gpio5b_iomux_sel_0;                 /* address offset: 0x00a8 */
++	uint32_t gpio5b_iomux_sel_1;                 /* address offset: 0x00ac */
++	uint32_t gpio5c_iomux_sel_0;                 /* address offset: 0x00b0 */
++	uint32_t gpio5c_iomux_sel_1;                 /* address offset: 0x00b4 */
++	uint32_t gpio5d_iomux_sel_0;                 /* address offset: 0x00b8 */
++	uint32_t gpio5d_iomux_sel_1;                 /* address offset: 0x00bc */
++	uint32_t reserved00c0[96];                   /* address offset: 0x00c0 */
++	uint32_t gpio5a_ds_0;                        /* address offset: 0x0240 */
++	uint32_t gpio5a_ds_1;                        /* address offset: 0x0244 */
++	uint32_t gpio5a_ds_2;                        /* address offset: 0x0248 */
++	uint32_t gpio5a_ds_3;                        /* address offset: 0x024c */
++	uint32_t gpio5b_ds_0;                        /* address offset: 0x0250 */
++	uint32_t gpio5b_ds_1;                        /* address offset: 0x0254 */
++	uint32_t gpio5b_ds_2;                        /* address offset: 0x0258 */
++	uint32_t gpio5b_ds_3;                        /* address offset: 0x025c */
++	uint32_t gpio5c_ds_0;                        /* address offset: 0x0260 */
++	uint32_t gpio5c_ds_1;                        /* address offset: 0x0264 */
++	uint32_t gpio5c_ds_2;                        /* address offset: 0x0268 */
++	uint32_t gpio5c_ds_3;                        /* address offset: 0x026c */
++	uint32_t gpio5d_ds_0;                        /* address offset: 0x0270 */
++	uint32_t gpio5d_ds_1;                        /* address offset: 0x0274 */
++	uint32_t gpio5d_ds_2;                        /* address offset: 0x0278 */
++	uint32_t gpio5d_ds_3;                        /* address offset: 0x027c */
++	uint32_t reserved0280[52];                   /* address offset: 0x0280 */
++	uint32_t gpio5a_pull;                        /* address offset: 0x0350 */
++	uint32_t gpio5b_pull;                        /* address offset: 0x0354 */
++	uint32_t gpio5c_pull;                        /* address offset: 0x0358 */
++	uint32_t gpio5d_pull;                        /* address offset: 0x035c */
++	uint32_t reserved0360[60];                   /* address offset: 0x0360 */
++	uint32_t gpio5a_ie;                          /* address offset: 0x0450 */
++	uint32_t gpio5b_ie;                          /* address offset: 0x0454 */
++	uint32_t gpio5c_ie;                          /* address offset: 0x0458 */
++	uint32_t gpio5d_ie;                          /* address offset: 0x045c */
++	uint32_t reserved0460[60];                   /* address offset: 0x0460 */
++	uint32_t gpio5a_smt;                         /* address offset: 0x0550 */
++	uint32_t gpio5b_smt;                         /* address offset: 0x0554 */
++	uint32_t gpio5c_smt;                         /* address offset: 0x0558 */
++	uint32_t gpio5d_smt;                         /* address offset: 0x055c */
++	uint32_t reserved0560[60];                   /* address offset: 0x0560 */
++	uint32_t gpio5a_sus;                         /* address offset: 0x0650 */
++	uint32_t gpio5b_sus;                         /* address offset: 0x0654 */
++	uint32_t gpio5c_sus;                         /* address offset: 0x0658 */
++	uint32_t gpio5d_sus;                         /* address offset: 0x065c */
++	uint32_t reserved0660[60];                   /* address offset: 0x0660 */
++	uint32_t gpio5a_sl;                          /* address offset: 0x0750 */
++	uint32_t gpio5b_sl;                          /* address offset: 0x0754 */
++	uint32_t gpio5c_sl;                          /* address offset: 0x0758 */
++	uint32_t gpio5d_sl;                          /* address offset: 0x075c */
++	uint32_t reserved0760[60];                   /* address offset: 0x0760 */
++	uint32_t gpio5a_od;                          /* address offset: 0x0850 */
++	uint32_t gpio5b_od;                          /* address offset: 0x0854 */
++	uint32_t gpio5c_od;                          /* address offset: 0x0858 */
++	uint32_t gpio5d_od;                          /* address offset: 0x085c */
++	uint32_t reserved0860[46];                   /* address offset: 0x0860 */
++	uint32_t io_vsel;                            /* address offset: 0x0918 */
++	uint32_t reserved091c[159];                  /* address offset: 0x091c */
++	uint32_t grf_vicif_m1_con;                   /* address offset: 0x0b98 */
++	uint32_t grf_vop_lcdc_con;                   /* address offset: 0x0b9c */
++	uint32_t reserved0ba0[2];                    /* address offset: 0x0ba0 */
++	uint32_t grf_gmacio_m1_con0;                 /* address offset: 0x0ba8 */
++	uint32_t grf_gmacio_m1_con1;                 /* address offset: 0x0bac */
++	uint32_t grf_uart0_dly_con;                  /* address offset: 0x0bb0 */
++	uint32_t grf_uart_jtag_con;                  /* address offset: 0x0bb4 */
++	uint32_t reserved0bb8[34];                   /* address offset: 0x0bb8 */
++	uint32_t grf_gpio5_filter_con0;              /* address offset: 0x0c40 */
++	uint32_t grf_gpio5_filter_con1;              /* address offset: 0x0c44 */
++	uint32_t grf_gpio5_filter_con2;              /* address offset: 0x0c48 */
++	uint32_t grf_gpio5_filter_con3;              /* address offset: 0x0c4c */
++	uint32_t grf_gpio5_filter_con4;              /* address offset: 0x0c50 */
++	uint32_t grf_gpio5_filter_con5;              /* address offset: 0x0c54 */
++};
++
++check_member(rv1126b_vccio5_ioc_reg, grf_gpio5_filter_con5, 0x0c54);
++
++/* vccio6_ioc register structure define */
++struct rv1126b_vccio6_ioc_reg {
++	uint32_t reserved0000[48];                   /* address offset: 0x0000 */
++	uint32_t gpio6a_iomux_sel_0;                 /* address offset: 0x00c0 */
++	uint32_t gpio6a_iomux_sel_1;                 /* address offset: 0x00c4 */
++	uint32_t gpio6b_iomux_sel_0;                 /* address offset: 0x00c8 */
++	uint32_t gpio6b_iomux_sel_1;                 /* address offset: 0x00cc */
++	uint32_t gpio6c_iomux_sel_0;                 /* address offset: 0x00d0 */
++	uint32_t reserved00d4[107];                  /* address offset: 0x00d4 */
++	uint32_t gpio6a_ds_0;                        /* address offset: 0x0280 */
++	uint32_t gpio6a_ds_1;                        /* address offset: 0x0284 */
++	uint32_t gpio6a_ds_2;                        /* address offset: 0x0288 */
++	uint32_t gpio6a_ds_3;                        /* address offset: 0x028c */
++	uint32_t gpio6b_ds_0;                        /* address offset: 0x0290 */
++	uint32_t gpio6b_ds_1;                        /* address offset: 0x0294 */
++	uint32_t gpio6b_ds_2;                        /* address offset: 0x0298 */
++	uint32_t gpio6b_ds_3;                        /* address offset: 0x029c */
++	uint32_t gpio6c_ds_0;                        /* address offset: 0x02a0 */
++	uint32_t gpio6c_ds_1;                        /* address offset: 0x02a4 */
++	uint32_t reserved02a8[46];                   /* address offset: 0x02a8 */
++	uint32_t gpio6a_pull;                        /* address offset: 0x0360 */
++	uint32_t gpio6b_pull;                        /* address offset: 0x0364 */
++	uint32_t gpio6c_pull;                        /* address offset: 0x0368 */
++	uint32_t reserved036c[61];                   /* address offset: 0x036c */
++	uint32_t gpio6a_ie;                          /* address offset: 0x0460 */
++	uint32_t gpio6b_ie;                          /* address offset: 0x0464 */
++	uint32_t gpio6c_ie;                          /* address offset: 0x0468 */
++	uint32_t reserved046c[61];                   /* address offset: 0x046c */
++	uint32_t gpio6a_smt;                         /* address offset: 0x0560 */
++	uint32_t gpio6b_smt;                         /* address offset: 0x0564 */
++	uint32_t gpio6c_smt;                         /* address offset: 0x0568 */
++	uint32_t reserved056c[61];                   /* address offset: 0x056c */
++	uint32_t gpio6a_sus;                         /* address offset: 0x0660 */
++	uint32_t gpio6b_sus;                         /* address offset: 0x0664 */
++	uint32_t gpio6c_sus;                         /* address offset: 0x0668 */
++	uint32_t reserved066c[61];                   /* address offset: 0x066c */
++	uint32_t gpio6a_sl;                          /* address offset: 0x0760 */
++	uint32_t gpio6b_sl;                          /* address offset: 0x0764 */
++	uint32_t gpio6c_sl;                          /* address offset: 0x0768 */
++	uint32_t reserved076c[61];                   /* address offset: 0x076c */
++	uint32_t gpio6a_od;                          /* address offset: 0x0860 */
++	uint32_t gpio6b_od;                          /* address offset: 0x0864 */
++	uint32_t gpio6c_od;                          /* address offset: 0x0868 */
++	uint32_t reserved086c[44];                   /* address offset: 0x086c */
++	uint32_t io_vsel;                            /* address offset: 0x091c */
++	uint32_t reserved0920[157];                  /* address offset: 0x0920 */
++	uint32_t grf_vicif_m0_con;                   /* address offset: 0x0b94 */
++	uint32_t reserved0b98[2];                    /* address offset: 0x0b98 */
++	uint32_t grf_gmacio_m0_con0;                 /* address offset: 0x0ba0 */
++	uint32_t grf_gmacio_m0_con1;                 /* address offset: 0x0ba4 */
++	uint32_t reserved0ba8[46];                   /* address offset: 0x0ba8 */
++	uint32_t grf_gpio6_filter_con0;              /* address offset: 0x0c60 */
++	uint32_t grf_gpio6_filter_con1;              /* address offset: 0x0c64 */
++	uint32_t grf_gpio6_filter_con2;              /* address offset: 0x0c68 */
++	uint32_t grf_gpio6_filter_con3;              /* address offset: 0x0c6c */
++	uint32_t grf_gpio6_filter_con4;              /* address offset: 0x0c70 */
++	uint32_t grf_gpio6_filter_con5;              /* address offset: 0x0c74 */
++};
++
++check_member(rv1126b_vccio6_ioc_reg, grf_gpio6_filter_con5, 0x0c74);
++
++/* vccio7_ioc register structure define */
++struct rv1126b_vccio7_ioc_reg {
++	uint32_t reserved0000[56];                   /* address offset: 0x0000 */
++	uint32_t gpio7a_iomux_sel_0;                 /* address offset: 0x00e0 */
++	uint32_t gpio7a_iomux_sel_1;                 /* address offset: 0x00e4 */
++	uint32_t gpio7b_iomux_sel_0;                 /* address offset: 0x00e8 */
++	uint32_t reserved00ec[117];                  /* address offset: 0x00ec */
++	uint32_t gpio7a_ds_0;                        /* address offset: 0x02c0 */
++	uint32_t gpio7a_ds_1;                        /* address offset: 0x02c4 */
++	uint32_t gpio7a_ds_2;                        /* address offset: 0x02c8 */
++	uint32_t gpio7a_ds_3;                        /* address offset: 0x02cc */
++	uint32_t gpio7b_ds_0;                        /* address offset: 0x02d0 */
++	uint32_t reserved02d4[39];                   /* address offset: 0x02d4 */
++	uint32_t gpio7a_pull;                        /* address offset: 0x0370 */
++	uint32_t gpio7b_pull;                        /* address offset: 0x0374 */
++	uint32_t reserved0378[62];                   /* address offset: 0x0378 */
++	uint32_t gpio7a_ie;                          /* address offset: 0x0470 */
++	uint32_t gpio7b_ie;                          /* address offset: 0x0474 */
++	uint32_t reserved0478[62];                   /* address offset: 0x0478 */
++	uint32_t gpio7a_smt;                         /* address offset: 0x0570 */
++	uint32_t gpio7b_smt;                         /* address offset: 0x0574 */
++	uint32_t reserved0578[62];                   /* address offset: 0x0578 */
++	uint32_t gpio7a_sus;                         /* address offset: 0x0670 */
++	uint32_t gpio7b_sus;                         /* address offset: 0x0674 */
++	uint32_t reserved0678[62];                   /* address offset: 0x0678 */
++	uint32_t gpio7a_sl;                          /* address offset: 0x0770 */
++	uint32_t gpio7b_sl;                          /* address offset: 0x0774 */
++	uint32_t reserved0778[62];                   /* address offset: 0x0778 */
++	uint32_t gpio7a_od;                          /* address offset: 0x0870 */
++	uint32_t gpio7b_od;                          /* address offset: 0x0874 */
++	uint32_t reserved0878[42];                   /* address offset: 0x0878 */
++	uint32_t io_vsel;                            /* address offset: 0x0920 */
++	uint32_t reserved0924[215];                  /* address offset: 0x0924 */
++	uint32_t grf_gpio7_filter_con0;              /* address offset: 0x0c80 */
++	uint32_t grf_gpio7_filter_con1;              /* address offset: 0x0c84 */
++	uint32_t grf_gpio7_filter_con2;              /* address offset: 0x0c88 */
++	uint32_t grf_gpio7_filter_con3;              /* address offset: 0x0c8c */
++	uint32_t grf_gpio7_filter_con4;              /* address offset: 0x0c90 */
++	uint32_t grf_gpio7_filter_con5;              /* address offset: 0x0c94 */
++	uint32_t reserved0c98[2];                    /* address offset: 0x0c98 */
++	uint32_t grf_dsm_ioc_con;                    /* address offset: 0x0ca0 */
++};
++
++check_member(rv1126b_vccio7_ioc_reg, grf_dsm_ioc_con, 0x0ca0);
++
++#endif /*  _ASM_ARCH_GRF_RV1126B_H  */
+diff --git a/arch/arm/mach-rockchip/Kconfig b/arch/arm/mach-rockchip/Kconfig
+index 1a2e7847..657f9a91 100644
+--- a/arch/arm/mach-rockchip/Kconfig
++++ b/arch/arm/mach-rockchip/Kconfig
+@@ -446,6 +446,24 @@ config ROCKCHIP_RK3568
+ 	  and video codec support. Peripherals include Gigabit Ethernet,
+ 	  USB2 host and OTG, SDIO, I2S, UARTs, SPI, I2C and PWMs.
+ 
++config ROCKCHIP_RV1126B
++	bool "Support Rockchip RV1126B"
++	select ARM64
++	select GICV2
++	select ARM_SMCCC
++	select DEBUG_UART_BOARD_INIT
++	select ROCKCHIP_BROM_HELPER
++	select SUPPORT_TPL
++	select SUPPORT_SPL
++	select TPL_TINY_FRAMEWORK if TPL
++	imply TPL
++	imply SPL
++	imply TPL_SERIAL_SUPPORT
++	help
++	  The Rockchip RV1126B is a ARM-based SoC with a quad-core Cortex-A53.
++	  Ported from Rockchip u-boot-next-dev 1c535d65 (arch/arm/mach-rockchip/Kconfig, the
++	  ROCKCHIP_RV1126B block at lines 722-744). AArch64 by default, as the seed.
++
+ config ROCKCHIP_RK3576
+ 	bool "Support Rockchip RK3576"
+ 	select ARM64
+@@ -794,6 +812,8 @@ source "arch/arm/mach-rockchip/rk3506/Kconfig"
+ source "arch/arm/mach-rockchip/rk3528/Kconfig"
+ source "arch/arm/mach-rockchip/rk3568/Kconfig"
+ source "arch/arm/mach-rockchip/rk3576/Kconfig"
++
++source "arch/arm/mach-rockchip/rv1126b/Kconfig"
+ source "arch/arm/mach-rockchip/rk3588/Kconfig"
+ source "arch/arm/mach-rockchip/rv1108/Kconfig"
+ source "arch/arm/mach-rockchip/rv1126/Kconfig"
+@@ -862,3 +882,12 @@ config SPL_STACK_R_MALLOC_SIMPLE_LEN
+ 
+ endif
+ endif
++
++config TPL_LDSCRIPT
++	default "arch/arm/mach-rockchip/u-boot-tpl-v8.lds" if ROCKCHIP_RV1126B
++
++config TPL_TEXT_BASE
++	default 0x3ffb1000 if ROCKCHIP_RV1126B
++
++config TPL_MAX_SIZE
++	default 61440 if ROCKCHIP_RV1126B
+diff --git a/arch/arm/mach-rockchip/Makefile b/arch/arm/mach-rockchip/Makefile
+index d3bc0689..fc551877 100644
+--- a/arch/arm/mach-rockchip/Makefile
++++ b/arch/arm/mach-rockchip/Makefile
+@@ -46,6 +46,7 @@ obj-$(CONFIG_ROCKCHIP_RK3506) += rk3506/
+ obj-$(CONFIG_ROCKCHIP_RK3528) += rk3528/
+ obj-$(CONFIG_ROCKCHIP_RK3568) += rk3568/
+ obj-$(CONFIG_ROCKCHIP_RK3576) += rk3576/
++obj-$(CONFIG_ROCKCHIP_RV1126B) += rv1126b/
+ obj-$(CONFIG_ROCKCHIP_RK3588) += rk3588/
+ obj-$(CONFIG_ROCKCHIP_RV1108) += rv1108/
+ obj-$(CONFIG_ROCKCHIP_RV1126) += rv1126/
+diff --git a/arch/arm/mach-rockchip/rv1126b/Kconfig b/arch/arm/mach-rockchip/rv1126b/Kconfig
+new file mode 100644
+index 00000000..d424777a
+--- /dev/null
++++ b/arch/arm/mach-rockchip/rv1126b/Kconfig
+@@ -0,0 +1,59 @@
++# SPDX-License-Identifier: GPL-2.0+
++# Derived from Rockchip u-boot-next-dev 1c535d65, arch/arm/mach-rockchip/rv1126b/Kconfig (17 lines).
++if ROCKCHIP_RV1126B
++
++config SYS_SOC
++	default "rockchip"
++
++# Seed 1c535d65 arch/arm/mach-rockchip/Kconfig:838 (ROCKCHIP_STIMER_BASE for RV1126B)
++config ROCKCHIP_STIMER_BASE
++	default 0x20820000
++
++# Seed 1c535d65 arch/arm/mach-rockchip/Kconfig:808 (boot mode flag register for RV1126B)
++config ROCKCHIP_BOOT_MODE_REG
++	default 0x20130220
++
++config SYS_MALLOC_F_LEN
++	default 0x400
++
++config SYS_CONFIG_NAME
++	default "rv1126b_common"
++
++# Memory layout: seed 1c535d65 include/configs/rv1126b_common.h (line numbers in the comments).
++config SPL_TEXT_BASE
++	hex
++	default 0x4fe00000	# seed common line 15 (also the loader ini LOAD_ADDR, RKBOOT/RV1126BMINIALL.ini line 20)
++
++config SPL_BSS_START_ADDR
++	hex
++	default 0x4fee0000	# seed common line 16
++
++config SPL_BSS_MAX_SIZE
++	hex
++	default 0x20000		# seed common line 17
++
++config TEXT_BASE
++	hex
++	default 0x40200000	# seed common line 31
++
++config SYS_LOAD_ADDR
++	hex
++	default 0x40700800	# seed common line 35
++
++config SYS_UBOOT_START
++	hex
++	default 0x40200000	# the U-Boot entry the SPL jumps to: the TEXT_BASE above
++
++config SYS_INIT_SP_ADDR
++	hex
++	default 0x40600000	# seed common line 34
++
++config SPL_LOAD_FIT_ADDRESS
++	hex
++	default 0x42000000	# seed common line 25
++
++config SPL_STACK
++	hex
++	default 0x4fe00000	# seed common line 19
++
++endif
+diff --git a/arch/arm/mach-rockchip/rv1126b/Makefile b/arch/arm/mach-rockchip/rv1126b/Makefile
+new file mode 100644
+index 00000000..bdfa2051
+--- /dev/null
++++ b/arch/arm/mach-rockchip/rv1126b/Makefile
+@@ -0,0 +1,10 @@
++#
++# (C) Copyright 2025 Rockchip Electronics Co., Ltd
++#
++# SPDX-License-Identifier:     GPL-2.0+
++#
++
++ifneq ($(CONFIG_TPL_BUILD)$(CONFIG_TPL_TINY_FRAMEWORK),yy)
++obj-y += syscon_rv1126b.o
++endif
++obj-y += rv1126b.o
+diff --git a/arch/arm/mach-rockchip/rv1126b/rv1126b.c b/arch/arm/mach-rockchip/rv1126b/rv1126b.c
+new file mode 100644
+index 00000000..2372dce9
+--- /dev/null
++++ b/arch/arm/mach-rockchip/rv1126b/rv1126b.c
+@@ -0,0 +1,136 @@
++// SPDX-License-Identifier: GPL-2.0+
++/*
++ * Rockchip RV1126B SoC support (quad Cortex-A53, AArch64).
++ *
++ * Ported from Rockchip u-boot-next-dev 1c535d65, arch/arm/mach-rockchip/rv1126b/rv1126b.c:
++ *   memory map            seed 137-170 (CONFIG_ARM64 block)
++ *   debug UART            seed 183-185
++ *   SD iomux (devnum 1)   seed 188-215 (the VCCIO2 and PMUIO0 writes; the SPL power-cycle is seed 201-214)
++ *   STIMER                seed 291-305
++ *   storages finish       seed 307-315
++ *   arch_cpu_init         seed 417-... : ONLY the boot-minimum is here (see the list below)
++ * Not ported in this patch, each listed in docs/prs/AU1-aura.md: bidram and ATAGS, the rk_meta and FIT
++ * helpers (seed 409-416, 523-772), the TSADC trim (seed 317-385), the SGRF secure and firewall setup,
++ * the USB and PERI GRF setup, the SARADC IBP and the FEPHY pads from arch_cpu_init. TRM not read.
++ */
++
++#include <init.h>
++#include <dm.h>
++#include <spl.h>
++#include <linux/bitops.h>
++#include <asm/io.h>
++#include <asm/arch/cru_rv1126b.h>
++#include <asm/arch/grf_rv1126b.h>
++#include <asm/arch/ioc_rv1126b.h>
++#include <asm/armv8/mmu.h>
++#include <linux/delay.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define SDMMC_PWR_DOWN_MS		50
++
++/* Register bases and offsets used by board_set_iomux and the SPL power cycle: seed 1c535d65
++ * rv1126b.c lines 71-73 (GPIO0), 75-77 (PMUIO0 IOC), 92-96 (VCCIO2 IOC and the pull register). */
++#define GPIO0_BASE			0x20600000
++#define GPIO_SWPORT_DR_L		0x00
++#define GPIO_SWPORT_DDR_L		0x08
++#define PMUIO0_IOC_BASE		0x201a0000
++#define GPIO0A_IOMUX_SEL_H		0x4
++#define VCCIO2_IOC_BASE		0x201b8000
++#define GPIO2A_IOMUX_SEL_L		0x40
++#define GPIO2A_IOMUX_SEL_H		0x44
++#define GPIO2A_PULL			0x320
++
++static struct mm_region rv1126b_mem_map[] = {
++#ifndef CONFIG_SPL_BUILD
++	{
++		.virt = 0x00010000UL,
++		.phys = 0x00010000UL,
++		.size = 0x0fff0000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	},
++#endif
++	{
++		.virt = 0x20000000UL,
++		.phys = 0x20000000UL,
++		.size = 0x02800000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	}, {
++		.virt = 0x3ff1e000UL,
++		.phys = 0x3ff1e000UL,
++		.size = 0x000e2000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
++			 PTE_BLOCK_NON_SHARE |
++			 PTE_BLOCK_PXN | PTE_BLOCK_UXN
++	}, {
++		.virt = 0x40000000UL,
++		.phys = 0x40000000UL,
++		.size = 0x100000000UL - 0x40000000UL,
++		.attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
++			 PTE_BLOCK_INNER_SHARE
++	}, {
++		/* List terminator */
++		0,
++	}
++};
++
++struct mm_region *mem_map = rv1126b_mem_map;
++
++void board_debug_uart_init(void)
++{
++	/* No need to change uart in most time. */
++}
++
++/*
++ * sdmmc0 (microSD) pinmux, seed lines 188-215 (devnum 1 branch). Mainline v2026.10 has no
++ * board_set_iomux(enum if_type, ...) hook, so the board calls this from its own init.
++ * In SPL it also power-cycles the card (seed 201-214). The kernel's sdmmc0 pinctrl takes over later.
++ */
++void rv1126b_sdmmc0_iomux_init(void)
++{
++#ifdef CONFIG_SPL_BUILD
++	/* SDMMC D0-3/CMD/CLK to gpio, pull down; power-cycle the card */
++	writel(0xffff0000, VCCIO2_IOC_BASE + GPIO2A_IOMUX_SEL_L);
++	writel(0x00ff0000, VCCIO2_IOC_BASE + GPIO2A_IOMUX_SEL_H);
++	writel(0x00f00000, PMUIO0_IOC_BASE + GPIO0A_IOMUX_SEL_H);
++	writel(0x0fff0aaa, VCCIO2_IOC_BASE + GPIO2A_PULL);
++
++	writel(0x01000100, GPIO0_BASE + GPIO_SWPORT_DR_L);
++	writel(0x01000100, GPIO0_BASE + GPIO_SWPORT_DDR_L);
++	mdelay(SDMMC_PWR_DOWN_MS);
++	writel(0x01000000, GPIO0_BASE + GPIO_SWPORT_DR_L);
++#endif
++	/* SDMMC D0-3/CMD/CLK, pulled up */
++	writel(0xffff1111, VCCIO2_IOC_BASE + GPIO2A_IOMUX_SEL_L);
++	writel(0x00ff0011, VCCIO2_IOC_BASE + GPIO2A_IOMUX_SEL_H);
++	writel(0x00f00010, PMUIO0_IOC_BASE + GPIO0A_IOMUX_SEL_H);
++	writel(0x0fff0555, VCCIO2_IOC_BASE + GPIO2A_PULL);
++}
++
++#ifdef CONFIG_SPL_BUILD
++void rockchip_stimer_init(void)
++{
++	u32 reg;
++
++	/* If Timer already enabled, don't re-init it */
++	reg = readl(CONFIG_ROCKCHIP_STIMER_BASE + 0x4);
++	if (reg & 0x1)
++		return;
++	writel(0xffffffff, CONFIG_ROCKCHIP_STIMER_BASE + 0x14);
++	writel(0xffffffff, CONFIG_ROCKCHIP_STIMER_BASE + 0x18);
++	writel(0x00010001, CONFIG_ROCKCHIP_STIMER_BASE + 0x04);
++}
++
++void spl_board_storages_finish(struct spl_image_loader *loader)
++{
++	/* Seed 307-315 unset the sdmmc0 iomux here; the kernel's own pinctrl owns the pins, so nothing. */
++}
++#endif
++
++int arch_cpu_init(void)
++{
++	return 0;
++}
+diff --git a/arch/arm/mach-rockchip/rv1126b/syscon_rv1126b.c b/arch/arm/mach-rockchip/rv1126b/syscon_rv1126b.c
+new file mode 100644
+index 00000000..78227b5b
+--- /dev/null
++++ b/arch/arm/mach-rockchip/rv1126b/syscon_rv1126b.c
+@@ -0,0 +1,25 @@
++/*
++ * (C) Copyright 2025 Rockchip Electronics Co., Ltd
++ *
++ * SPDX-License-Identifier:     GPL-2.0+
++ */
++
++#include <linux/bitops.h>
++#include <dm.h>
++#include <syscon.h>
++#include <asm/arch/clock.h>
++
++static const struct udevice_id rv1126b_syscon_ids[] = {
++	{ .compatible = "rockchip,rv1126b-grf", .data = ROCKCHIP_SYSCON_GRF },
++	{ .compatible = "rockchip,rv1126b-ioc-grf", .data = ROCKCHIP_SYSCON_IOC },
++	{ }
++};
++
++U_BOOT_DRIVER(syscon_rv1126b) = {
++	.name = "rv1126b_syscon",
++	.id = UCLASS_SYSCON,
++	.of_match = rv1126b_syscon_ids,
++#if !CONFIG_IS_ENABLED(OF_PLATDATA)
++	.bind = dm_scan_fdt_dev,
++#endif
++};
+diff --git a/include/configs/rv1126b_common.h b/include/configs/rv1126b_common.h
+new file mode 100644
+index 00000000..532f39fd
+--- /dev/null
++++ b/include/configs/rv1126b_common.h
+@@ -0,0 +1,51 @@
++/* SPDX-License-Identifier: GPL-2.0+ */
++/*
++ * Rockchip RV1126B common configuration.
++ *
++ * Ported from Rockchip u-boot-next-dev 1c535d65, include/configs/rv1126b_common.h. The memory layout
++ * values moved to arch/arm/mach-rockchip/rv1126b/Kconfig (with their seed line numbers). Kept here:
++ * the SDRAM window, the boot environment layout, and the malloc and bounce sizes (seed lines 1-14,
++ * 36-40, 82-87, 109-146). NOT ported in this patch: the secure OTP block (seed 38-93: rollback,
++ * secure-boot enable, firmware and OEM keys), the thunderboot and USB-plug settings (seed 88-108),
++ * the 32-bit kernel entries. TRM not read.
++ */
++
++#ifndef __CONFIG_RV1126B_COMMON_H
++#define __CONFIG_RV1126B_COMMON_H
++
++#define CFG_CPUID_OFFSET		0x22
++
++#include "rockchip-common.h"
++
++#define CONFIG_SPL_LOAD_FIT_ADDRESS	0x42000000
++
++#define CONFIG_SYS_CBSIZE		1024
++
++#define GICD_BASE			0x21201000
++#define GICC_BASE			0x21202000
++
++/* For most, U-Boot no need to use 0-1G space. Kconfig (SPL_FRAMEWORK, SPL_MAX_SIZE, MALLOC_LEN, BOOTM_LEN,
++ * BOUNCE_BUFFER) owns the others above. */
++#define CONFIG_SYS_SDRAM_BASE		0x40000000
++#define SDRAM_MAX_SIZE			0xc0000000ULL	/* max 3G */
++#define CONFIG_SYS_NONCACHED_MEMORY	(1 << 20)	/* 1M */
++
++/* Memory layout for the boot environment (seed lines 109-121: the 64-bit values only) */
++#ifndef CONFIG_SPL_BUILD
++#define ENV_MEM_LAYOUT_SETTINGS \
++	"scriptaddr=0x40600000\0"	\
++	"pxefile_addr_r=0x40700000\0"	\
++	"fdt_addr_r=0x48300000\0"	\
++	"kernel_addr_r=0x40200000\0"	\
++	"kernel_addr_c=0x42080000\0"	\
++	"ramdisk_addr_low_r=0x43000000\0" \
++	"ramdisk_addr_r=0x4a200000\0"
++
++#define CONFIG_EXTRA_ENV_SETTINGS \
++	ENV_MEM_LAYOUT_SETTINGS
++#endif
++
++#define CONFIG_PREBOOT
++#define CONFIG_LIB_HW_RAND
++
++#endif /* __CONFIG_RV1126B_COMMON_H */
+-- 
+2.56.0
+

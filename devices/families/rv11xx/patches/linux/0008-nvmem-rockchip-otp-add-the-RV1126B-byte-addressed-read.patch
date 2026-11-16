@@ -1,0 +1,170 @@
+diff --git a/drivers/nvmem/rockchip-otp.c b/drivers/nvmem/rockchip-otp.c
+--- a/drivers/nvmem/rockchip-otp.c
++++ b/drivers/nvmem/rockchip-otp.c
+@@ -35,6 +35,11 @@
+ #define OTPC_SBPI_CMD1_OFFSET		0x1004
+ 
+ /* OTP Register bits and masks */
++/* RV1126B only (BSP drivers/nvmem/rockchip-otp.c 1040-1050, register names 24-68): the lock control
++ * register and its bits, used by the byte-addressed read path. TRM not read. */
++#define OTPC_LOCK_CTRL			0x0050
++#define OTPC_LOCK			BIT(0)
++#define OTPC_LOCK_MASK			GENMASK(16, 16)
+ #define OTPC_USER_ADDR_MASK		GENMASK(31, 16)
+ #define OTPC_USE_USER			BIT(0)
+ #define OTPC_USE_USER_MASK		GENMASK(16, 16)
+@@ -353,6 +358,77 @@
+ 	.reg_read = rk3568_otp_read,
+ };
+ 
++/*
++ * RV1126B byte-addressed read. Ported from the BSP's rk3568_otp_read (rockchip-otp.c 527-590, kernel-develop-6.12),
++ * which the BSP's RV1126B entry uses (rv1126b_data, 1040-1045). The offset and count are in bytes; the hardware
++ * reads 16-bit words, so each word is read and the wanted bytes are copied out. The BSP passes no word_size, so
++ * the common read path calls this with byte offsets. TRM not read.
++ */
++#define RV1126B_OTP_NBYTES		2
++
++static int rv1126b_otp_read(void *context, unsigned int offset, void *val,
++			    size_t bytes)
++{
++	struct rockchip_otp *otp = context;
++	unsigned int addr_start, addr_end, addr_offset, addr_len;
++	unsigned int otp_qp;
++	u32 out_value;
++	u8 *buf;
++	int ret = 0, i = 0;
++
++	addr_start = rounddown(offset, RV1126B_OTP_NBYTES) / RV1126B_OTP_NBYTES;
++	addr_end = roundup(offset + bytes, RV1126B_OTP_NBYTES) / RV1126B_OTP_NBYTES;
++	addr_offset = offset % RV1126B_OTP_NBYTES;
++	addr_len = addr_end - addr_start;
++
++	buf = kzalloc(array3_size(addr_len, RV1126B_OTP_NBYTES, sizeof(*buf)),
++		      GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++
++	ret = rockchip_otp_ecc_enable(otp, true);
++	if (ret < 0) {
++		dev_err(otp->dev, "rockchip_otp_ecc_enable err\n");
++		goto out;
++	}
++
++	writel(OTPC_USE_USER | OTPC_USE_USER_MASK, otp->base + OTPC_USER_CTRL);
++	udelay(5);
++	while (addr_len--) {
++		writel(OTPC_LOCK | OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
++		writel(addr_start++ | OTPC_USER_ADDR_MASK,
++		       otp->base + OTPC_USER_ADDR);
++		writel(OTPC_USER_FSM_ENABLE | OTPC_USER_FSM_ENABLE_MASK,
++		       otp->base + OTPC_USER_ENABLE);
++		ret = rockchip_otp_wait_status(otp, OTPC_INT_STATUS, OTPC_USER_DONE);
++		if (ret < 0) {
++			dev_err(otp->dev, "timeout during read setup\n");
++			goto read_end;
++		}
++		otp_qp = readl(otp->base + OTPC_USER_QP);
++		if (((otp_qp & 0xc0) == 0xc0) || (otp_qp & 0x20)) {
++			ret = -EIO;
++			dev_err(otp->dev, "ecc check error during read setup\n");
++			goto read_end;
++		}
++		out_value = readl(otp->base + OTPC_USER_Q);
++		memcpy(&buf[i], &out_value, RV1126B_OTP_NBYTES);
++		i += RV1126B_OTP_NBYTES;
++		writel(OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
++	}
++
++	memcpy(val, buf + addr_offset, bytes);
++
++read_end:
++	if (ret)
++		writel(OTPC_LOCK_MASK, otp->base + OTPC_LOCK_CTRL);
++	writel(0x0 | OTPC_USE_USER_MASK, otp->base + OTPC_USER_CTRL);
++out:
++	kfree(buf);
++
++	return ret;
++}
++
+ static const char * const rk3568_otp_clocks[] = {
+ 	"otp", "apb_pclk", "phy", "sbpi",
+ };
+@@ -363,6 +439,19 @@
+ 	.clks = rk3568_otp_clocks,
+ 	.num_clks = ARRAY_SIZE(rk3568_otp_clocks),
+ 	.reg_read = rk3568_otp_read,
++};
++
++/* BSP rv1126b_data (rockchip-otp.c 1040-1045): size 0x90, the rk3568 clock list (usr, sbpi, apb, phy as the
++ * vendor dtsi names them), and no word_size, so reads are byte-addressed. TRM not read. */
++static const char * const rv1126b_otp_clocks[] = {
++	"usr", "sbpi", "apb", "phy",
++};
++
++static const struct rockchip_data rv1126b_data = {
++	.size = 0x90,
++	.clks = rv1126b_otp_clocks,
++	.num_clks = ARRAY_SIZE(rv1126b_otp_clocks),
++	.reg_read = rv1126b_otp_read,
+ };
+ 
+ static const struct rockchip_data rk3576_data = {
+@@ -413,6 +502,10 @@
+ 		.data = &rk3576_data,
+ 	},
+ 	{
++		.compatible = "rockchip,rv1126b-otp",
++		.data = &rv1126b_data,
++	},
++	{
+ 		.compatible = "rockchip,rk3588-otp",
+ 		.data = &rk3588_data,
+ 	},
+diff --git a/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml b/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
+--- a/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
++++ b/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
+@@ -19,6 +19,7 @@
+       - rockchip,rk3568-otp
+       - rockchip,rk3576-otp
+       - rockchip,rk3588-otp
++      - rockchip,rv1126b-otp
+ 
+   reg:
+     maxItems: 1
+@@ -124,6 +125,34 @@
+             - const: apb
+             - const: phy
+             - const: sbpi
++
++  # RV1126B (BSP rockchip-otp.c rv1126b_data 1040-1045; vendor dtsi otp node): four clocks and four resets.
++  - if:
++      properties:
++        compatible:
++          contains:
++            enum:
++              - rockchip,rv1126b-otp
++    then:
++      properties:
++        clocks:
++          minItems: 4
++          maxItems: 4
++        clock-names:
++          items:
++            - const: usr
++            - const: sbpi
++            - const: apb
++            - const: phy
++        resets:
++          minItems: 4
++          maxItems: 4
++        reset-names:
++          items:
++            - const: usr
++            - const: sbpi
++            - const: apb
++            - const: phy
+ 
+   - if:
+       properties:

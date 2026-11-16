@@ -1,0 +1,27 @@
+# Luckfox Aura: LABELLED BENCH IMAGE (bench-only, not for release). Its image is hand-flashed and never published.
+# Bench-only facts: the first-stage SPL is Rockchip's CLOSED vendor blob (rkbin rv1126b_spl_ipc_v1.05.bin, not on disk
+# for hash check), and the DDR init is the closed rkbin DDR blob (v1.06 per the vendor ini; v1.10 used as TPL input, UNVERIFIED
+# for this board). Console: UART0 M0 at 1500000 baud (vendor stdout-path &uart0, base 0x20810000).
+# No vsel register is written by our bootloader or kernel (scripts/check-no-vsel.sh).
+# Watchdog: NO OWNER on this image, so nothing may arm it. U-Boot's watchdog autostart is off explicitly (patches/uboot
+# 0005); the kernel's dw_wdt does not start the timer at probe (patch 0011 keeps &wdt enabled, which is inert). Verified on
+# the first boot: WDT_CR bit 0 read at the U-Boot prompt and again from Linux. When this product becomes a SLOT product it
+# gets exactly one owner (a Lemnos hw-watchdog with keepalive = true, with lemnosd installed), U-Boot's autostart comes back
+# with the family's kernel open timeout, and the timing windows are stated then.
+#
+# The recipe is a PLACEHOLDER: `firmware` (the built tree as a tar). It is NOT the flashable image. The bench image
+# must become the U-Boot slot form (Lemnos) once the RV1126B U-Boot port and Lemnos's RV1126B SoC map exist; until
+# then this product plans nothing that boots. No gaia.lock is committed: Gaia writes it when its pins are given.
+version = 1
+name = "waveshare-luckfox-aura"
+description = "Luckfox Aura: labelled bench image (bench-only, closed SPL and DDR blobs, UART0 M0 1500000)"
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
+
+[[images]]
+name = "waveshare-luckfox-aura"
+board = "../../boards/waveshare-luckfox-aura/board.toml"
+os = { provider = "buildroot", source = "buildroot", fragments = [] }
+recipe = "firmware"

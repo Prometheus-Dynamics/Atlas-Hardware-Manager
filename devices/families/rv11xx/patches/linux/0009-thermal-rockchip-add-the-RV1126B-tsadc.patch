@@ -1,0 +1,282 @@
+diff --git a/drivers/thermal/rockchip_thermal.c b/drivers/thermal/rockchip_thermal.c
+--- a/drivers/thermal/rockchip_thermal.c
++++ b/drivers/thermal/rockchip_thermal.c
+@@ -85,6 +85,12 @@
+  * @get_trim_code: convert a hardware temperature code to one adjusted for by trim
+  * @table: the chip-specific conversion table
+  */
++/* RV1126B only: the GRF bias and offset the PHY is trimmed with (BSP rockchip_thermal.c 59-62, struct phy_config). */
++struct phy_config {
++	u32 bias;
++	u32 offset;
++};
++
+ struct rockchip_tsadc_chip {
+ 	/* The sensor id of chip correspond to the ADC channel */
+ 	int chn_offset;
+@@ -102,6 +108,9 @@
+ 	bool grf_required;
+ 
+ 	/* Chip-wide methods */
++	/* Optional: SoC PHY trim through the GRF before initialize (RV1126B). NULL for other chips. */
++	void (*phy_init)(struct device *dev, struct regmap *grf,
++			 void __iomem *reg, struct phy_config *phy_cfg);
+ 	void (*initialize)(struct regmap *grf,
+ 			   void __iomem *reg, enum tshut_polarity p);
+ 	void (*irq_ack)(void __iomem *reg);
+@@ -177,6 +186,8 @@
+ 	int trim_temp;
+ 	enum tshut_mode tshut_mode;
+ 	enum tshut_polarity tshut_polarity;
++
++	struct phy_config phy_cfg;
+ };
+ 
+ /*
+@@ -1303,6 +1314,190 @@
+ 	},
+ };
+ 
++/* RV1126B tsadc, from the BSP rockchip_thermal.c (kernel-develop-6.12): defines 260-265, 267-268, 283
++ * and 338-351, MIN_TEMP/MAX_TEMP 365-366. TRM not read. */
++#define TSADCV6_DATA_MASK			0x1ffff
++#define TSADC_DATA_SIGN_BIT			BIT(16)
++#define TSADC_DATA_NEGATIVE			0xfffe0000
++#define TSADC_TEMP_DEBOUNCE			5000
++#define TSADC_TEMP_CRITICAL			115000
++#define TSADCV14_AUTO_PERIOD_TIME		60000
++#define MIN_TEMP				(-60000)
++#define MAX_TEMP				(180000)
++#define RV1126B_GRF_TSADC_CON0			0x50
++#define RV1126B_GRF_TSADC_CON1			0x54
++#define RV1126B_GRF_TSADC_CON4			0x60
++#define RV1126B_GRF_TSADC_CON6			0x68
++#define RV1126B_GRF_TSADC_ST1			0x114
++#define RV1126B_UNLOCK_VALUE			0xa5
++#define RV1126B_UNLOCK_VALUE_MASK		(0xff << 16)
++#define RV1126B_UNLOCK_TRIGGER			BIT(8)
++#define RV1126B_UNLOCK_TRIGGER_MASK		(BIT(8) << 16)
++#define RV1126B_MAX_BIAS			0x7f
++#define RV1126B_BIAS_MASK			(0x7f << 16)
++#define RV1126B_MAX_OFFSET			0xffff
++#define RV1126B_OFFSET_MASK			(0xffff << 16)
++#define RV1126B_CTRL_MASK			(0x8078 << 16)
++
++static void rk_tsadcv14_initialize(struct regmap *grf, void __iomem *regs,
++				   enum tshut_polarity tshut_polarity)
++{
++	writel_relaxed(TSADCV14_AUTO_PERIOD_TIME, regs + TSADCV3_AUTO_PERIOD);
++	writel_relaxed(TSADCV14_AUTO_PERIOD_TIME, regs + TSADCV3_AUTO_PERIOD_HT);
++	writel_relaxed(TSADCV2_HIGHT_INT_DEBOUNCE_COUNT,
++		       regs + TSADCV3_HIGHT_INT_DEBOUNCE);
++	writel_relaxed(TSADCV2_HIGHT_TSHUT_DEBOUNCE_COUNT,
++		       regs + TSADCV3_HIGHT_TSHUT_DEBOUNCE);
++	if (tshut_polarity == TSHUT_HIGH_ACTIVE)
++		writel_relaxed(TSADCV2_AUTO_TSHUT_POLARITY_HIGH |
++			       TSADCV2_AUTO_TSHUT_POLARITY_MASK,
++			       regs + TSADCV2_AUTO_CON);
++	else
++		writel_relaxed(TSADCV2_AUTO_TSHUT_POLARITY_MASK,
++			       regs + TSADCV2_AUTO_CON);
++}
++
++/* BSP rk_tsadc_limit_amplitude (1410-1433): limits how fast the reported temperature may move. */
++static int rk_tsadc_limit_amplitude(int new_temp, bool enable)
++{
++	static int last_temp = INT_MAX;
++
++	/* Reinit last temp when phy init */
++	if (!enable) {
++		last_temp = INT_MAX;
++		return 0;
++	}
++
++	if (last_temp != INT_MAX) {
++		if (abs(new_temp - last_temp) > TSADC_TEMP_DEBOUNCE) {
++			if (new_temp > last_temp)
++				new_temp = last_temp + TSADC_TEMP_DEBOUNCE;
++			else
++				new_temp = last_temp - TSADC_TEMP_DEBOUNCE;
++		}
++	} else {
++		/* Limit the first temperature */
++		if (new_temp >= TSADC_TEMP_CRITICAL)
++			new_temp = TSADC_TEMP_CRITICAL - TSADC_TEMP_DEBOUNCE;
++	}
++	last_temp = new_temp;
++
++	return new_temp;
++}
++
++/* BSP rk_tsadcv5_get_temp (1437-1452): the 17-bit signed sample, then the amplitude limit. */
++static int rk_tsadcv5_get_temp(const struct chip_tsadc_table *table,
++			       int chn, void __iomem *regs, int *temp)
++{
++	u32 val;
++
++	val = readl_relaxed(regs + TSADCV3_DATA(chn));
++	*temp = val & TSADCV6_DATA_MASK;
++	if (val & TSADC_DATA_SIGN_BIT)
++		*temp |= TSADC_DATA_NEGATIVE;
++	*temp *= 10;
++	if (*temp < MIN_TEMP)
++		*temp = MIN_TEMP;
++	else if (*temp > MAX_TEMP)
++		*temp = MAX_TEMP;
++
++	*temp = rk_tsadc_limit_amplitude(*temp, true);
++
++	return 0;
++}
++
++/* BSP rk_tsadcv4_alarm_temp (1536-1560), the part that sets the high-temperature alarm. */
++static int rk_tsadcv4_alarm_temp(const struct chip_tsadc_table *table,
++				 int chn, void __iomem *regs, int temp)
++{
++	u32 alarm_value;
++
++	if (temp == INT_MAX) {
++		writel_relaxed(TSADCV2_INT_SRC_EN_MASK(chn),
++			       regs + TSADCV3_HT_INT_EN);
++		return 0;
++	}
++	/* Make sure the value is valid */
++	if (temp < MIN_TEMP || temp > MAX_TEMP)
++		return -ERANGE;
++	alarm_value = (temp / 10) & TSADCV6_DATA_MASK;
++	writel_relaxed(alarm_value, regs + TSADCV3_COMP_INT(chn));
++	writel_relaxed(TSADCV2_INT_SRC_EN(chn) | TSADCV2_INT_SRC_EN_MASK(chn),
++		       regs + TSADCV3_HT_INT_EN);
++
++	return 0;
++}
++
++/* BSP rk_tsadcv4_tshut_temp (1602-1617). */
++static int rk_tsadcv4_tshut_temp(const struct chip_tsadc_table *table,
++				 int chn, void __iomem *regs, int temp)
++{
++	u32 tshut_value;
++
++	/* Make sure the value is valid */
++	if (temp < MIN_TEMP || temp > MAX_TEMP)
++		return -ERANGE;
++
++	tshut_value = (temp / 10) & TSADCV6_DATA_MASK;
++
++	writel_relaxed(tshut_value, regs + TSADCV3_COMP_SHUT(chn));
++
++	/* TSHUT will be valid */
++	writel_relaxed(TSADCV3_AUTO_SRC_EN(chn) | TSADCV3_AUTO_SRC_EN_MASK(chn),
++		       regs + TSADCV3_AUTO_SRC_CON);
++
++	return 0;
++}
++
++/* BSP rv1126b_tsadc_phy_init (1731-1759): read or write the bias and offset trim in the GRF, then
++ * unlock and trigger the GRF's TSADC block. A zero trim in the DT means "use the value the GRF holds". */
++static void rv1126b_tsadc_phy_init(struct device *dev, struct regmap *grf,
++				   void __iomem *reg, struct phy_config *phy_cfg)
++{
++	u32 val = 0;
++
++	if (!phy_cfg->bias) {
++		regmap_read(grf, RV1126B_GRF_TSADC_CON6, &val);
++		phy_cfg->bias = val & RV1126B_MAX_BIAS;
++	} else {
++		regmap_write(grf, RV1126B_GRF_TSADC_CON6,
++			     phy_cfg->bias | RV1126B_BIAS_MASK);
++	}
++	if (!phy_cfg->offset) {
++		regmap_read(grf, RV1126B_GRF_TSADC_CON4, &val);
++		phy_cfg->offset = val & RV1126B_MAX_OFFSET;
++	} else {
++		regmap_write(grf, RV1126B_GRF_TSADC_CON4,
++			     phy_cfg->offset | RV1126B_OFFSET_MASK);
++	}
++	regmap_read(grf, RV1126B_GRF_TSADC_ST1, &val);
++	dev_info(dev, "width=0x%x, bias=0x%x, offset=0x%x\n", val, phy_cfg->bias,
++		 phy_cfg->offset);
++	regmap_write(grf, RV1126B_GRF_TSADC_CON0, RV1126B_CTRL_MASK);
++	regmap_write(grf, RV1126B_GRF_TSADC_CON1,
++		     RV1126B_UNLOCK_VALUE | RV1126B_UNLOCK_VALUE_MASK);
++	regmap_write(grf, RV1126B_GRF_TSADC_CON1,
++		     RV1126B_UNLOCK_TRIGGER | RV1126B_UNLOCK_TRIGGER_MASK);
++	regmap_write(grf, RV1126B_GRF_TSADC_CON1, RV1126B_UNLOCK_TRIGGER_MASK);
++}
++
++/* BSP rv1126b_tsadc_data (1908-1919). */
++static const struct rockchip_tsadc_chip rv1126b_tsadc_data = {
++	.chn_num = 1, /* one channel for tsadc */
++	.grf_required = true,
++	.tshut_mode = TSHUT_MODE_CRU, /* default TSHUT via CRU */
++	.tshut_polarity = TSHUT_LOW_ACTIVE, /* default TSHUT LOW ACTIVE */
++	.tshut_temp = 95000,
++	.phy_init = rv1126b_tsadc_phy_init,
++	.initialize = rk_tsadcv14_initialize,
++	.irq_ack = rk_tsadcv4_irq_ack,
++	.control = rk_tsadcv4_control,
++	.get_temp = rk_tsadcv5_get_temp,
++	.set_alarm_temp = rk_tsadcv4_alarm_temp,
++	.set_tshut_temp = rk_tsadcv4_tshut_temp,
++	.set_tshut_mode = rk_tsadcv4_tshut_mode,
++};
++
+ static const struct rockchip_tsadc_chip rk3576_tsadc_data = {
+ 	/* top, big_core, little_core, ddr, npu, gpu */
+ 	.chn_offset = 0,
+@@ -1392,6 +1587,10 @@
+ 		.data = (void *)&rk3576_tsadc_data,
+ 	},
+ 	{
++		.compatible = "rockchip,rv1126b-tsadc",
++		.data = (void *)&rv1126b_tsadc_data,
++	},
++	{
+ 		.compatible = "rockchip,rk3588-tsadc",
+ 		.data = (void *)&rk3588_tsadc_data,
+ 	},
+@@ -1744,6 +1943,9 @@
+ 		return dev_err_probe(&pdev->dev, error,
+ 				"failed to parse device tree data\n");
+ 
++	if (thermal->chip->phy_init)
++		thermal->chip->phy_init(&pdev->dev, thermal->grf, thermal->regs,
++					&thermal->phy_cfg);
+ 	thermal->chip->initialize(thermal->grf, thermal->regs,
+ 				  thermal->tshut_polarity);
+ 
+diff --git a/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml b/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
+--- a/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
++++ b/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
+@@ -24,6 +24,7 @@
+       - rockchip,rk3576-tsadc
+       - rockchip,rk3588-tsadc
+       - rockchip,rv1108-tsadc
++      - rockchip,rv1126b-tsadc
+ 
+   reg:
+     maxItems: 1
+@@ -144,6 +145,23 @@
+       properties:
+         nvmem-cells: false
+         nvmem-cell-names: false
++  # RV1126B: the vendor node adds tsadc_phyctrl (rv1126b.dtsi.txt 2127-2139); the driver does not request it.
++  - if:
++      properties:
++        compatible:
++          contains:
++            const: rockchip,rv1126b-tsadc
++    then:
++      properties:
++        clocks:
++          minItems: 3
++          maxItems: 3
++        clock-names:
++          items:
++            - const: tsadc
++            - const: apb_pclk
++            - const: tsadc_phyctrl
++
+   - if:
+       not:
+         properties:

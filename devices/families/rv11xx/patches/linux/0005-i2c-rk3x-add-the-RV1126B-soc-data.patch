@@ -1,0 +1,29 @@
+diff --git a/drivers/i2c/busses/i2c-rk3x.c b/drivers/i2c/busses/i2c-rk3x.c
+--- a/drivers/i2c/busses/i2c-rk3x.c
++++ b/drivers/i2c/busses/i2c-rk3x.c
+@@ -1175,6 +1175,14 @@
+ 	.calc_timings = rk3x_i2c_v1_calc_timings,
+ };
+ 
++/* RV1126B: no GRF write to select the i2c type. The BSP's rv1126b_soc_data (kernel-develop-6.12,
++ * drivers/i2c/busses/i2c-rk3x.c) has grf_offset -1; the rv1126 entry writes GRF 0x118, which the BSP's
++ * rv1126 comment ties to i2c2 only. The BSP's DMA hook is not ported. */
++static const struct rk3x_i2c_soc_data rv1126b_soc_data = {
++	.grf_offset = -1,
++	.calc_timings = rk3x_i2c_v1_calc_timings,
++};
++
+ static const struct rk3x_i2c_soc_data rk3066_soc_data = {
+ 	.grf_offset = 0x154,
+ 	.calc_timings = rk3x_i2c_v0_calc_timings,
+@@ -1208,6 +1216,10 @@
+ 	{
+ 		.compatible = "rockchip,rv1126-i2c",
+ 		.data = &rv1126_soc_data
++	},
++	{
++		.compatible = "rockchip,rv1126b-i2c",
++		.data = &rv1126b_soc_data
+ 	},
+ 	{
+ 		.compatible = "rockchip,rk3066-i2c",

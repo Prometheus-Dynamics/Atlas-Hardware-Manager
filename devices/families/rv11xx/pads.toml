@@ -1,0 +1,12 @@
+# Pad-table statement for the rv11xx family (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Revised 2026-11-16 (PR AU1). Sources: the Luckfox Aura SDK 202611 (aura/ in gaia-bsp-aura: kernel c67d457cf327,
+# U-Boot 649e8bd3474c); our U-Boot series devices/families/rv11xx/patches/uboot/.
+applies_pad_table = false
+pad_table_reason = "No pad or voltage table is applied by the kernel or by U-Boot source. Ours: the U-Boot series writes no IO-domain or VSEL register (scripts/check-no-vsel.sh, self-tested); the kernel series adds no io-domains node and no *-supply for a pad bank. Vendor kernel dts (kernel c67d457cf327): no io-domains node and no voltage table (rv1126b-luckfox-aura.dts, rv1126b-luckfox-aura.dtsi, rv1126b.dtsi: none). Vendor U-Boot (649e8bd3474c) rv1126b.c: GPIO1_IOC_IO1_VSEL is READ at lines 510-511 (FSPI drive strength), never written. The vendor SPL is a closed blob (rkbin rv1126b_spl_ipc_v1.05.bin): what it programs is not visible in source, so the statement is accepted for a LABELLED bench-only image (the product says so)."
+kernel_option = "ROCKCHIP_IODOMAIN"
+
+# The RV1126B IO domains (vendor ioc_rv1126b.h: the pmuio0, pmuio1 and vccio1..vccio7 IOC blocks, each with its io_vsel register).
+#   pmuio0: GPIO0 A and B (lines 12-58); pmuio1: GPIO0 C and D (61-94); vccio1: GPIO1 (97-142); vccio2: GPIO2 (145-179);
+#   vccio3: GPIO3 (182-227); vccio4: GPIO4 (230-270); vccio5: GPIO5 (273-349); vccio6: GPIO6 (352-410); vccio7: GPIO7 (413-455).
+[banks.rv1126b]
+names = "pmuio0 pmuio1 vccio1 vccio2 vccio3 vccio4 vccio5 vccio6 vccio7"

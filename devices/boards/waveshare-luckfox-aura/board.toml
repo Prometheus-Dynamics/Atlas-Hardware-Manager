@@ -1,0 +1,70 @@
+# Luckfox Aura (Rockchip RV1126B, quad Cortex-A53, aarch64), sold by Waveshare. BENCH PROTOTYPE, UNTESTED ON
+# BOARD. Its image is hand-flashed on the bench and never published: the DDR init is a closed rkbin blob
+# (rv1126b_ddr_1332MHz_v1.10.bin), and the family's RV1126B U-Boot port is not written yet (AU1, docs/prs/AU1-aura.md).
+#
+# SD boot (microSD), as the coordinator ruled (SD first everywhere). eMMC is not used for the bench image: its layout
+# is unconfirmed. The USB port is USB 3 OTG Type-C, used as a USB 2 gadget (no SuperSpeed yet). Power: 5 V 3 A, and a
+# PC port may not supply that; whether there is a separate power port is still to be confirmed.
+version = 1
+extends = "../../families/rv11xx/family.toml"
+name = "waveshare-luckfox-aura"
+description = "Luckfox Aura (RV1126B), sold by Waveshare"
+
+# The kernel device tree is the Aura board dts, which the family's patch series adds (rv1126b-luckfox-aura.dts).
+# Lists replace the family's, so the trim fragment is named here too.
+[kernel]
+device_tree = "rockchip/rv1126b-luckfox-aura"
+fragments = ["../../families/rk35xx/assets/trim.fragment", "assets/linux.fragment"]
+
+[target]
+cpu = "cortex-a53"
+
+# The rkbin pin: the RV1126B DDR blob and the maskrom RKBOOT ini. The commit is the one the family's
+# BSP checks used (rkbin 3e288fe, the RV1126B files are in bin/rv11/ at it). UNVERIFIED on hardware.
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
+
+# DDR init, the closed blob: bench-only, never published in an image (coordinator ruling 4).
+[bootloader]
+defconfig = "luckfox-aura-rv1126b_defconfig"
+
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rv11/rv1126b_ddr_1332MHz_v1.10.bin" }
+
+# Maskrom loader ini. The merged loader (boot_merger output) is not published by rkbin: open, see the PR text.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RV1126BMINIALL.ini" }
+
+# The partitions, in table order, as the Z2 slot-disk form (the family's areas restated, since a board's
+# [[partitions]] replace the family's). The U-Boot environment is 16 MiB in, 128 KiB, with the U-Boot ENV
+# type GUID, so U-Boot and Lemnos's slot writer find it by type (family, and the RK env rule).
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "32K"
+in_table = false
+content = "u-boot-rockchip.bin"
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
+size = "134217728"
+
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "1073741824"
+
+[disk]
+scheme = "gpt"
+
