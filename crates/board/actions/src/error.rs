@@ -71,7 +71,18 @@ pub enum ActionError {
     Job(#[from] JobError),
 }
 
+/// Lemnos's BUSY status: the board refused the action because it is busy (an install is running,
+/// or a pending trial holds the slot). A Rejected run ends with this code (Lemnos M39).
+pub const BUSY_CODE: u16 = 16;
+
 impl ActionError {
+    /// Whether the board refused the action as busy. Read from the run's status code, never from
+    /// the words.
+    #[must_use]
+    pub fn is_busy(&self) -> bool {
+        matches!(self, Self::Refused(failure) if failure.code() == Some(BUSY_CODE))
+    }
+
     /// The message the board gave, when it gave one: the reason of a refusal, a failure or a
     /// cancel, exactly as it came.
     #[must_use]

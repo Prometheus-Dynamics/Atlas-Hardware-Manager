@@ -577,7 +577,7 @@ async fn step_install_good_refused(
                 ctx.bad
             ),
         )),
-        Err(refusal) if refusal.words.contains("is on trial with") => {
+        Err(refusal) if refusal.busy => {
             r.say("refused while the trial is pending, as the board's rule says:");
             r.say(refusal.words);
             Ok(())

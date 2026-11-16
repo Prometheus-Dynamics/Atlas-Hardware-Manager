@@ -13,11 +13,11 @@ use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use atlas_actions::{
-    Action, ActionError, ActionJobs, ArgKind, BoardActions, CancelState, Catalog, Progress,
-    Reported, Route,
+    Action, ActionError, ActionJobs, ArgKind, BoardActions, CancelState, Catalog,
+    LEASE_ENDED_PREFIX, Progress, Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Clock, FailureKind, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -29,9 +29,6 @@ use tokio::time;
 
 const FAMILY: &str = "test-family";
 const SERIAL: &str = "0123abcd";
-/// The reason the simulated node gives for a run its service restart ended.
-/// The bridge's words for a run whose caller's lease ran out (Lemnos bded77a0 calls.rs:318).
-const LEASE_RAN_OUT: &str = "its lease ran out; the job ended with its connection";
 
 const RESTARTED: &str = "-4: the service restarted before this finished";
 
@@ -597,10 +594,11 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     assert!(seen.iter().any(|progress| progress.percent.is_some()));
 }
 
-/// A long action whose session goes silent while its hold exists, and then the board drops the run
-/// with its lease: each outcome has its own message, and neither is the board's last word alone.
+/// A long action whose session goes silent while its hold exists: the job reports the lapse, and the
+/// board keeps the run, since a caller with a run in flight is never dropped by the lease (Lemnos
+/// M39).
 #[tokio::test]
-async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_then_as_the_drop() {
+async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_lapse() {
     let node = start(&scratch("lapse").join("node"), &lemnos_kind());
     // The session's lease is on a manual clock: the lapse is an advance of that clock, not a wait. The
     // renew is far away, so nothing renews the lease but the job's own requests.
@@ -638,25 +636,29 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
     })
     .await;
 
-    // The board's lease runs out: it drops the caller's run, and the run ends with its words.
+    // The board's lease runs out, but the caller has a run in flight: the lease is not dropped, and
+    // the run survives the caller's silence.
     node.lease_advance(61);
-    wait_status(
-        &jobs,
-        id,
-        "the run the board dropped",
-        |status| matches!(status, JobStatus::Failed { reason } if reason == LEASE_RAN_OUT),
-    )
-    .await;
-    assert!(node.lease_drops() >= 1, "the board dropped the caller");
+    time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        node.lease_drops(),
+        0,
+        "a caller with a run in flight is not dropped"
+    );
+    assert_eq!(
+        node.stalled_runs(),
+        1,
+        "the run survives the caller's silence"
+    );
 }
 
 #[tokio::test]
-async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_words() {
-    let rig = Rig::start("lease-ran-out", &lemnos_kind()).await;
+async fn the_run_survives_the_callers_silence() {
+    let rig = Rig::start("lease-survives", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let self_test = named(&catalog, SELF_TEST);
 
-    // The run stalls on the board, and the caller asks for nothing more: its lease runs out.
+    // The run stalls on the board, and the caller asks for nothing more: its lease is not dropped.
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
     let call = rig
         .board
@@ -667,16 +669,53 @@ async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_w
     let board = rig.board.clone();
     let following = tokio::spawn(async move { board.follow(call, |_| {}).await });
 
-    // The board drops the silent caller's run; the run ends Failed with the bridge's words.
     rig.node.lease_advance(61);
+    time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(rig.node.lease_drops(), 0, "the board kept the caller");
+    assert_eq!(rig.node.stalled_runs(), 1, "the run is still on the board");
+
+    // The caller then cancels it, and the run ends as asked.
+    rig.board.cancel(call).await.expect("the cancel is sent");
     let ended = following.await.expect("the follow finishes");
-    assert_eq!(rig.node.lease_drops(), 1, "the board dropped the caller");
-    let error = ended.expect_err("a run whose lease ran out does not succeed");
-    assert!(matches!(error, ActionError::Failed(_)), "{error:?}");
-    assert_eq!(error.board_reason(), Some(LEASE_RAN_OUT));
-    let failure = error.failure().expect("the failure is typed");
-    assert_eq!(failure.kind(), FailureKind::Other, "{failure:?}");
-    assert_eq!(failure.code(), None, "no code is sent for it yet");
-    assert!(!failure.is_denied(), "not Denied: {failure:?}");
-    assert_eq!(failure.text(), LEASE_RAN_OUT);
+    let error = ended.expect_err("a cancelled run does not succeed");
+    assert!(matches!(error, ActionError::Cancelled(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_were_released() {
+    let rig = Rig::start("lease-note", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+
+    // The caller is idle past its lease: nothing of its is in flight, so the board releases its holds.
+    rig.node.lease_advance(61);
+    until("the board to drop the idle caller", || {
+        rig.node.lease_drops() == 1
+    })
+    .await;
+
+    // Its next run's reply begins with the note, and Atlas reads the note as a lapsed hold.
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let call = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run is started");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let board = rig.board.clone();
+    let following = tokio::spawn(async move { board.follow(call, |_| {}).await });
+    rig.board.cancel(call).await.expect("the cancel is sent");
+    let error = following
+        .await
+        .expect("the follow finishes")
+        .expect_err("a cancelled run does not succeed");
+    match error {
+        ActionError::HoldLapsed { reason, .. } => {
+            assert!(
+                reason.starts_with(LEASE_ENDED_PREFIX),
+                "the note leads the reply: {reason}"
+            );
+        }
+        other => panic!("the lapse is reported as a lapse, not {other:?}"),
+    }
 }
