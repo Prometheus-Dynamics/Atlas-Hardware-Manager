@@ -8,9 +8,9 @@
 //
 // Kernel dts (our AI-CAM dts): the SD host is Linux's mmc 0, as the mainline kernel dts pins it (Gaia's AI-CAM dts,
 // examples/boards/k230d-ai-cam/assets/dts/k230d-ai-cam.dts:37-40, aliases mmc0 = &mmc_sd1), so the root is /dev/mmcblk0p2
-// and the env disk is /dev/mmcblk0. The alias is the SD host's label in our kernel dts. Its NODE NAME must be sdhci1@91581000
-// for Lemnos's boot_sources path (see docs/prs/K1-k230d.md, node names): Gaia's node is mmc@91581000 today, so it is a mismatch.
-//   aliases { mmc0 = &sdhci1; };
+// and the env disk is /dev/mmcblk0. The alias is the SD host's label in our kernel dts. Its node name is mmc@91581000, the one the shipped mainline dtb uses
+// (mainline's binding requires mmc@); Lemnos's boot_sources path follows it once Lemnos moves its map (pending).
+//   aliases { mmc0 = &mmc_sd1; };
 //
 // CONFIRM ON BOARD before the first Lemnos write: /dev/mmcblk0 is the SD disk, and the U-Boot index is 1. A wrong device makes
 // Lemnos refuse ("no valid environment"); it never writes blindly.
