@@ -2108,13 +2108,28 @@ if ! pads_out=$(pads_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
 fi
 
-# The slot-disk data size rule (Z2, 2026-11-16): on a GPT board, a slot-disk product's data partition must hold keep slots
-# plus the reserve, with a 10 % margin for the filesystem: data >= 1.10 x (keep x largest slot + reserve_mb). keep and
-# reserve_mb must be stated in the board's system-slots device (no inherited Lemnos default: 3 and 2048 MiB). The largest
-# slot is 40 MiB, the design bound from the ZERO 3E board's own estimate (board.toml). MBR boards (the Raze, slot-boot) are not checked.
-DATA_SLOT_MAX=$((40 * 1048576))
+# The slot-disk data size and layout rule (Z2; the set the bench boards copy, coordinator 2026-11-16). On a GPT board a
+# slot-disk product must (a) hold keep slots' bay sets, the reserve and the journal allowance in its data partition with a
+# 10 % margin: data >= 1.10 x (keep x bay + reserve_mb + journal); and (b) fit the whole layout on the smallest card:
+# layout end (the first partition's offset + the table's sizes + the backup GPT header) <= the card's usable bytes.
+# keep and reserve_mb must be stated in the board's system-slots device (no inherited Lemnos default: 3 and 2048 MiB).
+# bay = the sum of the board's enforced bay sizes ([boot] bay_*: refused by name beyond their size, Lemnos install.rs:698).
+# The smallest bench card is 8 GB (board.toml's own statement); it is taken as 7.4 GiB usable (7,945,689,497 bytes): a safety
+# margin for cards that are smaller than nominal. Journal allowance: 64 MiB, the journal cap when it lands (not yet built).
+DATA_CARD_USABLE_BYTES=7945689497
+DATA_JOURNAL_BYTES=67108864
+DATA_MARGIN_PCT=10
+DATA_BACKUP_GPT_BYTES=1048576
+to_bytes() {  # <K|M|G suffixed or plain number> -> bytes
+  case $1 in
+    *K) echo $(( ${1%K} * 1024 )) ;;
+    *M) echo $(( ${1%M} * 1048576 )) ;;
+    *G) echo $(( ${1%G} * 1073741824 )) ;;
+    *) echo "$1" ;;
+  esac
+}
 data_size_rule() {  # <devices dir>
-  local dev=$1 p b name size keep reserve need typ lem out=""
+  local dev=$1 p b name size keep reserve bay need typ lem out="" k v sizes_sum=0 off_max=0 total x
   while IFS= read -r p; do
     grep -qE '^recipe = "slot-disk"' "$p" || continue
     b=$(product_board "$p"); [[ -n $b && -f $b ]] || continue
@@ -2123,22 +2138,39 @@ data_size_rule() {  # <devices dir>
     [[ $typ =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
     size=$(awk '/^\[\[partitions\]\]/{f=0} /^role = "data"/{f=1} f && /^size = /{gsub(/"/,"",$3); print $3; exit}' "$b")
     [[ -n $size ]] || { out+="FAIL $name: its board declares no size for the data partition"$'\n'; continue; }
+    size=$(to_bytes "$size")
     lem=$(dirname "$b")/lemnos-board.toml
     keep=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'keep = [0-9]*' | head -1 | grep -o '[0-9]*$')
     reserve=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'reserve_mb = [0-9]*' | head -1 | grep -o '[0-9]*$')
     if [[ -z $keep || -z $reserve ]]; then
-      out+="FAIL $name: its board's system-slots device does not state keep and reserve_mb (Lemnos's defaults are 3 and 2048 MiB: a GPT bench must state its own)"$'\n'; continue
+      out+="FAIL $name: its board's system-slots device does not state keep and reserve_mb explicitly (Lemnos's defaults are 3 and 2048 MiB: a GPT bench states its own)"$'\n'; continue
     fi
-    need=$(( (keep * DATA_SLOT_MAX + reserve * 1048576) * 11 / 10 ))
+    bay=0
+    for k in bay_kernel_bytes bay_initramfs_bytes bay_device_tree_bytes bay_cmdline_bytes bay_overlay_bytes; do
+      v=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o "$k = [0-9]*" | head -1 | grep -o '[0-9]*$')
+      if [[ -z $v ]]; then out+="FAIL $name: its board file states no $k (the enforced bay sizes the rule reads)"$'\n'; bay=-1; break; fi
+      bay=$(( bay + v ))
+    done
+    (( bay >= 0 )) || continue
+    need=$(( (keep * bay + reserve * 1048576 + DATA_JOURNAL_BYTES) * (100 + DATA_MARGIN_PCT) / 100 ))
     if (( size < need )); then
-      out+="FAIL $name: data partition $size bytes is below 1.10 x (keep $keep x 40 MiB + reserve ${reserve} MiB) = $need bytes: the first install would be refused NO_SPACE"$'\n'
+      out+="FAIL $name: data partition $size bytes is below 1.10 x (keep $keep x bays $bay + reserve ${reserve} MiB + journal 64 MiB) = $need bytes: the first install would be refused NO_SPACE"$'\n'
+    fi
+    # (b) the layout on the smallest card: the largest explicit offset, plus every sized partition, plus the backup GPT header.
+    sizes_sum=0; off_max=0
+    while IFS= read -r x; do [[ -n $x ]] && sizes_sum=$(( sizes_sum + $(to_bytes "$x") )); done < <(grep -E '^size = ' "$b" | tr -d '"' | awk '{print $3}')
+    while IFS= read -r x; do [[ -n $x ]] && { x=$(to_bytes "$x"); (( x > off_max )) && off_max=$x; }; done < <(grep -E '^offset = ' "$b" | tr -d '"' | awk '{print $3}')
+    total=$(( off_max + sizes_sum + DATA_BACKUP_GPT_BYTES ))
+    if (( total > DATA_CARD_USABLE_BYTES )); then
+      out+="FAIL $name: the layout is $total bytes (offset $off_max + partitions $sizes_sum + backup GPT $DATA_BACKUP_GPT_BYTES), above the smallest card's $DATA_CARD_USABLE_BYTES usable bytes (7.4 GiB): it does not fit"$'\n'
     fi
   done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
   printf '%s' "$out"
   [[ -z $out ]]
 }
 
-# Self-test: the data size rule passes the real tree, refuses a data partition below the minimum and a missing keep.
+# Self-test: the data size and layout rule passes the tree; refuses a data partition below the minimum, a layout larger than
+# the card, and a missing keep.
 data_size_self_test() {
   local tmp rc=0 out
   tmp=$(mktemp -d)
@@ -2148,11 +2180,15 @@ data_size_self_test() {
   if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a 100 MiB data partition was not refused" >&2; rc=1
   elif [[ $out != *"data partition 104857600 bytes is below"* ]]; then echo "check-devices: self-test: the refusal does not name the size: $out" >&2; rc=1; fi
   cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  sed -i 's/^size = "1073741824"$/size = "8589934592"/' "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: an 8 GiB data partition (a layout larger than the card) was not refused" >&2; rc=1
+  elif [[ $out != *"it does not fit"* ]]; then echo "check-devices: self-test: the layout refusal does not say so: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$tmp/devices/boards/radxa-zero-3e/board.toml"
   sed -i 's/ keep = 2, reserve_mb = 128,/ reserve_mb = 128,/' "$tmp/devices/boards/radxa-zero-3e/lemnos-board.toml"
   if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a slot-disk board without keep was not refused" >&2; rc=1
-  elif [[ $out != *"does not state keep and reserve_mb"* ]]; then echo "check-devices: self-test: the keep refusal does not say so: $out" >&2; rc=1; fi
+  elif [[ $out != *"does not state keep and reserve_mb explicitly"* ]]; then echo "check-devices: self-test: the keep refusal does not say so: $out" >&2; rc=1; fi
   rm -rf "$tmp"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the data size rule passes the tree and refuses a data partition below 1.10 x (keep x 40 MiB + reserve) and a missing keep"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the data size and layout rule passes the tree and refuses a data partition below the minimum, a layout larger than the card, and a missing keep"
   return $rc
 }
 
