@@ -245,3 +245,38 @@ diff --git a/drivers/thermal/rockchip_thermal.c b/drivers/thermal/rockchip_therm
  	thermal->chip->initialize(thermal->grf, thermal->regs,
  				  thermal->tshut_polarity);
  
+diff --git a/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml b/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
+--- a/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
++++ b/Documentation/devicetree/bindings/thermal/rockchip-thermal.yaml
+@@ -24,6 +24,7 @@
+       - rockchip,rk3576-tsadc
+       - rockchip,rk3588-tsadc
+       - rockchip,rv1108-tsadc
++      - rockchip,rv1126b-tsadc
+ 
+   reg:
+     maxItems: 1
+@@ -144,6 +145,23 @@
+       properties:
+         nvmem-cells: false
+         nvmem-cell-names: false
++  # RV1126B: the vendor node adds tsadc_phyctrl (rv1126b.dtsi.txt 2127-2139); the driver does not request it.
++  - if:
++      properties:
++        compatible:
++          contains:
++            const: rockchip,rv1126b-tsadc
++    then:
++      properties:
++        clocks:
++          minItems: 3
++          maxItems: 3
++        clock-names:
++          items:
++            - const: tsadc
++            - const: apb_pclk
++            - const: tsadc_phyctrl
++
+   - if:
+       not:
+         properties:

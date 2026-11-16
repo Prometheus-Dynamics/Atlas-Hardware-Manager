@@ -122,3 +122,49 @@ diff --git a/drivers/nvmem/rockchip-otp.c b/drivers/nvmem/rockchip-otp.c
  		.compatible = "rockchip,rk3588-otp",
  		.data = &rk3588_data,
  	},
+diff --git a/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml b/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
+--- a/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
++++ b/Documentation/devicetree/bindings/nvmem/rockchip,otp.yaml
+@@ -19,6 +19,7 @@
+       - rockchip,rk3568-otp
+       - rockchip,rk3576-otp
+       - rockchip,rk3588-otp
++      - rockchip,rv1126b-otp
+ 
+   reg:
+     maxItems: 1
+@@ -124,6 +125,34 @@
+             - const: apb
+             - const: phy
+             - const: sbpi
++
++  # RV1126B (BSP rockchip-otp.c rv1126b_data 1040-1045; vendor dtsi otp node): four clocks and four resets.
++  - if:
++      properties:
++        compatible:
++          contains:
++            enum:
++              - rockchip,rv1126b-otp
++    then:
++      properties:
++        clocks:
++          minItems: 4
++          maxItems: 4
++        clock-names:
++          items:
++            - const: usr
++            - const: sbpi
++            - const: apb
++            - const: phy
++        resets:
++          minItems: 4
++          maxItems: 4
++        reset-names:
++          items:
++            - const: usr
++            - const: sbpi
++            - const: apb
++            - const: phy
+ 
+   - if:
+       properties:

@@ -60,3 +60,14 @@ diff --git a/drivers/iio/adc/rockchip_saradc.c b/drivers/iio/adc/rockchip_saradc
  		.compatible = "rockchip,rk3588-saradc",
  		.data = &rk3588_saradc_data,
  	},
+diff --git a/Documentation/devicetree/bindings/iio/adc/rockchip-saradc.yaml b/Documentation/devicetree/bindings/iio/adc/rockchip-saradc.yaml
+--- a/Documentation/devicetree/bindings/iio/adc/rockchip-saradc.yaml
++++ b/Documentation/devicetree/bindings/iio/adc/rockchip-saradc.yaml
+@@ -20,6 +20,7 @@
+           - rockchip,rk3562-saradc
+           - rockchip,rk3588-saradc
+           - rockchip,rv1106-saradc
++          - rockchip,rv1126b-saradc
+       - items:
+           - const: rockchip,rk3506-saradc
+           - const: rockchip,rk3528-saradc

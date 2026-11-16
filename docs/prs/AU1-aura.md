@@ -57,7 +57,8 @@ The RV1126B TRM is not on disk and is not downloaded. Every register offset, bit
 ## Not done in this PR (each with the reason)
 
 - **dwmac (`drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c`)**: not written. Mainline's `rv1126_ops` uses GRF 0x70 (the rv1126 layout). The BSP's RV1126B glue uses VI GRF 0x50050, the RK MAC-PHY registers at 0x500B4-0x500BC, and the php GRF (IOC GMACIO) at 0x38BA0 (BSP lines 2872-2995 and the `rv1126b_ops` at 3069-3077). The RGMII path needs `set_to_rgmii` and a speed hook, and the register equivalence with the rv1126 entry is not shown. The dts binds `rockchip,rv1126b-gmac` with the `snps,dwmac-4.20a` fallback, so the generic stmmac driver binds without the glue. Owner: Atlas (Lemnos review).
-- **GMAC pinctrl**: the BSP tree has no RV1126B RGMII pin group (its only GMAC-named group is the on-chip PHY's `fephym1`, which the Aura does not use). `pinctrl-0` is not set. Owner: the schematic and the user, then Atlas.
+- **GMAC pinctrl (done, UNTESTED ON BOARD)**: the GMAC1 M0 RGMII groups come from the vendor reference `rv1126b-pinctrl.dtsi` (`eth` node 247-302, `eth_clk_25m` 397-403), copied into 0002 with the pcfg nodes from BSP pinconf 107-110 and 137-140. The Aura uses them for the external PHY, not `fephym1` (the integrated PHY). The 25 MHz output group is not used: the PHY has its own crystal (UNVERIFIED).
+- **io-domain for VCCIO_PHY1 (no node added)**: mainline's io-domain driver has `rockchip,rv1126-pmu-io-voltage-domain` only (`drivers/soc/rockchip/io-domain.c` 604-605). VCCIO_PHY1 is a GRF-side rail set by the strap block "VCC_PHY0_IO Voltage Config" (R218-R226), not a PMU domain. Its voltage is UNVERIFIED (the sheet does not print it, and the RTL8211F strap table was not read). Owner: the user (board measurement) and Atlas.
 - **U-Boot**: not started (coordinator). Waiting on the SDK path.
 
 ## Per-block status
@@ -79,7 +80,7 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | USB 2 PHY | `usb2phy`, `usb2phy_otg` (interrupts per vendor) | 0003 adds the RV1126B tuning and cfg | builds; OTG ID fields left out (see above) |
 | USB 3 combo PHY | `usb3phy` node, disabled | 0004 adds the RV1126B cfg, binding, and the u32 offset | builds; not in the first image |
 | DWC3 (USB OTG Type-C) | `usb_drd_dwc3`, `rockchip,rv1126b-dwc3` + `rockchip,rk3576-dwc3` fallback; the Aura runs `dr_mode = "peripheral"` on `usb2phy_otg` only | glue binds rk3576 fallback UNVERIFIED | none expected; the first image is USB 2 gadget only |
-| GMAC (Ethernet) | `gmac` node, `rockchip,rv1126b-gmac` + `snps,dwmac-4.20a`, enabled on the Aura with RGMII | not written (see above) | Atlas: glue. Generic stmmac binds meanwhile. Ethernet stays in the image (user ruling). |
+| GMAC (Ethernet) | `gmac` node, `rockchip,rv1126b-gmac` (glue, 0007), external RGMII PHY U25 on GMAC1 M0, `phy-mode = "rgmii-rxid"`, PHY at address 1, pinctrl-0 = the five `ethm0` groups (0002). | glue builds; pins UNTESTED ON BOARD; Ethernet stays in the image (user ruling). |
 | I2C0 | `i2c0` with `rockchip,rv1126b-i2c`, disabled; pinctrl-0 `i2c0m0_pins` | 0005 adds the RV1126B soc data | Register comparison done: the rv1126 fallback differs (GRF 0x118 vs none), so it is its own patch 0005. |
 | OTP (serial source) | `otp` node, disabled, with the vendor's clocks and resets | 0008 adds the RV1126B read path and data | builds; `hwlocks` not carried; serial offsets UNVERIFIED |
 | SARADC0 | `saradc0` node, disabled | 0010 adds the RV1126B data | builds; DMA mode not ported |
@@ -97,7 +98,7 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | USB: USB 3 OTG Type-C as a USB 2 gadget, peripheral mode | Port per the user's ruling. SuperSpeed not in this image. |
 | Power: 5 V 3 A; a PC port may not supply it | UNVERIFIED. Whether a separate power port exists is still to confirm (user). |
 | Console UART | UNVERIFIED: the dts uses the EVB's uart2 (1.5 Mbaud, `stdout-path`). Aura pins from the schematic still owed. |
-| Ethernet: RGMII PHY, probably RTL8211F-family | UNVERIFIED chip (part marking not legible, triage). PHY address (`reg = <0>`) and RGMII delays from strap names only. |
+| Ethernet: external RGMII PHY U25 (schematic ETHER sheet, not the integrated FE PHY). Part marking not legible in the render; the pin names are RTL8211F-class; UNVERIFIED. PHYAD = 1 (sheet table `PHYAD[2:0] 3'b001`, R237 pull-up; R238/R239 pull-down). Delays: RXDLY high, TXDLY low (R233 populated, R234 on the pull-down side); the sheet heading calls R234 a pull-up, so the TX side is UNVERIFIED. |
 | PMIC | UNIDENTIFIED. Per ruling 5: two fixed supplies (`vcc3v3_sys`, always on) stand in, marked in the dts. Identify on the bench. |
 | DDR | Closed rkbin blob `rv1126b_ddr_1332MHz_v1.10.bin` (ruling 4). Bench-only, never published. |
 
@@ -153,3 +154,15 @@ Grouped by owner. "Gaia" is the build owner; "Lemnos" owns non-trivial driver wo
 - PMIC, power port, console and card-detect pins, PHY address: **user, on the bench.**
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+## 2026-11-16 update: GMAC pins, bindings, rkcommon, gate
+
+- **GMAC1 M0 RGMII groups** (0002, UNTESTED ON BOARD, TRM not read): vendor refs `/mnt/ssd-samsung/gaia/work/b7/ref/rv1126b-pinctrl.dtsi` 247-302 and 397-403; pcfg BSP `rv1126b-pinconf.dtsi` 107-110 and 137-140. Schematic: `/mnt/ssd-samsung/gaia/work/b7/aura-docs/schematic.pdf` (1 page, sha256 036cb8f0ba9f4e5dcf82d46a8e75c51fd7e41310c12ba9cfb8680cd0b33c5b5b), ETHER sheet nets `GMAC1_*_M0`, strap table, and the `VCC_PHY0_IO Voltage Config` block.
+- **Aura gmac** (0011): `phy-mode = "rgmii-rxid"`, `phy-handle`, PHY `reg = <1>`, pinctrl-0 the five `ethm0` groups. No `clock_in_out`: for RGMII the PHY supplies RXC and the RK MAC ignores that property; the RMII-only path uses it.
+- **Bindings (dt-schema)**: 0008 adds `rockchip,rv1126b-otp` with four clocks and resets (usr, sbpi, apb, phy); 0009 adds `rockchip,rv1126b-tsadc` and an RV1126B-only block for the third clock `tsadc_phyctrl` (the shared clock limit is unchanged); 0010 adds `rockchip,rv1126b-saradc`. **`dtbs_check` has NOT run**: dt-schema is not installed and no download was cleared. The YAML parses.
+- **rkcommon row** (U-Boot, scratch patch at `uboot/rkcommon.patch`): `{ "rv1126b", "110F", 0x10000 - 0x1000, false, RK_HEADER_V2 }`, citing `RKBOOT/RV1126BMINIALL.ini` line 2 (`NAME=RV110F`), line 25 (`NEWIDB=true`), line 27-28 (RC4 off). Mainline V2 rows use the family tag as a label (`RK35` for rk3568/rk3576); the image gets the `RKNS` magic. The size limit follows the rk3568/rk3576 rows' 0x1000 reserve, against 64 KiB system SRAM at 0x3ffb0000. UNVERIFIED until a board boots it. **Not built**: an out-of-tree host build could not run in this pass.
+- **Closed blobs**: the DDR init (`rv1126b_ddr_1332MHz_v1.10.bin`) and BL31 if used. An Aura image built with them stays on the bench, and its image metadata must say so.
+- **CI gate (25065379, run 43687683943) failed for two reasons, neither the stale-lock refusal alone**:
+  1. `families/rv11xx/family.toml:41: kernel.patches: unknown key`. The gate pins Gaia `d8441c9` (`devices/gaia.lock`), which does not accept `[kernel] patches`. My local check used `c0d084f`, which does, and the gate correctly refuses that binary as stale. The fix is a Gaia pin that has `patches` (the coordinator's pending pin move). I did not move the pin.
+  2. `products/waveshare-luckfox-aura/product.toml: no gaia.lock beside it`. The lock cannot be written until the Gaia pin accepts the family (1).
+- **Not done**: the U-Boot SoC series (rv1126b.c, clk, pinctrl, dtsi, defconfig, common header). It is a multi-file port that needs a build to check, and it is not started in code.
