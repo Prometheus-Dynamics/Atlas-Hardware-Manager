@@ -29,6 +29,10 @@
 # network-online.target except that unit's own WantedBy= (checked on the extracted root and devices/components).
 #
 # A listed path that is missing fails the build (a Buildroot change then shows here, not as a silent no-op).
+# THE HELPER: usr/libexec/dbus-daemon-launch-helper is not in the list. Buildroot's DBUS_PERMISSIONS names it (package/dbus/
+# dbus.mk:32-34) and makedevs fails when the file is missing (makedevs.c:578-582), so it must stay here. os/post-fakeroot.sh
+# removes it after makedevs. DBUS_HELPER is the one dbus path this script leaves, and the only one its check exempts.
+#
 # OPTIONAL paths are removed if present: they exist only when a daemon's option is on (the fragment turns those off).
 set -eu
 set -f
@@ -47,7 +51,6 @@ usr/bin/dbus-send
 usr/bin/dbus-test-tool
 usr/bin/dbus-update-activation-environment
 usr/bin/dbus-uuidgen
-usr/libexec/dbus-daemon-launch-helper
 usr/lib/libdbus-1.so
 usr/lib/libdbus-1.so.3
 usr/lib/libdbus-1.so.3.38.3
@@ -67,6 +70,8 @@ var/lib/dbus
 
 # Optional: removed if present. dbus-named activation units of hostnamed and timedated (systemd's files), and the
 # runtime socket directory tmpfiles makes.
+DBUS_HELPER='usr/libexec/dbus-daemon-launch-helper'
+
 DBUS_OPTIONAL='
 run/dbus
 usr/lib/systemd/system/dbus-org.freedesktop.hostname1.service
@@ -104,7 +109,7 @@ trim() {
 
   # 1. Every required path must be there, before anything is removed. All missing ones are named.
   missing=""
-  for p in $DBUS_REQUIRED; do
+  for p in $DBUS_REQUIRED $DBUS_HELPER; do
     if [ ! -e "$T/$p" ] && [ ! -L "$T/$p" ]; then missing="$missing $p"; fi
   done
   [ -z "$missing" ] || die "listed dbus path(s) missing from the target:$missing (the fixed list in os/post-build.sh is out of date with Buildroot, or the trim would be a silent no-op)"
@@ -120,7 +125,7 @@ trim() {
   ln -sfn /dev/null "$T/etc/systemd/system/systemd-networkd-wait-online.service"
 
   # 3. Nothing with dbus in its path may be left. Host find, run in the target tree.
-  left=$(cd "$T" && find . -path '*dbus*' | sed 's|^\./||' || true)
+  left=$(cd "$T" && find . -path '*dbus*' | sed 's|^\./||' | grep -v -x "$DBUS_HELPER" || true)
   [ -z "$left" ] || die "dbus paths left after the removal (add them to the list or find their owner): $(echo $left)"
 
   # 4. No ELF file left under the target may need libdbus-1. readelf is the host's GNU binutils: its readelf reads
@@ -194,7 +199,7 @@ $msgs"
   [ -z "$notes" ] || echo "raze-base post-build: NOTE enabled units:
 $notes"
 
-  echo "raze-base post-build: dbus removed from $T (required $(echo $DBUS_REQUIRED | wc -w) paths, optional $(echo $DBUS_OPTIONAL | wc -w)); wait-online masked; checks passed"
+  echo "raze-base post-build: dbus removed from $T (the helper $DBUS_HELPER is left for os/post-fakeroot.sh) (required $(echo $DBUS_REQUIRED | wc -w) paths, optional $(echo $DBUS_OPTIONAL | wc -w)); wait-online masked; checks passed"
 }
 
 self_test() {
@@ -233,7 +238,17 @@ self_test() {
   refused_naming missing usr/bin/dbus-send
 
   built linked
-  cp "$scratch/linked/usr/bin/dbus-send" "$scratch/linked/usr/bin/keep-send"
+  # The ELF that needs libdbus-1: the real dbus-send on a built root. On the fake tree (placeholders, not ELF) a test
+  # binary is linked here, from the host's libdbus-1.so.3 (same soname), into the copy only.
+  if is_elf "$scratch/linked/usr/bin/dbus-send"; then
+    cp "$scratch/linked/usr/bin/dbus-send" "$scratch/linked/usr/bin/keep-send"
+  else
+    command -v gcc >/dev/null 2>&1 || die "self-test: no gcc on the host: the linked case needs an ELF that needs libdbus-1"
+    lib=$(ldconfig -p 2>/dev/null | sed -n 's/^[[:space:]]*libdbus-1\.so\.3 .*=> //p' | head -1)
+    [ -n "$lib" ] || die "self-test: no host libdbus-1.so.3 to link the linked case against"
+    echo 'int main(void){return 0;}' | gcc -Wl,--no-as-needed -o "$scratch/linked/usr/bin/keep-send" -x c - -x none "$lib" \
+      || die "self-test: gcc could not link the linked case"
+  fi
   refused_naming linked keep-send
 
   built typed

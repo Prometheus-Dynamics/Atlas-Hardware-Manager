@@ -92,6 +92,9 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 # The post-build script: the dbus removal and its checks (os/post-build.sh, PR B41). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
+# STAGED, NOT WIRED (PR RAZE-DBUS-HELPER): os/post-fakeroot.sh removes the dbus helper after makedevs (BR2_ROOTFS_POST_FAKEROOT_SCRIPT
+# is the line that names it). It is wired here in the commit that pins the Gaia rev whose rootfs is the fakeroot stage result;
+# until then the helper stays in the root.
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/

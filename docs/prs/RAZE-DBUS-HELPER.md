@@ -160,3 +160,106 @@ The check is not written yet.
 ## 7. Status
 - Not done: the helper fix (on hold), the sh -n + dry-run rule, the exec-bit check, the built-tree rule, the gate run,
   the pin, and the PR.
+
+## 8. What this PR changes (after the evidence commit)
+- `devices/products/raze-base/os/post-build.sh`: the helper leaves the removal list (`DBUS_HELPER`, step 1 still requires
+  it, step 3 exempts exactly that path). Verified on the fake tree: with the helper kept out of the exemption, the script
+  fails at step 3 with Gaia's message (`dbus paths left after the removal ...: usr/libexec/dbus-daemon-launch-helper`).
+- `devices/products/raze-base/os/post-fakeroot.sh` (0755): removes the helper, refuses when it is absent, refuses any
+  dbus path left. STAGED: not named by `raze.fragment` (a comment at the POST_BUILD line says so). It is wired in the
+  commit that pins the Gaia rev whose rootfs is the fakeroot-stage result. Under the current pin that copy is discarded
+  (`fs/common.mk:196`), so a removal there would not reach the image.
+- `devices/products/raze-base/os/overlay/usr/lib/systemd/system-preset/10-raze-base.preset`: the image's stated unit set
+  (`enable` lines with a reason each) and a final `disable *`. Inert until the pin (see its header). Its `UNSURE:` lines are
+  for the coordinator's ruling.
+- `scripts/fake-raze-root.sh`: a labelled FAKE tree, not a built root (placeholders; the paths come from post-build.sh).
+- `scripts/check-product-scripts.sh`: `sh -n` (or `bash -n` on a bash shebang) for every fragment-named script; a dry run where
+  a stand-in tree exists, otherwise a visible `dry run: NOT CHECKED (no stand-in tree for <script>)`. Self-test: a syntax
+  error is refused. The dry run of post-build runs it after the HOSTNAMED-off removal (as its own self-test builds it).
+- `scripts/check-fragment-modes.sh`: `--self-test` (a stored 0644 copy is refused, a 0755 copy passes, no stored copy is
+  refused) runs in the gate. `--real` asks Gaia for the stored trees (`gaia build … --until gaia.source.input`, the settings
+  from `scripts/version-rule.sh`) and fails for raze-base post-build.sh at 9efa797f: the output was
+  `FAIL …/post-build.sh: stored 644 … (executable in the tree): Gaia drops the exec bit of a fragment-named script`.
+  The real run is NOT in the gate in this commit; it joins with the Gaia pin that fixes the exec bit.
+- `scripts/check-built-root.sh`: `--built NAME=DIR` (or `ATLAS_BUILT_TREES`) and `--expect FILE`: the enabled units must EQUAL
+  the expected set, and every User=/Group= of an enabled unit (plus `orion` when `orion-comm.service` is enabled) must exist
+  in the tree's etc/passwd or etc/group. With no tree it prints `NOT CHECKED`. Self-tests on fake trees: a missing
+  `systemd-network` account is refused; an extra enabled unit is refused; a missing enabled unit is refused; an equal,
+  complete tree passes. The gate runs the self-test and the NOT CHECKED line.
+
+## 9. Preset semantics (VERIFIED-BY-READING, systemd 258.7 `src/shared/install.c`)
+- presets_find_config: `/etc/systemd/system-preset` and `/usr/lib/systemd/system-preset`, merged by file name (conf_files_list
+  semantics; the /etc file of the same name shadows /usr/lib). Lines are read in name order.
+- query_presets: first matching rule wins; no match → PRESET_ENABLE (:3504).
+- `disable`: unit_file_preset → install_info_discover on the `minus` side (:3636-3637): the unit's links are removed.
+- Gaia's own [[services]] links: whether they are made before or after the root step is NOT VERIFIED here; it decides
+  whether `disable *` removes them. Gaia states its own link-making order (the coordinator to confirm).
+- Wait-online: the mask stays. NEEDS-THE-BUILD whether `disable *` covers it despite networkd's `Also=`
+  (units/systemd-networkd.service.in:70).
+
+## 10. /var (open: to be answered per slot product when Gaia's first fixed root exists)
+Buildroot, quoted (skeleton-init-systemd.mk:32-36 and :37-60):
+> On a R/O rootfs, /var is a tmpfs filesystem. So, at build time, we redirect /var to the "factory settings" location.
+> Just before the filesystem gets created, the /var symlink will be replaced with a real (but empty) directory, and the
+> "factory files" will be copied back there by the tmpfiles.d mechanism.
+The hook is `SKELETON_INIT_SYSTEMD_ROOTFS_PRE_CMD_HOOKS` (line 60): it runs in the fakeroot stage, only with
+`BR2_INIT_SYSTEMD_VAR_FACTORY` (system/Config.in:214). It writes `usr/lib/tmpfiles.d/00-buildroot-var.conf` (line 56)
+and installs `factory/var.mount` (lines 57-58):
+```
+[Unit]
+Description=Buildroot /var tmpfs
+DefaultDependencies=no
+Conflicts=umount.target
+Before=local-fs.target umount.target
+After=swap.target
+[Mount]
+What=tmpfs
+Where=/var
+Type=tmpfs
+Options=nosuid,nodev,size=50%%,nr_inodes=1m
+```
+The unit has no `[Install]` section. Whether anything pulls `var.mount` in: NEEDS-THE-BUILD (systemd's implicit
+dependencies on a mount unit for a path under /var come from RequiresMountsFor= and from units ordering on it; none of our
+units names /var today, see below).
+What our products do with /var today (read by reading):
+- `/etc/fstab` gets `/dev/root / auto ro 0 1` only (skeleton-init-systemd.mk:29); no /var line.
+- orion's state moved off /var to /data (orion/component.toml:12, 54-55; orion/files/orion.conf:11-19, `state.dir = /data/orion`),
+  with a comment that /var is "RAM on the bring-up layout and inside the slot root on a managed board" (orion.conf:11).
+- The data partition: boards/raze/board.toml:66-71 (`name = "data"`, role data, the LAST partition). Nothing in
+  devices/components mounts it on raze-base: the only `data.mount` is in dev-bringup-hostkey (DEV ONLY).
+- Journal: `raze-base-files/files/60-board-journald.conf` (full text quoted in §11) sets `Storage=persistent`, and its
+  comment says "The OS keeps /var/log/journal on /data". No component installs a /var/log/journal link or a /data mount.
+
+## 11. Journal and /data facts (for the coordinator's ruling; no change made)
+- 60-board-journald.conf (full text, raze-base-files/files/60-board-journald.conf, installed at
+  /usr/lib/systemd/journald.conf.d/60-board.conf by raze-base-files/component.toml:7-10): the comment block (lines 1-6)
+  says the journal is kept across boots on /data (`/var/log/journal` on /data), bounded; then
+  `Storage=persistent`, `SystemMaxUse=16M`, `SystemMaxFileSize=4M`, `SystemKeepFree=256M`, `RuntimeMaxUse=4M`,
+  `RuntimeMaxFileSize=1M`.
+- What the image has today: the file is in output/target. /var is a real directory on the read-only root; nothing mounts
+  /var or /data on raze-base, so `/var/log/journal` cannot be created on a read-only root. What journald does then (volatile
+  in /run, or a failure): NEEDS-THE-BUILD (journald's fallback to /run/log/journal is systemd's documented behaviour,
+  not verified in the 258.7 source here).
+- pstore/ramoops: configured. boards/raze/board.toml:2-4 (keeps pstore: required), board.toml:37-42 (overlays
+  `ramoops-pi5`, `vc4-kms-v3d-pi5`), boot/raze-device.txt:9-12 (`dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,
+  console-size=0x20000`: 256 KiB at 0x0b000000, 128 KiB of it the console), raze-trim.config:25 (no wired console; pstore is
+  the log). Kernel config PSTORE, PSTORE_RAM, PSTORE_CONSOLE built in (board.toml:4).
+  What it captures: the kernel console of an early boot and the previous boot's log, in RAM. The Lemnos crash-log reader
+  (docs/prs/B29.md, B20.md mention it): not read in this session.
+- /data on raze-base: a data partition (board.toml:69-72, the last partition, type 0x83, ext4 per the dev fixture
+  `data.mount`, which is DEV ONLY). What already writes there: Orion's state (`/data/orion`, orion/files/orion.conf:13-19),
+  and the orion comm/node drop-ins that create `/data/orion` (orion/files/orion-comm-state.conf:9, orion-node-state.conf:11).
+  Lemnos's slot-init moves /data into the new root (dev-bringup-hostkey/component.toml:6-7 quoting Lemnos docs/slots.md):
+  a managed-board mount of /data is Lemnos's, not in this repo. Its size: the partition has no size here (board.toml:66-67).
+- To implement "bounded persistent journal on the data partition": (a) a `var-log-journal.mount` or a symlink
+  `/var/log/journal -> /data/journal` created on the read-only root is impossible without a mount, so a unit that mounts
+  /data (Lemnos owns the managed-board mount) plus a `ConditionPathIsMountPoint=`-gated journald setting, or (b)
+  `Storage=persistent` with `/var/log/journal` bind-mounted from /data by a unit ordered before systemd-journald. Size: the
+  caps already exist (60-board-journald.conf); the mount is the work. Small if Lemnos's /data mount exists; otherwise not
+  small. Ruling needed.
+
+## 12. Built-tree checks still NOT CHECKED here
+- No built root exists in this session: the enablement and account rule has no tree to run on (NOT CHECKED, printed).
+- The 31 unnamed `[Install]` units (258.7): under `10-raze-base.preset`'s final `disable *` they are disabled unless named;
+  which of them are present in the image: NEEDS-THE-BUILD (not chased one by one, per the ruling).
+- Dropping dbus stays: a later size item, measured on a built root.

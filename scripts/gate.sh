@@ -71,6 +71,26 @@ if [ -x scripts/check-config-only.sh ]; then
   step "config-only build (every product)" scripts/check-config-only.sh
 fi
 
+# The OS scripts the products' fragments name (PR RAZE-DBUS-HELPER): syntax, and a dry run where a stand-in tree exists.
+if [ -x scripts/check-product-scripts.sh ]; then
+  step "product scripts: syntax and dry runs" scripts/check-product-scripts.sh
+  step "product scripts self-test" scripts/check-product-scripts.sh --self-test
+fi
+
+# The exec bit of the fragment-named scripts (PR RAZE-DBUS-HELPER). Gaia 9efa797f stores them 0644, so the real-tree run
+# (scripts/check-fragment-modes.sh --real) is NOT in the gate until the commit that pins the fixed rev: it fails for
+# raze-base's post-build.sh there. Stated here, not skipped silently.
+if [ -x scripts/check-fragment-modes.sh ]; then
+  step "fragment exec bits self-test" scripts/check-fragment-modes.sh --self-test
+  echo "    known pending: scripts/check-fragment-modes.sh --real fails for raze-base's post-build.sh (Gaia 9efa797f stores it 0644); the real run joins the gate with the Gaia pin"
+fi
+
+# The built-root rule (accounts and enablement): its self-test always; a built root is checked only when one is given.
+if [ -x scripts/check-built-root.sh ]; then
+  step "built-root rule self-test" scripts/check-built-root.sh --self-test
+  step "built-root rule (no built tree given: NOT CHECKED)" scripts/check-built-root.sh
+fi
+
 # Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
 # cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
 if [ -x scripts/check-kernel-fragments.sh ]; then
