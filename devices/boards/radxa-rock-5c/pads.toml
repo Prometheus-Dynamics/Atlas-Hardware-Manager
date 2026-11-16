@@ -1,8 +1,13 @@
 # Pad-table statement for the ROCK 5C (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
-# Not established. U-Boot v2026.10 applies no io-domain table for this board: no io-domains node in rk3588-base or the
-# board dts (research/u-boot dts/upstream/src/arm64/rockchip/rk3588s-rock-5c.dts), and CONFIG_ROCKCHIP_IODOMAIN is
-# not in the RK3588 default list (drivers/misc/Kconfig:114-121) nor in rock-5c-rk3588s_defconfig. The bank voltages are
-# therefore not stated by any table on disk, and no schematic for this board is on disk. Left refused.
-source = "upstream U-Boot dts rk3588s-rock-5c.dts and rk3588s-rock-5c-u-boot.dtsi at U-Boot v2026.10: no io-domains node; io-domain driver off for RK3588"
-derived_from_board = ""
-bank_voltages = {}
+# No pad or io-domain table is applied by our bootloader or kernel. Evidence for BOTH sides:
+#   U-Boot (research/u-boot, v2026.10): configs/rock-5c-rk3588s_defconfig sets CONFIG_ROCKCHIP_RK3588=y (line 7) and
+#     neither CONFIG_ROCKCHIP_IODOMAIN nor CONFIG_SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 defaults the
+#     io-domain driver on for PX30, RK3308, RK3328, RK3399 and RK3568 only (not RK3588); no io-domains node in
+#     dts/upstream/src/arm64/rockchip/rk3588-base.dtsi, rk3588s.dtsi or rk3588s-rock-5c.dts.
+#   Kernel (the kernel-side dts copy research/scratch-uboot-mainline/dts/upstream/src/arm64/rockchip/): no io-domains node in
+#     rk3588-base.dtsi, rk3588s.dtsi or rk3588s-rock-5c.dts. The kernel config is not on disk; the io-domain driver applies
+#     only from an io-domains node, so with no node no table is applied. This copy is not the mainline 7.3.4 tag, which
+#     this session could not reach (kernel.org 403/404): UNVERIFIED against 7.3.4.
+# The pinmux is per-node pinctrl-0 in the dts, not a bank-voltage table.
+applies_pad_table = false
+pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-5c-rk3588s_defconfig (CONFIG_ROCKCHIP_RK3588=y, no ROCKCHIP_IODOMAIN, no SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3588) and no io-domains node in the U-Boot or kernel rk3588s-rock-5c dts (rk3588-base.dtsi, rk3588s.dtsi, rk3588s-rock-5c.dts); kernel config not on disk, and no node means no table; kernel dts copy is not the 7.3.4 tag (unverified)"

@@ -1,7 +1,10 @@
 # Pad-table statement for the ROCK 4D (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
-# Not established, like the ROCK 5C: the RK3576 is not in the io-domain default list (drivers/misc/Kconfig:114-121),
-# and no io-domains node is in the RK3576 dtsi or the board dts (research/u-boot dts/upstream/src/arm64/rockchip/
-# rk3576-rock-4d.dts). No schematic on disk. Left refused.
-source = "upstream U-Boot dts rk3576-rock-4d.dts at U-Boot v2026.10: no io-domains node; io-domain driver off for RK3576"
-derived_from_board = ""
-bank_voltages = {}
+# No pad or io-domain table is applied by our bootloader or kernel. Evidence for BOTH sides:
+#   U-Boot (research/u-boot, v2026.10): configs/rock-4d-rk3576_defconfig sets CONFIG_ROCKCHIP_RK3576=y (line 9) and
+#     neither CONFIG_ROCKCHIP_IODOMAIN nor CONFIG_SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 does not default the
+#     io-domain driver on for RK3576; no io-domains node in dts/upstream/src/arm64/rockchip/rk3576.dtsi or rk3576-rock-4d.dts.
+#   Kernel (the kernel-side dts copy research/scratch-uboot-mainline/dts/upstream/src/arm64/rockchip/): no io-domains node in
+#     rk3576.dtsi or rk3576-rock-4d.dts. The kernel config is not on disk; with no node no table is applied. This copy is not
+#     the mainline 7.3.4 tag (kernel.org unreachable here): UNVERIFIED against 7.3.4.
+applies_pad_table = false
+pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-4d-rk3576_defconfig (CONFIG_ROCKCHIP_RK3576=y, no ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3576) and no io-domains node in the U-Boot or kernel rk3576 dts (rk3576.dtsi, rk3576-rock-4d.dts); kernel config not on disk, and no node means no table; kernel dts copy is not the 7.3.4 tag (unverified)"

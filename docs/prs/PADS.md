@@ -1,110 +1,137 @@
 # PADS: the pad-table provenance rule
 
-Split out of K1 (coordinator ruling, 2026-11-16): the rule is general, so it lands on its own. K1 keeps the K230 parts and
-rebases on this PR afterwards. Nothing here changes a board's build, boot or image; it refuses a product whose pad table
-has no provenance.
-
-## Why
-
-A board's bootloader can write the SoC's iomux table, including the bank-voltage mode. A wrong bank voltage can damage the
-chip (the K230 BPI table says so at its dts line 65). A table copied from another board, or one with no source, or one with
-the bank voltages left unstated, must not build.
+Lands the rule that stops a product from building on a pad table that has no provenance. Nothing here changes a board's
+build, boot or image. The rule refuses a product whose board's pad table is copied, unsourced, unstated, or missing.
 
 ## The rule
 
-1. A family states, in `devices/families/<f>/pads.toml`, whether its bootloader applies a pad table:
+Sidecar `pads.toml` beside each family and board is the permanent shape. Gaia reads the description files with
+`deny_unknown_fields`: an unknown key in `family.toml` or `board.toml` is refused (probe: `families/rk35xx/family.toml:38:
+bootloader.applies_pad_table: unknown key`, gaia 2.0.6-dev at d8441c9). `pads.toml` is not a description, so Gaia never
+reads it, and the rule reads it directly.
+
+1. **A family states whether its bootloader applies a pad table**, in `devices/families/<f>/pads.toml`:
    - `applies_pad_table = true`: every board of the family states its own `pads.toml`.
-   - `applies_pad_table = false` with `pad_table_reason = "..."`: no table applies; the reason is required.
-   - Neither (no file, or no key): the family is refused. An omitted statement is the mistake the rule stops.
-2. A board of a flagged family must have `devices/boards/<b>/pads.toml` (a product-local board such as
-   `devices/products/<p>/board/` takes its own `pads.toml` beside its `board.toml`). Its keys:
-   - `source`: where the table came from, with the path and the sheet or lines.
-   - `derived_from_board`: empty means the board's own table. A board id means it was copied from that board: refused.
-   - `bank_voltages`: every bank the table drives, stated. Empty is refused.
-3. The rule runs over every product's board. A board with no product is not built, so it is not refused here.
+   - `applies_pad_table = false` with `pad_table_reason = "..."`: no table applies, and the reason is required.
+   - Neither: the family is refused ("states no pad-table fact").
+2. **A board of a flagged family states one of two things**, in `devices/boards/<b>/pads.toml`:
+   - `applies_pad_table = false` with a `pad_table_reason`, which carries the evidence for both the bootloader and the
+     kernel. Accepted the way the bcm2712 family statement is accepted. If either side applies a table, the statement is
+     false and the voltages are required.
+   - Or the table itself: `source` (where it came from, with the path and lines), `derived_from_board` (empty means the
+     board's own table; a board id means it was copied and is refused), and `bank_voltages` (every bank the table drives,
+     stated, not inherited).
+3. **A range is accepted only for a switchable bank**, and only with `switched_by` in `pads.toml` naming the part that
+   switches it and both endpoints (1.8V and 3.3V).
+4. A product-local board (`devices/products/<p>/board/`) takes its own `pads.toml` beside its `board.toml`.
+5. The rule runs over each product's board. A board with no product is not built, so it is not refused here.
 
-Refusal messages name the board and the reason, and the self-test proves each one plus the passes:
-the pad rule passes a sourced, stated table and a family that says `false` with a reason, and refuses a derived, unsourced,
-unstated or missing table, and a family that is unstated or says `false` with no reason.
+The refusal messages name the board and the reason, and point at `pads.toml`. `pads_self_test` proves: a sourced, stated table
+passes; a board stating no table applies, with a reason, passes; a family that says `false` with a reason passes; and it
+refuses each of: a derived table, no provenance, bank voltages not stated, no table at a flagged family, a board claiming
+`false` without a reason, a family stating `false` without a reason, a family stating no fact, a range without `switched_by`,
+and a range without both endpoints.
 
-**Deviation from the brief, and why:** the family and board statements are sidecar files (`pads.toml`), not keys in
-`family.toml` or `board.toml`. Gaia reads those description files with `deny_unknown_fields`: the probe of
-`applies_pad_table` under `[bootloader]` returned `families/rk35xx/family.toml:38: bootloader.applies_pad_table: unknown key`
-(gaia 2.0.6-dev at d8441c9). A `[pads]` table in a board file would be refused the same way. `pads.toml` is not a
-description, so Gaia never reads it, and the rule reads it directly.
+## Families (devices/families/<f>/pads.toml)
 
-## Families on next
-
-| Family | Statement | Basis |
+| Family | Statement | Source |
 |---|---|---|
-| rk35xx | `applies_pad_table = true` | U-Boot v2026.10 applies the io-domain table at boot (`CONFIG_ROCKCHIP_IODOMAIN` defaults on for RK3568, `research/u-boot/drivers/misc/Kconfig:114-121`); not in SPL (`CONFIG_SPL_ROCKCHIP_IODOMAIN` is off, `Kconfig:127`). |
+| rk35xx | `applies_pad_table = true` | U-Boot v2026.10 applies the io-domain table at boot where the io-domain driver is on: `CONFIG_ROCKCHIP_IODOMAIN` defaults on for RK3568 (`research/u-boot/drivers/misc/Kconfig:114-121`), not in SPL (`CONFIG_SPL_ROCKCHIP_IODOMAIN` off, `Kconfig:127`). Boards state their own table or their own `false`. |
 | sun60i | `applies_pad_table = true` | The A733 boot chain reads the board's PIO setup from its device tree. Each board states its table. |
-| bcm2712 | `applies_pad_table = false`, reason "pads are set by the Pi firmware; not applicable" | No Atlas bootloader; the Pi firmware and the kernel overlays set the pins. |
+| bcm2712 | `applies_pad_table = false`, reason "pads are set by the Pi firmware; not applicable" | No Atlas bootloader applies a pad table on this family. |
 
-k230 is not on next, so its family statement stays in K1 with its pending draft.
+## Boards (devices/boards/<b>/pads.toml)
 
-## Boards on next, by source
+**radxa-cubie-a7s: stated (source: the board's own regulator nodes, cross-referenced to the schematic).**
+- Whose: the Radxa U-Boot device tree at commit 9da4b3e8, `research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts`.
+  The DockSeed series dts (fe0a8ed) is not on disk and is not cited.
+- The regulator nodes give the voltages: `reg_bldo1` "vcc-pe" 1.8 V (lines 178-183, name at 182); `reg_bldo2` "vcc-pd" 1.8 V
+  (185-190, name at 189); `cldo1` "vcc-pm" 1.8 V (218-222, name at 221); `cldo5` "vcc-pc" 1.8 V (240-244, name at 243).
+- Cross-reference to schematic V1.10 sheet 4 (04 POWER AXP318, `dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf`):
+  BLDO1 feeds VCC-PE, VCC-PK and VCC-MCSI; BLDO2 feeds VCC-PD, VCC-LVDS0, VCC-PJ and VCC18-LCD. The sheet gives no voltage on
+  the BLDO outputs, so the voltages come from the dts.
+- **Partial, and flagged:** VCC-PH, VCC18-PF, VCC-PL, VCC-IO and VCC-PG have no regulator node and are not mapped on sheet 4.
+  They are not in `bank_voltages`. The board is un-refused on the banks it states; the rest are open (see Open).
 
-**rk35xx (the io-domain table; U-Boot v2026.10 at `research/u-boot`, dts from `dts/upstream/src/arm64/rockchip/`):**
-- **radxa-zero-3e: stated.** `rk3566-radxa-zero-3.dtsi:456-467` (`&pmu_io_domains`, status okay). Supplies, each voltage from
-  its regulator node in the same file: pmuio1 `vcc3v3_pmu` 3.3 V (:349), pmuio2 `vcca1v8_pmu` 1.8 V (:287), vccio1
-  `vccio_acodec` 3.3 V (:325), vccio2 `vcc_1v8` 1.8 V (:38), vccio3 `vccio_sd` 1.8 V to 3.3 V (:337), vccio4 `vcc_1v8` 1.8 V,
-  vccio5 to vccio7 `vcc_3v3` 3.3 V (:68).
-  - Driver: the ZERO 3E defconfig selects `CONFIG_ROCKCHIP_RK3568=y` (`configs/radxa-zero-3-rk3566_defconfig:7`), so the io-domain
-    driver is on in U-Boot proper. It is not in SPL: the defconfig has no `CONFIG_SPL_ROCKCHIP_IODOMAIN`.
-  - **Open:** vccio3 is a range, not a fixed bank voltage. It is stated as the range, and that is a judgment for the coordinator.
-- **radxa-rock-5c: not established.** No `io-domains` node in `rk3588-base` or in `rk3588s-rock-5c.dts`; the io-domain driver
-  is off for RK3588 (not in the `Kconfig:114-121` default list, and not in `rock-5c-rk3588s_defconfig`, which sets
-  `CONFIG_ROCKCHIP_RK3588=y` at line 7). So no table is applied and no bank voltage is stated on disk. No ROCK 5C schematic is on disk.
-- **radxa-rock-4d: not established.** Same reasoning for RK3576 (`rk3576-rock-4d.dts`, no io-domains node, RK3576 not in the
-  default list).
+**radxa-zero-3e: stated (the io-domain table; U-Boot v2026.10 and the kernel-side dts).**
+- Source: `rk3566-radxa-zero-3.dtsi:456-467`, `&pmu_io_domains` (status okay), supplies from the regulator nodes in the same file:
+  pmuio1 `vcc3v3_pmu` 3.3 V (:349), pmuio2 `vcca1v8_pmu` 1.8 V (:287), vccio1 `vccio_acodec` 3.3 V (:325), vccio2 `vcc_1v8` 1.8 V
+  (:38), vccio3 `vccio_sd` 1.8 V to 3.3 V (:337), vccio4 `vcc_1v8` 1.8 V, vccio5 to vccio7 `vcc_3v3` 3.3 V (:68).
+- The driver is on in U-Boot proper (`configs/radxa-zero-3-rk3566_defconfig:7`, `CONFIG_ROCKCHIP_RK3568=y`), and not in SPL.
+- `vccio3` is a range. `switched_by` names the SD card voltage regulator (`vccio_sd`, dts min 1800000 max 3300000), which
+  switches the SD bank between 1.8V and 3.3V at run time.
 
-**sun60i (Radxa Cubie A7S schematic V1.10, `dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf`, rendered at 300 dpi):**
-- **radxa-cubie-a7s: not established.** Sheet 4 (04 POWER AXP318) gives the PIO supply nets: BLDO1 feeds VCC-PE, VCC-PK and
-  VCC-MCSI; BLDO2 feeds VCC-PD, VCC-LVDS0, VCC-PJ and VCC18-LCD; BLDO4 feeds VCC18-CODEC. The BLDO outputs carry no voltage
-  annotation on that sheet, and the text layer does not give one either. VCC-PH, VCC-PC, VCC-IO, VCC-PF, VCC-PL and VCC-PM are
-  not mapped to a rail on sheet 4. The sheet-7 (A733 GPIO) bank labels were not read in this session. The board is left
-  refused. It has no product, so the rule does not block a build; any product on it would be refused.
-- **radxa-cubie-a7a, radxa-cubie-a7z: derived from the A7S.** `derived_from_board = "radxa-cubie-a7s"`, so any product on them
-  is refused. Their real provenance comes with PR #134. They have no products, so nothing is refused today.
+**radxa-rock-5c: not applied (`applies_pad_table = false`), both sides.**
+- U-Boot (v2026.10): `configs/rock-5c-rk3588s_defconfig` sets `CONFIG_ROCKCHIP_RK3588=y` (line 7) and neither
+  `CONFIG_ROCKCHIP_IODOMAIN` nor `CONFIG_SPL_ROCKCHIP_IODOMAIN`. `drivers/misc/Kconfig:114-121` does not default the io-domain
+  driver on for RK3588. No `io-domains` node in `dts/upstream/src/arm64/rockchip/rk3588-base.dtsi`, `rk3588s.dtsi` or
+  `rk3588s-rock-5c.dts`.
+- Kernel: the kernel-side dts copy (`research/scratch-uboot-mainline/dts/upstream/src/arm64/rockchip/`) has no `io-domains`
+  node in those three files. The kernel config is not on disk. The io-domain driver applies only from an io-domains node, so
+  with no node no table is applied.
+- **UNVERIFIED against mainline 7.3.4:** the kernel-side copy is not the 7.3.4 tag. kernel.org was unreachable from this
+  session (raw 404, git 403). The statement says so.
 
-## Products on next: what the rule now says
+**radxa-rock-4d: not applied (`applies_pad_table = false`), both sides.**
+- U-Boot: `configs/rock-4d-rk3576_defconfig` sets `CONFIG_ROCKCHIP_RK3576=y` (line 9), with no io-domain config. Not in the
+  `Kconfig:114-121` default list. No `io-domains` node in `rk3576.dtsi` or `rk3576-rock-4d.dts`.
+- Kernel: the same three checks on the kernel-side copy give no io-domains node. Config not on disk. The same 7.3.4 caveat.
 
-Run: `pads_rule` over the tree (the function run; the full device check is in the gate log).
+**radxa-cubie-a7a and radxa-cubie-a7z: derived from the A7S (`derived_from_board = "radxa-cubie-a7s"`, bank voltages empty).**
+They have no products, so nothing is refused today. Any product on them is refused until its own provenance comes with PR #134.
 
-| Product | Result | Why |
-|---|---|---|
-| raze-base | passes | bcm2712: `applies_pad_table = false` with the reason. |
-| zero-3e-base | passes | ZERO 3E table stated (vccio3 as a range: see Open). |
-| zero-3e-bringup | passes | Same board, same table. |
-| rock-5c-base | **refused** | radxa-rock-5c: bank voltages not stated (no io-domain table applied; no schematic on disk). |
-| rock-5c-bringup | **refused** | Same board. |
-| rock-4d-base | **refused** | radxa-rock-4d: bank voltages not stated (RK3576, no io-domain table; no schematic on disk). |
-| rock-4d-bringup | **refused** | Same board. |
-| cubie-a7-bringup | **refused** | Its board is a copy of the A7S: derived from `radxa-cubie-a7s`, and bank voltages not stated. |
+**The bring-up copy (`devices/products/cubie-a7-bringup/board/`) was deleted with its product (see below).**
 
-The refusals are where the provenance really is missing. For the ROCK 5C and ROCK 4D, the table is applied by nothing on
-disk and the bank voltages cannot be stated without a schematic. For the bring-up Cubie, the copied table is derived.
+## Products on next: what the rule says
 
-## Open (for the coordinator's ruling before the push)
+Tree run (pr/PADS, after the changes): zero refusals on the products that exist. The rule passes:
+raze-base (bcm2712 reason), zero-3e-base and zero-3e-bringup (io-domain table, `vccio3` with `switched_by`), rock-5c-base and
+rock-5c-bringup (the not-applied statement), rock-4d-base and rock-4d-bringup (the not-applied statement).
 
-1. **ZERO 3E vccio3:** stated as a range (1.8 V to 3.3 V, set at run time by the SD voltage switch). If that is not
-   acceptable as a bank voltage, the ZERO 3E products (zero-3e-base, zero-3e-bringup) are refused too.
-2. **A7S bank voltages:** need the sheet-7 bank labels, or the BLDO voltage values from another sheet or from the AXP318
-   defaults. Until then the A7S, and any Cubie product on it, is refused.
-3. **ROCK 5C and ROCK 4D:** need a schematic or the vendor board data for the bank voltages. Lemnos may find a public one.
-4. **Sidecar placement:** confirm `pads.toml` beside the description file, as the way to keep the statement away from Gaia's
-   parser.
-5. **K1 rebase:** K1's pending family and board drafts state the pad table in the old form (`[bootloader]` key, `[pads]`
-   table). They move to `pads.toml` when K1 rebases on this PR.
+## Deleted in this PR
+
+**cubie-a7-bringup** (`devices/products/cubie-a7-bringup/`): a copy of the A7S board data (its `board.toml` repeats the A7S's own
+lines, and its board's `pads.toml` marked it derived from the A7S). The A7S board's own statement now stands on its own
+provenance, so the copy is superseded. It was the only product on the sun60i family, and the A7S board has no product of its
+own yet. Its components were used only by it and are removed with it (`cubie-a7s-extlinux`, `usb-gadget-family`). Live
+references fixed: `devices/boards/radxa-cubie-a7s/board.toml` (the LED comment) and `devices/README.md` (the bench-key list).
+Nothing in CI (`.github`) or `scripts/` named it.
+
+## Kept, with the reason (the coordinator's test, applied)
+
+The test was: is a bring-up product superseded by a base or bench product on the same board? The base product of each
+board is the managed image without the bench key. A base product does not replace a bench product, because it has no SSH
+access for the bench. Deleting these three would remove the only bench access to each board, and the bring-up rule's own
+self-test copies them as templates (`scripts/check-devices.sh`, the bring-up rule self-test, which mutates
+`zero-3e-bringup`, `rock-5c-bringup`). So they are kept. **This is the one decision for the coordinator:** delete them, and the
+bring-up rule's self-test needs a fixture in their place.
+
+- zero-3e-bringup: kept (the only bench product of ZERO 3E).
+- rock-5c-bringup: kept (the only bench product of ROCK 5C).
+- rock-4d-bringup: kept (the only bench product of ROCK 4D).
+
+## What stays refused
+
+- **radxa-cubie-a7a and radxa-cubie-a7z** (boards with no products): stated as derived from the A7S. Any product on them is
+  refused until their own provenance comes with PR #134.
+- **radxa-cubie-a7s**: un-refused on the banks it states. The five PIO banks VCC-PH, VCC18-PF, VCC-PL, VCC-IO and VCC-PG are
+  not stated. A product on the A7S that needs one of them is refused on the day the rule is taught per-bank completeness.
+
+## Open
+
+1. **A7S partial coverage:** VCC-PH, VCC18-PF, VCC-PL, VCC-IO and VCC-PG. Needs the sheet-7 (A733 GPIO) bank labels or another
+   rail source before they can be stated.
+2. **The bring-up products** (see Kept): delete or keep, and if deleted, the bring-up rule's self-test needs a new fixture.
+3. **The RK kernel statements** are checked against the kernel-side dts copy, not the 7.3.4 tag. Re-check against 7.3.4 when
+   it is reachable.
+4. **ZERO 3E `vccio3`:** accepted as a switched range with `switched_by`, per the ruling. Recorded here so it is visible.
 
 ## Test fixtures
 
 The four good fixtures (`devices/tests/fixtures/good`, `good-f8`, `good-rust`, `good-sd-image`) have one family each
-(`example-family`). Under the rule each states `applies_pad_table = false` with a fixture reason, so the fixture checks
-keep passing. Without that statement the rule refused them ("states no pad-table fact"), which the first self-test run showed.
+(`example-family`). Each states `applies_pad_table = false` with a fixture reason, so the fixture checks keep passing.
 
 ## Not in this PR
 
-- No family or board is changed except the new `pads.toml` files and the `pads` rule in `scripts/check-devices.sh`.
 - No K230 part (K1 keeps it). No board is built, flashed or booted.
+- The product and component deletion is the only removal (cubie-a7-bringup).
