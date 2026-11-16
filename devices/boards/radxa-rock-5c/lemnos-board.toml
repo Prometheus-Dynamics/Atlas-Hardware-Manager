@@ -67,13 +67,15 @@ uses = { watchdog = "watchdog:/watchdog@feaf0000" }
 config = { timeout_s = 15 }
 
 # keep = 2 and reserve_mb = 128 (MiB) are set here, with the arithmetic in board.toml [[partitions]] data.
+# grow_data = false: GPT: Lemnos's grow is MBR-only until Lemnos GROW; stops its 8 s refusal loop; remove when Lemnos says.
+#   (Key: drivers/system-slots/src/lib.rs:1344 at Lemnos 31e0f736; the switch is read at :1666; grow.rs:61.)
 # The slots: the boot partition holds the bays (FAT), the data partition the slot file (/data). record = "uboot": U-Boot's own
 # redundant environment (the GPT partition of type 3de21764..., 128 KiB, copies of uboot_env_size 0x10000) holds the record.
 # The SD is U-Boot's mmc 1 (uboot_env_mmc_index = 1). boot_sources names the SD controller's device-tree path (sdmmc, /mmc@fe2c0000).
 [[devices]]
 id = "slots"
 driver = "system-slots"
-config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/mmc@fe2c0000=/mmc@fe2c0000"], uboot_env_size = 0x10000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, keep = 2, reserve_mb = 128 }
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/mmc@fe2c0000=/mmc@fe2c0000"], uboot_env_size = 0x10000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, keep = 2, reserve_mb = 128, grow_data = false }
 
 # The gadget (Lemnos usb-gadget): the default composition (the orion link, NCM derived from the board serial, one ACM console) on
 # the port above; the NCM interface is lemnos<N>, addressed by the lemnos0-addressing component (serial-hash-v1).

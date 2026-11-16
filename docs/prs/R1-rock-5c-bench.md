@@ -154,6 +154,9 @@ Lemnos file uses), which the board-ids check requires.
   comment: keep 2 x 40 MiB slot bound + reserve_mb 128 MiB = 208 MiB, x1.1 = 228.8 MiB minimum; 512 MiB declared.
 - Medium: 8 GB (the smallest the tree states, Z2's `radxa-zero-3e/board.toml`). UNVERIFIED for the product; the coordinator's 16 GB
   fallback is not used because the tree states 8 GB.
+- Slot bound: 40 MiB is an ESTIMATE (today's image, Z2's upper estimate), not an enforced maximum. Lemnos enforces no maximum on the
+  slot root (bundle.rs; the bays bound the boot payloads only). An over-size install is refused with NO_SPACE by the room check
+  (lib.rs:746-772). Z2's rule should compute from an enforced cap; the coordinator will align Z2, R1 and C1 on one set.
 - Lemnos system-slots config (`devices/boards/radxa-rock-5c/lemnos-board.toml`): `keep = 2` and `reserve_mb = 128` set explicitly.
   Lemnos's defaults are keep 3 and reserve 2048 MiB (`drivers/slot-store/src/store.rs:32` DEFAULT_KEEP; `drivers/system-slots/src/lib.rs:83`
   DEFAULT_RESERVE at the pin). Raze sets reserve_mb = 2048 and keep = 3 explicitly; Z2's ZERO 3E sets neither (it inherits). So R1
@@ -161,10 +164,15 @@ Lemnos file uses), which the board-ids check requires.
   when Z2 names its numbers; the rule is the same form either way.
 - Room check (Lemnos, `drivers/system-slots/src/lib.rs:746-772` at 82f6c075; the pinned 31e0f736 keeps the same reserve semantics
   at :82): an install needs free >= new slot + reserve_mb, else NO_SPACE.
-- Data partition growth: `grow_data` does NOT exist in Lemnos at 31e0f736 or at 82f6c075 (`git grep grow_data`: no hit). Lemnos's
-  first-start grow is `drivers/slot-store/src/mbr.rs` (plan_grow, MBR arithmetic) driven by `drivers/system-slots/src/grow.rs`
-  (BACKOFF_CAP 8 s, grow.rs:59). So the key the coordinator asked for cannot be set; it is not written. The data size is declared
-  final, so no grow is needed for the first image or for updates at this size.
+- Data partition growth: `grow_data = false` is set on the ROCK 5C's system-slots device (`lemnos-board.toml`). The key EXISTS at the
+  pinned Lemnos 31e0f736: `drivers/system-slots/src/lib.rs:1344` (`Key::optional("grow_data", Kind::Bool)`), read at `:1666`
+  (`grow::enabled(cfg.bool("grow_data"))`), `drivers/system-slots/src/grow.rs:61` ("on unless the board says `false`"), tests at
+  `grow/tests.rs:635`. Lemnos's first-start grow is MBR-only (`drivers/slot-store/src/mbr.rs`); on this GPT disk it refuses every pass and
+  retries every 8 s (`grow.rs:59` BACKOFF_CAP). The data size is declared final, so no grow is needed; `false` stops the refusal loop.
+  Remove when Lemnos GROW lands.
+- How this was wrong earlier: my first search ran `git grep` at rev 31e0f736 with the path filter `-- service crates socs testing`,
+  which left out `drivers/` where the system-slots driver lives, and it returned nothing. The search was wrong, not the key. The rerun
+  with `-- .` finds it.
 - Open: whether a pushed bundle is spooled on the data partition is unconfirmed by Lemnos; if it is, it adds a term to the arithmetic.
 
 ## Known-limit lines (for the PR body and this doc)

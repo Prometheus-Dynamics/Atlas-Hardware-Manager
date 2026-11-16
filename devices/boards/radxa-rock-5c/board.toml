@@ -70,8 +70,11 @@ loader_ini = { source = "rkbin", path = "RKBOOT/RK3588MINIALL.ini" }
 # :746-772; the pinned 31e0f736 has the same reserve default at :82): free >= new slot + reserve_mb, else NO_SPACE.
 #   Medium: 8 GB, the smallest the bench uses (Z2's radxa-zero-3e/board.toml, "8 GB+ SD cards the bench uses"; the tree states
 #           no smaller). UNVERIFIED for the product: a 16 GB card would also fit.
-#   Slot: the largest EROFS root, bounded at 40 MiB (Z2's upper estimate; the Raze measured 18,178,048 bytes = 17.3 MiB).
-#           UNVERIFIED for this board; Gaia's data-report gives the real figure.
+#   Slot: 40 MiB, an ESTIMATE of the largest EROFS root (Z2's upper estimate of today's image; the Raze measured 18,178,048
+#           bytes = 17.3 MiB). NOT an enforced bound: Lemnos enforces no maximum on the root (drivers/slot-store/src/bundle.rs;
+#           the bays bound only the boot-partition payloads, bays.rs). The install room check refuses an over-size slot with
+#           NO_SPACE (drivers/system-slots/src/lib.rs:746-772), so a bigger slot is refused, not silently broken. The device-check
+#           rule (Z2) must take the maximum from an enforced cap (a product cap that the build checks), not from this estimate.
 #   keep = 2 slots (the running one and the previous one, so a rollback target exists) x 40 MiB       =  80 MiB
 #   reserve_mb = 128 MiB (Lemnos suggests 64-128 for a bench image; the install needs a new slot + reserve free) = 128 MiB
 #   subtotal                                                                                             = 208 MiB
