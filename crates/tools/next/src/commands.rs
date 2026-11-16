@@ -397,9 +397,13 @@ fn trial_block_line(updates: &TrialUpdates) -> Option<String> {
     updates.blocks_trials().then(|| updates.words())
 }
 
+/// What `install` says on a blocked board: the slot is written, and nothing starts it. `install` alone never
+/// promises a boot; `trial` starts a slot, and a command that means "install and start it" refuses up front.
+pub(crate) const INSTALL_NO_TRIAL: &str = "the slot is installed, but the boot loader will not start it as a trial until the board takes trial updates";
+
 /// The refusal for a trial on a board that states a block: the typed reason, before anything is written.
 /// `None` when the trial may be started.
-fn trial_refusal(updates: &TrialUpdates) -> Option<String> {
+pub(crate) fn trial_refusal(updates: &TrialUpdates) -> Option<String> {
     trial_block_line(updates)
 }
 
@@ -459,10 +463,12 @@ pub(crate) async fn install<W: Write>(
     path: &Path,
     wait: Duration,
 ) -> Result<String, Refusal> {
-    // Lemnos BB1c: an install still writes the bay; only the trial is refused. Say so before writing.
-    if let Some(line) = trial_block_line(&trial_updates_of(link).await) {
-        r.say(line);
-        r.say("the slot is installed, but the boot loader will not start it as a trial until the board takes trial updates");
+    // Lemnos BB1c: `install` writes the bay and promises no boot. A blocked board says so before the
+    // transfer, and again once the slot is installed (the same words, from the one reading).
+    let blocked = trial_block_line(&trial_updates_of(link).await);
+    if let Some(line) = &blocked {
+        r.say(line.clone());
+        r.say(INSTALL_NO_TRIAL);
     }
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
@@ -525,6 +531,9 @@ pub(crate) async fn install<W: Write>(
             Some(Stage::Done { slot }) => {
                 r.say(format!("installed as {slot}"));
                 r.field("slot", slot.clone());
+                if blocked.is_some() {
+                    r.say(INSTALL_NO_TRIAL);
+                }
                 return Ok(slot);
             }
             Some(Stage::Failed { reason }) => {

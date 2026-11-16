@@ -23,6 +23,7 @@ use orion::node::Security;
 use serde_json::{Value, json};
 
 use crate::args::CycleArgs;
+use crate::commands::trial_refusal;
 use crate::commands::{self, Refusal};
 use crate::identity;
 use crate::link::{self, Link};
@@ -514,6 +515,15 @@ async fn step_list_before(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Res
 }
 
 async fn step_install_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result<(), Refusal> {
+    // The cycle installs AND starts a trial: a board that states a trial block refuses before any transfer,
+    // with the typed reason from the one shared reading (`trial_updates::read`, `words()`).
+    let updates = {
+        let link = ctx.link()?;
+        read_trial_updates(&BoardActions::new(link.handle.clone())).await
+    };
+    if let Some(words) = trial_refusal(&updates) {
+        return Err(Refusal::new(1, words));
+    }
     let bundle = ctx.good_bundle.clone();
     ctx.good = install_and_check(r, ctx, &bundle).await?;
     Ok(())

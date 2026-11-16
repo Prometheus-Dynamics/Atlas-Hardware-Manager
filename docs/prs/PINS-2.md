@@ -35,14 +35,19 @@ regeneration uses that Gaia binary (`/mnt/ssd-samsung/gaia/target/gaia-pr-patcha
     nothing is shown for a clear board.
   - `trial` (`commands.rs` `trial`): **refused up front** when the board states a block (`trial_refusal`), before
     `Follower::open` and before any write, with the typed reason. An unknown value is shown as "unknown (as sent: …)".
-  - `install` (`commands.rs` `install`): **not refused**. The bay is written, as Lemnos BB1c says ("install still writes the
-    bays and says in its reply that the boot loader will not start the slot"). Before writing, the CLI prints the same
-    line and "the slot is installed, but the boot loader will not start it as a trial until the board takes trial updates".
+  - `install` (`commands.rs` `install`): **allowed, and it promises no boot.** It writes the bay only. On a blocked board
+    the block line and "the slot is installed, but the boot loader will not start it as a trial until the board takes
+    trial updates" print **before** the transfer and **again** after the slot is installed. The exit status stays 0:
+    `install` alone never promises a boot. The help text says "install writes a slot and never starts it: `trial <slot id>`
+    starts it".
+  - `cycle` (`cycle.rs` `step_install_good`): **the one combined command** (install and start a trial). A blocked board
+    refuses it **up front**, before the first transfer, with the typed reason (`trial_refusal`).
   - Today (before this change) an install onto a blocked board was attempted and succeeded, and a trial failed with the
     board's own NOT_PERMITTED. That is (b). It is now (a) for the trial, and the install's note is up front.
-- **Open ruling**: the coordinator's brief asked for the install to be refused up front too. Lemnos's BB1c keeps the bay write
-  working (the slot is installed and can be trialled once the board takes trial updates), so this PR does not refuse the
-  install. If the install should be refused, say so and it is a one-line change in `install`.
+- **Ruling (2026-11-16)**: `install` stays allowed with the warnings above. Any command or flow that means "install AND
+  start it" (now or later, including the app's update action) **refuses up front, before any transfer**, with the typed
+  reason. The one source is `trial_updates::read` (the reading) and `TrialUpdates::words()` (the line); no consumer
+  matches the wire string or words of its own.
 - **The board's own refusal** still handled: the trial's refusal from the board is reported as it always was.
 - **The app**: `apps/` is not in this repository, so the app's board view is not changed here. It should call the same
   `trial_updates::read` and show `TrialUpdates::words()` on one line.
