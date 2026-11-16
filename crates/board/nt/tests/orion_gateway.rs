@@ -37,15 +37,15 @@ struct Board {
     socket: PathBuf,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
-    dir: PathBuf,
+    dir: atlas_types::socket::NodeDir,
 }
 
 impl Board {
     fn start(port: u16) -> Self {
         let run = RUNS.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("atlas-nt-gw-{}-{run}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("dir");
+        // A comm core's socket is `<dir>/orion.sock`: a short directory whatever the name.
+        let dir = atlas_types::socket::node_dir(&format!("atlas-nt-gw-{run}"))
+            .unwrap_or_else(|error| panic!("the comm core's directory: {error}"));
         let text = format!(
             "node.name = board\n\
              socket = {0}/orion.sock\n\

@@ -12,22 +12,28 @@ gate_tmp=$(mktemp -d "$scratch_root/gate-XXXXXX")
 export TMPDIR=$gate_tmp
 trap 'rm -rf "$gate_tmp"' EXIT
 
-# A Unix socket path must fit sun_path: 108 bytes with the NUL on Linux. Orion's test stub (orion c9eb5a2,
-# crates/testing/stubs, used by atlas-actions and others) binds TMPDIR/atl-c3-<pid>-<name>/node/orion.sock. The
-# fixed part of that is 45 bytes with a 7-digit pid and the longest test name in crates/board/actions (13 bytes).
-# A TMPDIR of 63 bytes or more makes every such test panic with "path must be shorter than SUN_LEN" (PR G12, CI).
-# The gate refuses it here, once, with the path and the limit, before any step runs.
+# A Unix socket path must fit sun_path: 108 bytes with the NUL on Linux, so 107 bytes of path. A test node's socket
+# lives under $XDG_RUNTIME_DIR, not under TMPDIR (atlas-types::socket::node_dir): the runtime dir is short by design,
+# while TMPDIR is whatever the caller gave (on CI, a long build path). The base is XDG_RUNTIME_DIR when it is set and
+# leaves room, else TMPDIR (the fallback, with its own room check). The fixed worst-case suffix past the base is
+# NODE_SOCKET_SUFFIX_MAX = 52 bytes ("/atlas-t-" + 16-digit hash + "-" + 10-digit pid + "-" + 4-digit counter + "/orion.sock").
+# A unit test (the_suffix_constant_is_the_gate_figure) keeps the Rust constant and this figure equal.
 SUN_PATH_BYTES=108
-SOCKET_SUFFIX_BYTES=45
+SOCKET_SUFFIX_BYTES=52
 socket_room_ok() {  # <dir>: 0 when a socket path under it fits sun_path, else prints why and returns 1
   local n
   n=$(printf '%s' "$1" | wc -c)
   if (( n + SOCKET_SUFFIX_BYTES >= SUN_PATH_BYTES )); then
-    echo "gate: TMPDIR is $n bytes ($1); a test socket path under it needs $((n + SOCKET_SUFFIX_BYTES)) bytes, the limit is $((SUN_PATH_BYTES - 1)). Set ATLAS_SCRATCH_ROOT to a shorter directory (on CI: the runner's temp dir)." >&2
+    echo "gate: base $1 is $n bytes; a test socket path under it needs $((n + SOCKET_SUFFIX_BYTES)) bytes, the limit is $((SUN_PATH_BYTES - 1)). Set XDG_RUNTIME_DIR or ATLAS_SCRATCH_ROOT to a shorter directory." >&2
     return 1
   fi
 }
-socket_room_ok "$gate_tmp" || exit 1
+# The runtime dir is the base when it is set and leaves room; the temp dir is checked only when it is not.
+if [ -n "${XDG_RUNTIME_DIR:-}" ] && socket_room_ok "$XDG_RUNTIME_DIR" >/dev/null 2>&1; then
+  :
+else
+  socket_room_ok "$gate_tmp" || exit 1
+fi
 
 step() {
   local label="$1" start
