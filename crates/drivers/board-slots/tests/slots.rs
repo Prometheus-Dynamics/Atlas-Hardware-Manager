@@ -190,7 +190,7 @@ async fn a_session_lost_during_the_push_resumes_without_a_second_install() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer() {
+async fn a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides() {
     let rig = Rig::start("lost-install").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -208,12 +208,15 @@ async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_t
     })
     .await;
     rig.relay.cut();
-    // The session is lost while the board runs the install: the outcome is unknown, and the board's
-    // list is what decides it. It is not reported as waiting, and not as failed.
-    // The follow produced no answer: the install waits for the board, and follows the run again.
-    stage_is(&rig, job, "the install to wait for the board", |stage| {
-        matches!(stage, Stage::WaitingForBoard { .. })
-    })
+    // The session is lost while the board runs the install. The run's number is not used on a later
+    // session (no handle is known on the stub, which names none), so the outcome is unknown and the
+    // board's list decides it. It is not reported as waiting, and not as failed.
+    stage_is(
+        &rig,
+        job,
+        "the install to be unknown while the list is checked",
+        |stage| matches!(stage, Stage::Unknown { .. }),
+    )
     .await;
     rig.node.hold_installs(false);
     assert_eq!(installed(&rig, job).await, "slot-2");
@@ -563,7 +566,7 @@ async fn the_signature_outcome_of_an_installed_slot_is_not_checked_when_unsigned
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_the_other() {
+async fn an_install_interrupted_by_a_replaced_board_stays_unknown_and_sends_nothing_to_the_other() {
     let rig = Rig::start("replaced").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -596,22 +599,28 @@ async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_th
             .expect("the replacement node starts on the same port");
     // Keep the relay alive for the whole test.
     let _relay = relay;
-    // The sim's one generous bound: only a stuck install reaches it.
-    let ended = tokio::time::timeout(DEADLINE, async {
-        while !installs.stage(job).is_some_and(|stage| stage.is_final()) {
+    // The replaced board's list cannot be read, so no read decides the install: it is shown as unknown
+    // while the list is checked, and it is not failed on that evidence alone (the run may still be on
+    // the first node). The sim's one generous bound only checks that it is shown at once.
+    let unknown = tokio::time::timeout(DEADLINE, async {
+        while !installs
+            .stage(job)
+            .is_some_and(|stage| matches!(stage, Stage::Unknown { .. }))
+        {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
     .await;
     assert!(
-        ended.is_ok(),
-        "the install did not end: {:?}",
+        unknown.is_ok(),
+        "the install is not shown as unknown: {:?}",
         installs.stage(job)
     );
-    match installs.stage(job) {
-        Some(Stage::Failed { reason }) => assert_eq!(reason, atlas_board_slots::install::REPLACED),
-        other => panic!("expected the replaced-board ending, got {other:?}"),
-    }
+    assert!(
+        !installs.stage(job).is_some_and(|stage| stage.is_final()),
+        "unknown is not final while a read can decide: {:?}",
+        installs.stage(job)
+    );
     assert_eq!(
         replacement.runs_started(names::SLOTS_ACCEPT),
         0,

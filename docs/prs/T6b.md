@@ -58,7 +58,7 @@ Guards live where a followed answer is used. None of them can see a same-session
 
 ### Tests
 
-- Sim: `a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer` (the connection dies
+- Sim: `a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides` (renamed in PINS-2; the connection dies
   under the follow, the follow is repeated, the run is not started twice).
 - Sim: `a_follow_answered_at_once_is_checked_against_the_list`.
 - Sim: `a_lapsed_hold_is_no_answer_and_the_run_is_followed_again_when_it_answers`.

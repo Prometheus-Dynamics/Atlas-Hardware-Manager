@@ -49,9 +49,16 @@ Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (
    - The characterization test `until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer` is
      unchanged: it asserts today's known-bad answer on the stub, which issues no handles, and it flips only when the
      stub does.
-   - The T6b install behaviour changes where a later session's refusal used to be followed by number. Such a
-     follow is now `Unconfirmed` without a handle, so the install's list decides. A refusal from an earlier session
-     is then reported as the list's outcome, not as the run's own words.
+   - **T6b install tests changed on this pin (no handle on the stub).** A follow after a session change is no longer
+     repeated by number, so the install is `Unknown` while its list is checked, and the list decides:
+     - `a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer` is renamed
+       `a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides`: the install is shown
+       `Unknown` (not `WaitingForBoard`), and once the board finishes, the list shows the slot.
+     - `an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_the_other` is renamed
+       `..._stays_unknown_and_sends_nothing_to_the_other`: the replaced board's list is unreadable, so the install
+       stays `Unknown` (not `Failed(REPLACED)`), and still sends nothing to the other board.
+     - The cycle test's refusal-after-restart (step 7c, exit 1) may change; see the gate result.
+     - With a handle on a later pin the first of these returns to a follow by handle.
    - **Known limit (not built here):** nothing is persisted. After an Atlas restart a running board job cannot be
      re-followed, because neither the number nor the handle is saved. Persisting the handle would make that possible;
      it is a possible later item.
