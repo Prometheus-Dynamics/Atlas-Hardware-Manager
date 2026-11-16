@@ -40,6 +40,8 @@ use std::time::{Duration, Instant};
 use orion::node::Node;
 use orion::types::NodeName;
 use orion::{Address, ClientError, Identity, Options, Orion};
+
+use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
@@ -699,6 +701,14 @@ impl Keeper {
         let mut backoff = Backoff::default();
         while !self.stopped() {
             self.take_orders();
+            // A socket path that cannot be bound or connected to does not get better by trying again:
+            // say so once and stop, rather than back off forever as for a lost board.
+            if let Err(error) = check_address(&self.address) {
+                let reason = error.to_string();
+                self.sender.send_replace(Presence::Lost(reason.clone()));
+                self.refuse_waiting(&reason);
+                break;
+            }
             match self.connect() {
                 Ok(orion) => match orion.node() {
                     Ok(node) if self.accepts(&node) => {

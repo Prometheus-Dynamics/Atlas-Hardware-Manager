@@ -2,7 +2,6 @@
 #![cfg(target_os = "linux")]
 
 use std::io::Cursor;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use atlas_sim_node::bundle;
@@ -43,9 +42,8 @@ fn wait_for_state(orion: &Orion, state: &str) {
 /// A node for one test. Each test has its own name, so its own directory: the node's socket and
 /// state never meet another test's.
 fn start(name: &str) -> SimNode {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sim-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    SimNode::start(&dir).expect("the simulated node starts")
+    let dir = atlas_sim_node::socket::node_dir(name).expect("a node directory");
+    SimNode::start_owned(dir, &Kind::default(), None).expect("the simulated node starts")
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -895,8 +893,7 @@ fn hello_fact(orion: &Orion, topic: &str) -> String {
 
 #[test]
 fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_finds_it_again() {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-hello-restart");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = atlas_sim_node::socket::node_dir("sim-hello-restart").expect("a node directory");
     let first = SimNode::start_with(&dir, &Kind::WithLemnos(Hello::default()), None)
         .expect("the node starts");
     let port = first.network().port();
@@ -1193,8 +1190,7 @@ fn a_stalled_link_holds_then_carries_on() {
 /// stops answering while the node stays up.
 #[test]
 fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services() {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-plain");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = atlas_sim_node::socket::node_dir("sim-plain").expect("a node directory");
     let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the plain node starts");
     let orion = node.connect("plain").expect("a session");
 
@@ -1317,4 +1313,35 @@ fn a_late_subscriber_is_sent_the_last_value_of_a_topic_written_before_it_subscri
         "{}",
         text(&description)
     );
+}
+
+/// A rig named with 200 characters starts and answers: its directory is short whatever the name, so
+/// the socket path fits, and the readable name is kept in the directory's `name` file.
+#[test]
+fn a_rig_with_a_200_character_name_starts_and_answers() {
+    let name = format!("rig-{}", "n".repeat(196));
+    let dir = atlas_sim_node::socket::node_dir(&name).expect("a directory for any name");
+    assert_eq!(
+        std::fs::read_to_string(dir.join(atlas_sim_node::socket::NAME_FILE)).expect("the name"),
+        name
+    );
+    let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the node starts");
+    assert!(node.network().port() > 0);
+    assert!(
+        dir.join(atlas_sim_node::socket::NODE_SOCKET).exists(),
+        "the node listens on its socket"
+    );
+}
+
+/// A directory whose socket path is too long is refused at start, typed, naming the path: nothing is
+/// made, and the stub is never handed the path (it would panic in its own thread).
+#[test]
+fn a_socket_path_too_long_for_a_unix_socket_is_refused_at_start_naming_it() {
+    let long = std::env::temp_dir().join("d".repeat(120));
+    let Err(error) = SimNode::start_with(&long, &Kind::Plain, None) else {
+        panic!("a node in a too-long directory started");
+    };
+    assert!(error.contains("socket path"), "{error}");
+    assert!(error.contains(&long.display().to_string()), "{error}");
+    assert!(!long.exists(), "nothing was made");
 }

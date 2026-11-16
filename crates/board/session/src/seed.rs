@@ -3,7 +3,21 @@
 use std::str::FromStr;
 
 use atlas_types::{Link, LinkId, LinkKind};
+use atlas_types::socket::{SocketError, check_socket_path};
 use orion::Address;
+
+/// A local socket's path must be one a Unix socket takes. A network or serial address has no socket
+/// path, so it passes. Call this where an address comes in, before anything connects to it.
+///
+/// # Errors
+///
+/// [`SocketError::TooLong`] (naming the path) when the local socket path is too long.
+pub fn check_address(address: &Address) -> Result<(), SocketError> {
+    match address {
+        Address::Local(path) => check_socket_path(path).map(|_| ()),
+        Address::Network { .. } | Address::Serial { .. } => Ok(()),
+    }
+}
 
 /// A place a node was told to be: the link it sits on and its Orion address there.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -19,10 +33,9 @@ impl Seed {
     ///
     /// If `address` is not an Orion address the client understands.
     pub fn new(link: LinkId, address: &str) -> Result<Self, String> {
-        Ok(Self {
-            link,
-            address: Address::from_str(address)?,
-        })
+        let address = Address::from_str(address)?;
+        check_address(&address).map_err(|error| error.to_string())?;
+        Ok(Self { link, address })
     }
 
     /// Whether this node can be reached over `link`: a network address on a USB network or

@@ -6,7 +6,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
@@ -43,10 +43,9 @@ impl Pause for NoPause {
     }
 }
 
-/// A scratch directory under the system temp dir, kept short: the node's Unix socket must fit
-/// `SUN_LEN`, and a long build path (CI's workspace) would not.
-fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("atl-c3-{}-{name}", std::process::id()))
+/// A node's directory, short whatever the name: its Unix socket must fit `SUN_LEN`.
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 fn lemnos_kind() -> Kind {
