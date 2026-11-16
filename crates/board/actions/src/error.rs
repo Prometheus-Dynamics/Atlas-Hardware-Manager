@@ -42,6 +42,25 @@ pub enum ActionError {
         "{name} did not finish within {wait:?}; it was asked to stop, and a longer action runs as a job"
     )]
     NotFinished { name: String, wait: Duration },
+    /// A followed answer is not the kind of answer the action gives: the caller started `started`,
+    /// and the node answered with something else (`got`, in words). Nothing is read from it.
+    #[error("{started} (run {call}) was answered with something else: {got}")]
+    WrongAnswer {
+        call: u64,
+        started: String,
+        got: String,
+    },
+    /// The outcome of a run is not known: it was started on an earlier session, and a later
+    /// session's answer for its number cannot be trusted alone. This is not a failure and not a
+    /// success; the caller confirms by an independent read, or reports it as unknown.
+    #[error("the outcome of run {call} is unknown after a reconnect: {reason}")]
+    Unconfirmed {
+        call: u64,
+        reason: String,
+        /// The run's own refusal or failure, when the later session's end was one: the board's words
+        /// for the run, kept typed. A caller may accept them only after its own independent check.
+        ended: Option<Box<ActionError>>,
+    },
     /// A short action's call did not come back. It may have run and may still be running; the
     /// board cancels a run whose session ends. The caller decides what to do next.
     #[error("the outcome of {name} is not known: {reason}")]

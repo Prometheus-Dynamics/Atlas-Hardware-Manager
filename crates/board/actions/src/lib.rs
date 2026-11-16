@@ -27,8 +27,8 @@ mod error;
 mod jobs;
 
 pub use board::{
-    BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, LEASE_ENDED_PREFIX, POLL, Progress,
-    lease_ended,
+    BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX, POLL,
+    Progress, any_answer, lease_ended,
 };
 pub use catalog::{Action, Arg, ArgKind, Catalog, CatalogError, Reported, Route};
 pub use error::{ActionError, BUSY_CODE};
