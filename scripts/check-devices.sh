@@ -1456,6 +1456,56 @@ pad_table_reason = "no table (test)"'
 # names, relative to that dir. A product or board names a file by a quoted path ending .toml. Only description files count:
 # a board's other .toml files (lemnos-board.toml, lemnos-board.pending.toml) are not descriptions. (PR B32: the note used to
 # list every .toml, so the three boards that two products each name were reported as in no product.)
+# The no-VSEL rule (PR AU1): a family whose pads.toml says applies_pad_table = false carries no pad table, so no patch
+# it or its boards carry may change a pad bank's voltage. Every such patch (the family's own and each board's that
+# extends it) is scanned by scripts/check-no-vsel.sh: no IO-domain or VSEL write, no io-domains node, no IODOMAIN
+# config, no pad-bank supply change. The scan is the real run over the carried patches, not a sample.
+vsel_patches() {  # <devices dir> <family dir> -> the patch files that family and its boards carry, one per line
+  local dir=$1 fam=$2 d desc
+  grep -ho 'file = "[^"]*\.patch"' "$fam/family.toml" 2>/dev/null | sed 's/^file = "//; s/"$//' | sed "s|^|$fam/|"
+  for d in "$dir"/boards/*/; do
+    d=${d%/}; desc=$d/board.toml
+    [[ -f $desc ]] || continue
+    [[ $(board_family_file "$desc") == "$(realpath -m "$fam/family.toml")" ]] || continue
+    grep -ho 'file = "[^"]*\.patch"' "$desc" | sed 's/^file = "//; s/"$//' | sed "s|^|$d/|"
+  done
+}
+vsel_rule() {  # <devices dir> -> one FAIL line per refusal; status 1 if any
+  local dir=$1 pf fam p out
+  local -a files=()
+  for pf in "$dir"/families/*/pads.toml; do
+    [[ -f $pf ]] || continue
+    grep -q '^applies_pad_table = false' "$pf" || continue
+    fam=$(dirname "$pf")
+    while IFS= read -r p; do [[ -n $p ]] && files+=("$p"); done < <(vsel_patches "$dir" "$fam")
+  done
+  if (( ${#files[@]} == 0 )); then echo "NOTE no-VSEL: no family says no pad table applies, so no patch to scan"; return 0; fi
+  for p in "${files[@]}"; do [[ -f $p ]] || { echo "FAIL $p: a no-table family lists this patch and it is missing"; return 1; }; done
+  if ! out=$(bash "$repo/scripts/check-no-vsel.sh" "${files[@]}" 2>&1); then
+    printf '%s\n' "$out" | grep '^FAIL' || echo "FAIL check-no-vsel.sh refused the carried patches with no reason: $out"
+    return 1
+  fi
+  echo "NOTE no-VSEL: ${#files[@]} carried patch file(s) of no-table families scanned, none refused"
+}
+vsel_rule_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d) || return 1
+  # mk <dir> <patch added line>: a no-table family whose one patch adds <line>
+  mk() {
+    mkdir -p "$1/families/fam/patches"
+    printf 'applies_pad_table = false\npad_table_reason = "fixture"\n' > "$1/families/fam/pads.toml"
+    printf 'version = 1\nname = "fam"\n[kernel]\npatches = [{ file = "patches/p.patch" }]\n' > "$1/families/fam/family.toml"
+    printf -- '--- a/x.c\n+++ b/x.c\n@@ -1 +1,2 @@\n context\n+%s\n' "$2" > "$1/families/fam/patches/p.patch"
+  }
+  mk "$tmp/offend" 'writel(0x1, VCCIO1_IOC_BASE + GPIO1_IOC_IO1_VSEL);'
+  mk "$tmp/clean" 'writel(0x0, VCCIO2_IOC_BASE + GPIO2A_IOMUX_SEL_L);'
+  if out=$(vsel_rule "$tmp/offend" 2>&1); then echo "check-devices: self-test: a planted VSEL write in a no-table family's patch was not refused" >&2; rc=1
+  elif ! grep -q '^FAIL ' <<<"$out"; then echo "check-devices: self-test: the VSEL refusal names no FAIL line: $out" >&2; rc=1; fi
+  if ! out=$(vsel_rule "$tmp/clean" 2>&1); then echo "check-devices: self-test: a clean no-table family's patch was refused: $out" >&2; rc=1; fi
+  if ! bash "$repo/scripts/check-no-vsel.sh" --self-test >/dev/null 2>&1; then echo "check-devices: self-test: scripts/check-no-vsel.sh --self-test failed" >&2; rc=1; fi
+  rm -rf "$tmp"
+  return $rc
+}
 unnamed_descriptions() {  # <devices dir>
   local dev=$1 used f d ref
   used=$(mktemp)
@@ -1508,6 +1558,7 @@ if [[ $mode == self-test ]]; then
   firmware_rule_self_test || status=1
   unnamed_self_test || status=1
   pads_self_test || status=1
+  vsel_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -2028,6 +2079,13 @@ if ! pads_out=$(pads_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
 fi
 
+# The no-VSEL rule (PR AU1): the carried patches of every family whose pads.toml says no pad table applies.
+if ! vsel_out=$(vsel_rule "$root"); then
+  if [[ -z $vsel_out ]]; then bad "no-VSEL rule stopped with no reason: the rule did not run"; fi
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$vsel_out"
+fi
+grep '^NOTE ' <<<"${vsel_out:-}" | sed 's/^NOTE /check-devices: /' || true
+
 # The Atlas side of the Lemnos pin and the one-copy rule (PR L3). Both read this repository's own Cargo files,
 # so they run for the default tree only. They are here, in the device checker, because that is where the Lemnos
 # rev of the image is held (the products' gaia.lock) and this checker already runs in the gate.
@@ -2072,6 +2130,7 @@ if [[ $root_given -eq 0 ]]; then
   firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   pads_self_test || die "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family"
+  vsel_rule_self_test || die "self-check: the no-VSEL rule no longer refuses a planted VSEL write in a no-table family's patch"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"

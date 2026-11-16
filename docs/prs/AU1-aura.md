@@ -232,3 +232,27 @@ Bench-only label: the product is a labelled bench image. Closed SPL (rkbin rv112
 Gate and device check: run as systemd user units `atlas-AU1-devices` and `atlas-AU1-gate`, each with LimitNOFILE=1048576 and the environment passed explicitly. Logs under /mnt/ssd-samsung/atlas-next-scratch-AU1/logs/.
 
 Not built, not on a board: no image build, TPL/binman not run (pylibfdt absent on the host), no flash, no board touched.
+
+## 2026-11-16: why a bench image is safe to build with every bank "not established"
+
+Nothing we carry writes a pad-voltage register. `scripts/check-no-vsel.sh` is run by `scripts/check-devices.sh` (the "no-VSEL rule") over the carried patches of every family whose pads.toml says no pad table applies: 18 patch files, none refused. So the bench sees exactly the vendor power-on state of each pad bank. The bank voltages are not stated because they are not established; this image does not set them.
+
+The first-boot board check must read back each bank's VSEL/IO-domain state before any pin on that bank is driven by us. Registers: io_vsel per domain (pmuio0/pmuio1 0x900, vccio1 0x908, vccio2 0x90c, vccio3 0x910, vccio4 0x914, vccio5 0x918, vccio6 0x91c, vccio7 0x920; from the vendor ioc_rv1126b.h). Until that read-back is recorded, the statements stay "not established".
+
+## 2026-11-16: watchdog owner for the Aura (findings only, no change made)
+
+Owner of the Aura bench product today: NONE. `devices/products/waveshare-luckfox-aura/product.toml` has no component, no Lemnos board file, no systemd RuntimeWatchdogSec drop-in, and no hw-watchdog device. Its recipe is the `firmware` placeholder, so it is not yet a slot product. Once it is a slot product, the WDOG-OWNER rule (PR #146, not yet on next) requires exactly one owner.
+
+Boot chain arming (ours; closed SPL NOT CHECKED):
+- Our U-Boot series arms the watchdog: patches/uboot/0005 lines 531-533 set CONFIG_WDT=y, CONFIG_WDT_DW=y, CONFIG_WATCHDOG=y; line 498 CONFIG_CMD_WDT=y; lines 131-134 `&wdt { status = "okay" }`. Scratch defconfig lines 33, 66-68.
+- WATCHDOG_AUTOSTART is not set in the defconfig, and drivers/watchdog/Kconfig line 14 onward gives it `default y` for every arch not listed (Rockchip is not listed). So it is armed at boot. This is a FINDING.
+- Vendor defconfig (/mnt/ssd-samsung/gaia-bsp-aura/aura/uboot/rv1126b_defconfig, 206 lines): no WDT or WATCHDOG option. Not armed by the vendor U-Boot config. The vendor dtsi has the wdt node (rv1126b.dtsi 1570).
+- Our kernel patch 0011 line 141-143 sets `&wdt { status = "okay" }`. The kernel side is UNVERIFIED for ownership: no RuntimeWatchdogSec and no feeder is in the tree.
+- Closed SPL: NOT CHECKED. Whether the SPL arms the watchdog is unknown.
+
+Timing windows if armed by our U-Boot:
+- Requested timeout: WATCHDOG_TIMEOUT_MSECS default 60000 (drivers/watchdog/Kconfig 30-40); no timeout-sec in our dts, so 60 s requested.
+- Hardware window: designware_wdt.c 31-40 computes TOP i = clamp(fls(timeout*clk_khz-1)-16, 0, 15), so the armed window is 2^(16+i) cycles. At 24 MHz (OSC) that is 2^31 cycles = 89.5 s. At 100 MHz that clamps to 2^31 cycles = 21.5 s, so the 60 s request is cut to 21.5 s. The watchdog clock at reset is UNVERIFIED (TCLK_WDT_NS mux, clk_rv1126b.c 1243-1247 and 1275-1288, reset value not read).
+- Arm vs first feed: arm at initr_watchdog (common/board_r.c 663) through wdt_start (wdt-uclass.c 119-148), which calls designware_wdt_start (designware_wdt.c 93-103) and resets the counter at arm time. Periodic feed: wdt_cyclic every reset_period = 1000 ms (wdt-uclass.c 236-245), run from the cyclic poll (common/cyclic.c 60, 126-129). The danger is any stretch where U-Boot does not poll cyclics for longer than the hardware window (21.5 s or 89.5 s).
+
+Consequence for the rule: a board that boots this image with U-Boot armed and no owner feeding is a FINDING until one owner is named. Fix options for the owner (not applied): (a) a Lemnos hw-watchdog device with keepalive = true plus lemnosd installed, and no RuntimeWatchdogSec; or (b) systemd RuntimeWatchdogSec with the U-Boot arm disabled by a WATCHDOG_AUTOSTART=n (not applied: the coordinator asked for findings first).
