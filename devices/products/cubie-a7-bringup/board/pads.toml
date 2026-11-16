@@ -1,0 +1,5 @@
+# Pad-table statement for the Cubie A7S bring-up board (read by scripts/check-devices.sh pads_rule; Gaia does not read it).
+# The bring-up board is a COPY of the A7S board data (its board.toml says so), so its table is the A7S's, derived.
+source = "copied from radxa-cubie-a7s (the bring-up board repeats the A7S board's lines)"
+derived_from_board = "radxa-cubie-a7s"
+bank_voltages = {}

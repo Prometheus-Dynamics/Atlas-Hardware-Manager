@@ -869,6 +869,143 @@ erofs_rule_self_test() {
   return $rc
 }
 
+# The pad-table provenance rule (PR PADS, 2026-11-16). A family states, in devices/families/<f>/pads.toml, whether its
+# bootloader applies a pad table at boot (U-Boot or SPL writes the SoC's iomux table, including the bank-voltage mode):
+#   applies_pad_table = true                  (every board of the family states its own pads.toml)
+# or, for a family whose pads are set by something other than the bootloader:
+#   applies_pad_table = false
+#   pad_table_reason = "<why no table applies>"
+# A family that states neither is refused: an omitted statement is the mistake this rule stops. The statement is a sidecar
+# file, not a key in family.toml, because Gaia refuses an unknown key in a description (deny_unknown_fields).
+# A board's table is devices/boards/<b>/pads.toml (a product-local board takes one beside its board.toml), with three
+# fields, required where the family says true and checked wherever present:
+#   source = "<where the table came from: a schematic or a vendor dts, with its path and sheet or lines>"
+#   derived_from_board = ""            (empty: the table is the board's own; a board id: copied from that board, refused)
+#   bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }   (every bank the table drives, stated, not inherited)
+# The rule runs over each product's board. Limit: it trusts the family's statement; it does not read the dts.
+pads_section() {  # <pads.toml> -> its statement (top-level keys)
+  cat "$1" 2>/dev/null
+}
+board_family_file() {  # <board.toml> -> the family.toml it extends, or nothing
+  local f
+  f=$(grep -ho '"[^"]*family\.toml"' "$1" | tr -d '"' | head -1)
+  [[ -n $f ]] && realpath -m "$(dirname "$1")/$f"
+  return 0
+}
+family_pad_state() {  # <family.toml> -> "true", "false:<reason>", "false:" (no reason), "unstated" or "missing"
+  # The statement lives in pads.toml beside family.toml, not in family.toml: Gaia refuses an unknown key in a description
+  # (deny_unknown_fields: `bootloader.applies_pad_table: unknown key`), and pads.toml is not a description Gaia reads.
+  local pf v reason
+  [[ -n $1 && -f $1 ]] || { echo missing; return 0; }
+  pf=$(dirname "$1")/pads.toml
+  [[ -f $pf ]] || { echo unstated; return 0; }
+  v=$(grep -E '^applies_pad_table *=' "$pf" | sed -E 's/^applies_pad_table *= *//' | tr -d ' \t\r' | head -1)
+  case $v in
+    true) echo true ;;
+    false) reason=$(grep -E '^pad_table_reason *=' "$pf" | sed -E 's/^pad_table_reason *= *"(.*)" *$/\1/' | head -1)
+           echo "false:$reason" ;;
+    *) echo unstated ;;
+  esac
+}
+pads_rule() {  # <devices dir>
+  local dev=$1 p b sec src derived bank name bname ff fam state reason out=""
+  while IFS= read -r p; do
+    b=$(product_board "$p")
+    [[ -n $b && -f $b ]] || continue
+    name=$(basename "$(dirname "$p")")
+    bname=$(basename "$(dirname "$b")")
+    ff=$(board_family_file "$b")
+    [[ -n $ff ]] || continue
+    fam=$(basename "$(dirname "$ff")")
+    state=$(family_pad_state "$ff")
+    case $state in
+      missing|unstated)
+        out+="FAIL $name: family $fam states no pad-table fact: its family.toml [bootloader] must say applies_pad_table = true, or applies_pad_table = false with a pad_table_reason"$'\n'
+        continue ;;
+      false:*)
+        reason=${state#false:}
+        if [[ -z $reason ]]; then
+          out+="FAIL $name: family $fam says it applies no pad table but gives no pad_table_reason: say why, or set applies_pad_table = true"$'\n'
+        fi
+        if [[ ! -f $(dirname "$b")/pads.toml ]]; then continue; fi ;;
+      true)
+        if [[ ! -f $(dirname "$b")/pads.toml ]]; then
+          out+="FAIL $name: board $bname: its family's bootloader applies a pad table, and the board states none. Add its pads.toml with source, derived_from_board and bank_voltages"$'\n'
+          continue
+        fi ;;
+    esac
+    sec=$(pads_section "$(dirname "$b")/pads.toml")
+    src=$(grep -E '^source *=' <<<"$sec" | sed -E 's/^source *= *"(.*)" *$/\1/' | head -1)
+    derived=$(grep -E '^derived_from_board *=' <<<"$sec" | sed -E 's/^derived_from_board *= *"(.*)" *$/\1/' | head -1)
+    bank=$(grep -E '^bank_voltages *=' <<<"$sec" | grep -E '\{ *[A-Za-z0-9_]+ *=' || true)
+    if [[ -n $derived ]]; then
+      out+="FAIL $name: board $bname's pad table is derived from board $derived, not its own: the bank voltages and pad modes are that board's, and another board's table can damage the chip (\"Please pay attention to the bank voltage! will damage the chip\"). Take the table from this board's own schematic or vendor dts"$'\n'
+    fi
+    if [[ -z $src ]]; then
+      out+="FAIL $name: board $bname's pad table has no provenance: its [pads] source is empty or missing, so nothing says where the table came from. Add the schematic or vendor dts it was read from"$'\n'
+    fi
+    if [[ -z $bank ]]; then
+      out+="FAIL $name: board $bname's bank voltages are not stated: [pads] bank_voltages must name each bank the table drives (for example IO0_IO1 = \"1V8\"). A bank voltage is not inherited from another board"$'\n'
+    fi
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+# Proves the pad rule on scratch fixtures: a flagged family's board with its own sourced and stated table passes, a board of a
+# family that says false with a reason and no table passes, and it refuses each of the other cases, naming the board and reason.
+pads_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  mk() {  # <case dir> <family state: true|false-reason|false-noreason|unstated> <[pads] body, empty for no table>
+    mkdir -p "$1/devices/families/fam" "$1/devices/boards/bd" "$1/devices/products/pd"
+    rm -f "$1/devices/families/fam/pads.toml"
+    printf 'version = 1\nname = "fam"\n' > "$1/devices/families/fam/family.toml"
+    case $2 in
+      true) printf 'applies_pad_table = true\n' > "$1/devices/families/fam/pads.toml" ;;
+      false-reason) printf 'applies_pad_table = false\npad_table_reason = "pads are set by the test firmware; not applicable"\n' > "$1/devices/families/fam/pads.toml" ;;
+      false-noreason) printf 'applies_pad_table = false\n' > "$1/devices/families/fam/pads.toml" ;;
+      *) : ;;
+    esac
+    printf 'version = 1\nextends = "../../families/fam/family.toml"\nname = "bd"\n' > "$1/devices/boards/bd/board.toml"
+    rm -f "$1/devices/boards/bd/pads.toml"
+    [[ -n $3 ]] && printf '%s\n' "$3" > "$1/devices/boards/bd/pads.toml"
+    printf 'version = 1\nname = "pd"\n\n[[images]]\nname = "pd"\nboard = "../../boards/bd/board.toml"\nrecipe = "sd-image"\n' > "$1/devices/products/pd/product.toml"
+  }
+  mk "$tmp/own" true 'source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }'
+  if ! out=$(pads_rule "$tmp/own/devices"); then echo "check-devices: self-test: a flagged family's board with its own sourced, stated table was refused: $out" >&2; rc=1; fi
+  mk "$tmp/derived" true 'source = "SDK BPI dts"
+derived_from_board = "bpi-canmv-k230d-zero"
+bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }'
+  if out=$(pads_rule "$tmp/derived/devices"); then echo "check-devices: self-test: a pad table derived from another board was not refused" >&2; rc=1
+  elif [[ $out != *"derived from board bpi-canmv-k230d-zero"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the derived refusal does not name the board and its origin: $out" >&2; rc=1; fi
+  mk "$tmp/noprov" true 'source = ""
+derived_from_board = ""
+bank_voltages = { IO0_IO1 = "1V8" }'
+  if out=$(pads_rule "$tmp/noprov/devices"); then echo "check-devices: self-test: a pad table with no provenance was not refused" >&2; rc=1
+  elif [[ $out != *"no provenance"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the provenance refusal does not name the board and reason: $out" >&2; rc=1; fi
+  mk "$tmp/nobank" true 'source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = {}'
+  if out=$(pads_rule "$tmp/nobank/devices"); then echo "check-devices: self-test: a pad table with bank voltages not stated was not refused" >&2; rc=1
+  elif [[ $out != *"bank voltages are not stated"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the bank refusal does not name the board and reason: $out" >&2; rc=1; fi
+  mk "$tmp/missing" true ''
+  if out=$(pads_rule "$tmp/missing/devices"); then echo "check-devices: self-test: a flagged family's board with no [pads] table was not refused" >&2; rc=1
+  elif [[ $out != *"states none"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the missing-table refusal does not name the board and reason: $out" >&2; rc=1; fi
+  mk "$tmp/notapplies" false-reason ''
+  if ! out=$(pads_rule "$tmp/notapplies/devices"); then echo "check-devices: self-test: a family that says no pad table applies, with a reason, was refused: $out" >&2; rc=1; fi
+  mk "$tmp/noreason" false-noreason ''
+  if out=$(pads_rule "$tmp/noreason/devices"); then echo "check-devices: self-test: a family that says no pad table applies with no reason was not refused" >&2; rc=1
+  elif [[ $out != *"no pad_table_reason"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the no-reason refusal does not name the family and reason: $out" >&2; rc=1; fi
+  mk "$tmp/unstated" unstated ''
+  if out=$(pads_rule "$tmp/unstated/devices"); then echo "check-devices: self-test: a family that states no pad-table fact was not refused" >&2; rc=1
+  elif [[ $out != *"states no pad-table fact"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the unstated refusal does not name the family and reason: $out" >&2; rc=1; fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the pad rule passes a sourced, stated table and a family that states none applies, and refuses a derived, unsourced, unstated or missing table, and an unstated or unreasoned family, naming the board or family"
+  return $rc
+}
+
 # Prints each description file (family.toml, board.toml, component.toml) under <devices dir> that no product or board
 # names, relative to that dir. A product or board names a file by a quoted path ending .toml. Only description files count:
 # a board's other .toml files (lemnos-board.toml, lemnos-board.pending.toml) are not descriptions. (PR B32: the note used to
@@ -924,6 +1061,7 @@ if [[ $mode == self-test ]]; then
   bringup_rule_self_test || status=1
   firmware_rule_self_test || status=1
   unnamed_self_test || status=1
+  pads_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -1439,6 +1577,11 @@ while IFS= read -r line; do
   esac
 done <<<"$erofs_msg"
 
+# The pad-table provenance rule (PR PADS): a family that applies a pad table is built only from its boards' own sourced, stated tables.
+if ! pads_out=$(pads_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
+fi
+
 # The Atlas side of the Lemnos pin and the one-copy rule (PR L3). Both read this repository's own Cargo files,
 # so they run for the default tree only. They are here, in the device checker, because that is where the Lemnos
 # rev of the image is held (the products' gaia.lock) and this checker already runs in the gate.
@@ -1482,6 +1625,7 @@ if [[ $root_given -eq 0 ]]; then
   bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
   firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
+  pads_self_test || die "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"

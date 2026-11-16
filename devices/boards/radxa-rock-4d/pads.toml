@@ -1,0 +1,7 @@
+# Pad-table statement for the ROCK 4D (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Not established, like the ROCK 5C: the RK3576 is not in the io-domain default list (drivers/misc/Kconfig:114-121),
+# and no io-domains node is in the RK3576 dtsi or the board dts (research/u-boot dts/upstream/src/arm64/rockchip/
+# rk3576-rock-4d.dts). No schematic on disk. Left refused.
+source = "upstream U-Boot dts rk3576-rock-4d.dts at U-Boot v2026.10: no io-domains node; io-domain driver off for RK3576"
+derived_from_board = ""
+bank_voltages = {}

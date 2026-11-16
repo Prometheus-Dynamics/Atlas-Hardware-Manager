@@ -1,0 +1,6 @@
+# Pad-table statement for radxa-cubie-a7a (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Not its own yet: this board's data is derived from the Cubie A7S (its dts is to be authored from the A7S, Gaia's report).
+# Any product on this board is refused until its own schematic gives its table. Real provenance comes with PR #134.
+source = "copied from radxa-cubie-a7s (its dts is to be authored from the A7S; no own schematic read)"
+derived_from_board = "radxa-cubie-a7s"
+bank_voltages = {}

@@ -1,0 +1,11 @@
+# Pad-table statement for the ZERO 3E (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Source: upstream U-Boot board dts rk3566-radxa-zero-3e.dts (U-Boot v2026.10, research/u-boot dts/upstream/src/arm64/
+# rockchip/) via rk3566-radxa-zero-3.dtsi:456-467, the &pmu_io_domains node (status okay). The io-domain driver is on in
+# U-Boot proper (CONFIG_ROCKCHIP_IODOMAIN default y for ROCKCHIP_RK3568, drivers/misc/Kconfig:114-121; the ZERO 3E
+# defconfig selects ROCKCHIP_RK3568, radxa-zero-3-rk3566_defconfig:7). It is NOT in SPL: no CONFIG_SPL_ROCKCHIP_IODOMAIN
+# in that defconfig. The supplies below are the dts's own, each rail's voltage from its regulator node in the same dtsi.
+source = "upstream U-Boot dts rk3566-radxa-zero-3e.dts at U-Boot v2026.10: rk3566-radxa-zero-3.dtsi:456-467 (&pmu_io_domains), regulators in the same file (vccio_acodec :325, vccio_sd :337, vcc3v3_pmu :349, vcca1v8_pmu :287, vcc_1v8 :38, vcc_3v3 :68)"
+derived_from_board = ""
+# vccio3 is NOT a fixed voltage: vccio_sd is 1.8 V to 3.3 V (min 1800000, max 3300000 in its regulator node), set by the
+# SD card's voltage switch at run time. It is stated as the range the dts gives. Open for ruling (see docs/prs/PADS.md).
+bank_voltages = { pmuio1 = "3.3V", pmuio2 = "1.8V", vccio1 = "3.3V", vccio2 = "1.8V", vccio3 = "1.8V to 3.3V (vccio_sd, run-time)", vccio4 = "1.8V", vccio5 = "3.3V", vccio6 = "3.3V", vccio7 = "3.3V" }

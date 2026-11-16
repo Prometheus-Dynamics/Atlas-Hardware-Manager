@@ -1,0 +1,4 @@
+# Pad-table statement for the sun60i family (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# The A733 boot chain (U-Boot and SPL) reads the board's pin and PIO bank setup from its device tree. Each board
+# states its own table, and the bank voltages, in its pads.toml.
+applies_pad_table = true

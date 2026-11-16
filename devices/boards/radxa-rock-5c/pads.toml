@@ -1,0 +1,8 @@
+# Pad-table statement for the ROCK 5C (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Not established. U-Boot v2026.10 applies no io-domain table for this board: no io-domains node in rk3588-base or the
+# board dts (research/u-boot dts/upstream/src/arm64/rockchip/rk3588s-rock-5c.dts), and CONFIG_ROCKCHIP_IODOMAIN is
+# not in the RK3588 default list (drivers/misc/Kconfig:114-121) nor in rock-5c-rk3588s_defconfig. The bank voltages are
+# therefore not stated by any table on disk, and no schematic for this board is on disk. Left refused.
+source = "upstream U-Boot dts rk3588s-rock-5c.dts and rk3588s-rock-5c-u-boot.dtsi at U-Boot v2026.10: no io-domains node; io-domain driver off for RK3588"
+derived_from_board = ""
+bank_voltages = {}

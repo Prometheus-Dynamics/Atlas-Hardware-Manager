@@ -1,0 +1,5 @@
+# Pad-table statement for the rk35xx family (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# The U-Boot of this family applies an io-domain table (the bank voltages) at boot: the upstream board dts's
+# &pmu_io_domains supplies, under CONFIG_ROCKCHIP_IODOMAIN, which U-Boot v2026.10 turns on by default for RK3568
+# (drivers/misc/Kconfig:114-121). Each board states its own table in its pads.toml.
+applies_pad_table = true

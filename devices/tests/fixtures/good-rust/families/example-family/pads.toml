@@ -1,0 +1,3 @@
+# Fixture family: no pad table is applied (the fixture is for the gaia checks, not a boot chain).
+applies_pad_table = false
+pad_table_reason = "fixture: no bootloader pad table (test data for the gaia checks)"
