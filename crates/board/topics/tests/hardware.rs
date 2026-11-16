@@ -4,7 +4,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -32,8 +32,8 @@ impl Pause for NoPause {
     }
 }
 
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("topics-{name}"))
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
