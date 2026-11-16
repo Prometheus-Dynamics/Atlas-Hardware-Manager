@@ -16,11 +16,5 @@ CONFIG_ENV_SIZE=0x8000
 CONFIG_ENV_REDUNDANT=y
 CONFIG_OF_CONTROL=y
 CONFIG_PARTITION_TYPE_GUID=y
-# # CONFIG_ENV_IS_NOWHERE is not set
+# CONFIG_ENV_IS_NOWHERE is not set
 CONFIG_ENV_IS_IN_MMC=y
-# CONFIG_ENV_IS_IN_FAT is not set: on an MMC boot U-Boot reads the FAT file uboot.env FIRST and takes the GPT
-#   partition only when that load fails (Radxa U-Boot 9da4b3e8, board/sunxi/board.c:155-158, as Lemnos cites it).
-#   A FAT environment would hide the record Lemnos writes to the GPT partition. The image must never carry uboot.env.
-# CONFIG_ENV_MMC_DEVICE_INDEX=0: the SD card is mmc 0 on this SoC (Lemnos testing/boards/sun60i-a733-slots.toml,
-#   uboot_env_mmc_index = 0, the same index its --uboot-config writes). Unverified on a board.
-CONFIG_ENV_MMC_DEVICE_INDEX=0

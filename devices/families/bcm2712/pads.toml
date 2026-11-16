@@ -1,0 +1,3 @@
+# Pad-table statement for the bcm2712 family (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+applies_pad_table = false
+pad_table_reason = "pads are set by the Pi firmware; not applicable (no Atlas bootloader applies a pad table on this family)"

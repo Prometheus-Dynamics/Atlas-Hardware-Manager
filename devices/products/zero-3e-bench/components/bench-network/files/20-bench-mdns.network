@@ -1,7 +1,0 @@
-# mDNS on the gadget's network interface (lemnos0). The address and the DHCP server are the runtime file written at boot by
-# lemnos0-address (the same as the Raze's); this file adds only the mDNS responder (systemd-resolved, os.fragment) on that link.
-[Match]
-Name=lemnos0
-
-[Network]
-MulticastDNS=yes

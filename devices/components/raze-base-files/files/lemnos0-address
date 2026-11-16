@@ -1,0 +1,137 @@
+#!/bin/sh
+# lemnos0-address: the Raze's USB network address on lemnos0, scheme serial-hash-v1 (data: lemnos0-addressing.conf).
+# Runs at boot, before systemd-networkd (lemnos0-address.service). Writes the runtime network file with the board's
+# address and a DHCP server on the rest of its /29, and /run/lemnos0/orion-peer.env with ORION_PEER_LISTEN=<address>:<port>
+# for the comm core's TCP way in (the comm core reads it through EnvironmentFile=-, so a missing file means no TCP way in).
+# If the serial cannot be read or gives no subnet it writes NOTHING (and removes any peer file), says why in one sentence
+# and exits 1, so the unit shows failed. No fallback address is invented.
+# Uses only sh, sha256sum, cut, tr and shell arithmetic. Environment overrides exist for the off-board check
+# (scripts/check-lemnos0-address.py): LEMNOS0_CONF, LEMNOS0_SERIAL, LEMNOS0_OUT.
+set -u
+
+CONF=${LEMNOS0_CONF:-/etc/lemnos/lemnos0-addressing.conf}
+SERIAL=${LEMNOS0_SERIAL:-/proc/device-tree/serial-number}
+OUT=${LEMNOS0_OUT:-/run/systemd/network}
+PEER_DIR=${LEMNOS0_PEER_DIR:-/run/lemnos0}
+
+fail() {
+	echo "lemnos0-address: $*" >&2
+	rm -f "$PEER_DIR/orion-peer.env"
+	exit 1
+}
+
+# Dotted IPv4 to an integer: exactly four decimal octets, each 0 to 255.
+ip2int() {
+	_old=$IFS
+	IFS=.
+	set -- $1
+	IFS=$_old
+	[ $# -eq 4 ] || return 1
+	for _o in "$1" "$2" "$3" "$4"; do
+		case "$_o" in '' | *[!0-9]*) return 1 ;; esac
+		[ "$_o" -le 255 ] || return 1
+	done
+	echo $((($1 * 256 + $2) * 256 * 256 + $3 * 256 + $4))
+}
+
+# Integer to dotted IPv4.
+int2ip() {
+	printf '%d.%d.%d.%d\n' $(($1 >> 24 & 255)) $(($1 >> 16 & 255)) $(($1 >> 8 & 255)) $(($1 & 255))
+}
+
+[ -r "$CONF" ] || fail "the addressing file $CONF cannot be read: no address written"
+# shellcheck source=/dev/null
+. "$CONF" || fail "the addressing file $CONF does not read: no address written"
+[ "${scheme:-}" = serial-hash-v1 ] || fail "the addressing file names scheme '${scheme:-}', not serial-hash-v1: no address written"
+case "${exclude:-}" in *" "*) fail "the addressing file names more than one exclude range; this script takes one: no address written" ;; esac
+
+# The board serial, as Atlas reads it: NUL and surrounding whitespace dropped, all hex, at least 8 digits, the last 8
+# lowercased. Lemnos's device-tree source is /proc/device-tree/serial-number (docs/identity.md).
+[ -r "$SERIAL" ] || fail "the board serial $SERIAL cannot be read: no address written"
+raw=$(tr -d '\000' < "$SERIAL") || fail "the board serial $SERIAL cannot be read: no address written"
+s=$raw
+while :; do
+	case "$s" in
+	[[:space:]]*) s=${s#?} ;;
+	*[[:space:]]) s=${s%?} ;;
+	*) break ;;
+	esac
+done
+case "$s" in '' | *[!0-9A-Fa-f]*) fail "the board serial is not hex: no address written" ;; esac
+[ "${#s}" -ge 8 ] || fail "the board serial has fewer than 8 hex digits: no address written"
+s8=$(printf '%s' "$s" | tr 'A-F' 'a-f')
+s8=${s8#"${s8%????????}"}
+
+hash=$(printf '%s' "$s8" | sha256sum | cut -c1-8) || fail "sha256sum failed: no address written"
+hash=$((0x$hash))
+
+bnet_ip=${base%/*}
+bpre=${base#*/}
+prefix=${prefix:-}
+bnet=$(ip2int "$bnet_ip") || fail "the base $base is not a dotted address: no address written"
+case "$bpre$prefix" in '' | *[!0-9]*) fail "the base or prefix is not a number: no address written" ;; esac
+[ "$bpre" -le "$prefix" ] && [ "$prefix" -le 30 ] || fail "the prefix $prefix is outside the base $base: no address written"
+
+size=$((1 << (32 - prefix)))
+slots=$((1 << (prefix - bpre)))
+bnet=$((bnet - bnet % (size * slots)))
+
+# One excluded range (or none), as a first slot and a slot count, inside the base.
+estart=-1
+ecount=0
+if [ -n "${exclude:-}" ]; then
+	epre=${exclude#*/}
+	eip=${exclude%/*}
+	e=$(ip2int "$eip") || fail "the exclude range $exclude is not a dotted address: no address written"
+	case "$epre" in '' | *[!0-9]*) fail "the exclude range $exclude has no prefix: no address written" ;; esac
+	[ "$epre" -ge "$bpre" ] && [ "$epre" -le "$prefix" ] || fail "the exclude range $exclude is outside the base: no address written"
+	e=$((e - e % (1 << (32 - epre)) - bnet))
+	[ "$e" -ge 0 ] && [ "$e" -lt $((size * slots)) ] || fail "the exclude range $exclude is outside the base: no address written"
+	estart=$((e / size))
+	ecount=$((1 << (prefix - epre)))
+fi
+usable=$((slots - ecount))
+[ "$usable" -gt 0 ] || fail "no usable subnet is left in the base: no address written"
+
+slot=$((hash % usable))
+if [ "$estart" -ge 0 ] && [ "$estart" -le "$slot" ]; then
+	slot=$((slot + ecount))
+fi
+
+addr=$(int2ip $((bnet + slot * size + 1)))
+# The DHCP pool: the rest of the /29 after the board's own address, leaving out the network and broadcast addresses.
+pool_offset=2
+pool_size=$((size - 3))
+lease=${lease_seconds:-120}
+
+mkdir -p "$OUT" || fail "cannot create $OUT: no address written"
+tmp=$OUT/.10-$interface.network.tmp
+cat > "$tmp" <<NET || fail "cannot write $tmp: no address written"
+# Written at boot by lemnos0-address (scheme $scheme, serial8 $s8). Not hand-edited.
+[Match]
+Name=$interface
+
+[Network]
+Address=$addr/$prefix
+DHCP=no
+DHCPServer=yes
+LinkLocalAddressing=ipv6
+IPv6AcceptRA=no
+
+[Link]
+RequiredForOnline=no
+
+[DHCPServer]
+PoolOffset=$pool_offset
+PoolSize=$pool_size
+DefaultLeaseTimeSec=$lease
+EmitRouter=no
+EmitDNS=no
+NET
+mv "$tmp" "$OUT/10-$interface.network" || fail "cannot place the network file: no address written"
+# The comm core's TCP way in: the board's own address, never a wildcard (Orion's peer.listen through the environment).
+mkdir -p "$PEER_DIR" || fail "cannot create $PEER_DIR: no peer address written"
+printf 'ORION_PEER_LISTEN=%s:%s\n' "$addr" "$peer_port" > "$PEER_DIR/orion-peer.env.tmp" || fail "cannot write the peer address: no peer address written"
+mv "$PEER_DIR/orion-peer.env.tmp" "$PEER_DIR/orion-peer.env" || fail "cannot place the peer address file: no peer address written"
+echo "lemnos0-address: $interface gets $addr/$prefix from serial8 $s8 (scheme $scheme); DHCP pool offset $pool_offset size $pool_size; ORION_PEER_LISTEN=$addr:$peer_port"
+exit 0

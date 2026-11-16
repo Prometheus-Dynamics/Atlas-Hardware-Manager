@@ -12,9 +12,6 @@
 // is 0xfdc20000, rk356x-base.dtsi:367). The reboot-mode node MUST move with this file when it is removed (into the
 // generated overlay or the replacement board dts). Untested on board.
 #include "rk3566-radxa-zero-3e.dts"
-// Z2: the crash log's reserved region (pstore, ramoops at 0x110000, 0xf0000; the kernel's CONFIG_PSTORE_RAM is in the
-// rk35xx family fragment). Sources: rk3566-lckfb-tspi.dts at Linux v7.3.4 (lines 32-38), the mainline precedent.
-#include "rk3566-radxa-zero-3e-ramoops.dtsi"
 #include <dt-bindings/soc/rockchip,boot-mode.h>
 
 &usb_host0_xhci {

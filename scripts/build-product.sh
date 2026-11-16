@@ -6,7 +6,7 @@
 #
 #   scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--tool NAME=PATH]... [--out DIR]
 #
-#   <product>     a directory name under devices/products (raze-base, rock-5c-bringup, ...)
+#   <product>     a directory name under devices/products (raze-base, rock-5c-bench, ...)
 #   --plan        plan only: print the version and slot, run `gaia plan` with them, build nothing
 #   The version is the Atlas dev scheme, <release>-dev.<count>+<commit> (dev's scripts/version.sh, via
 #   scripts/version-rule.sh atlas_version); a slot-boot product's slot is <product>-<version> (slot_id_for). Gaia takes

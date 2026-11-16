@@ -11,9 +11,10 @@ description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on 
 # the USB-C ports (see the notes below). candidate, UNVERIFIED.
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7s"
-# The words every kernel command line of this board starts with: the console (UART ttyS0; Lemnos's slot words follow).
-# The console baud and the port are the bring-up's own (cubie-a7s-extlinux, the getty on ttyS0). UNVERIFIED on a board.
-cmdline = "console=ttyS0,115200"
+# The board's own kernel patches. Gaia appends them to the family's list (the DockSeed series, sun60i family.toml [kernel]):
+# the effective list is the family's entries, then this one. Our correction (kernel/a7s-rails.patch; recorded edits in
+# kernel/edits.toml). Applied with patch -p1 --fuzz=0 after the series.
+patches = [{ file = "kernel/a7s-rails.patch" }]
 
 # U-Boot defconfig: radxa-cubie-a7s_defconfig in radxa/u-boot @ 9da4b3e8 (its CONFIG_DEFAULT_DEVICE_TREE is
 # sun60i-a733-cubie-a7s). UNVERIFIED, never booted.
@@ -27,55 +28,27 @@ defconfig = "radxa-cubie-a7s_defconfig"
 SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 
 # Ports (Radxa's interface page and DockSeed's series, read 2026-11-13):
-#   USB-C 1 = the Type-C port J16 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE port, the board's 5 V input.
-#     Confirmed by the series (fe0a8ed, patches/a733-usb0-gadget/arm64-dts-allwinner-a733-cubie-a7s-enable-usb0-as-a-usb-gadget.patch):
-#     J16 is on USB0, the MUSB controller usb@4100000 (the series' usb_otg), dr_mode "peripheral". It has NO VBUS supply and no
-#     ID or VBUS detect line to the SoC, so device mode sources no 5 V. Family linux.fragment: CONFIG_USB_MUSB_GADGET=y.
-#   USB-C 2 = the Type-C port J4 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): a USB 3 host (DWC3), per the series' own note
-#     ("Not covered: the USB-C port J4, which is a USB 3 host"). Not a device port.
+#   USB-C 1 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE-CAPABLE port. In DockSeed's dts it is the
+#     "J16" 5 V input, on the MUSB controller usb_otg (PHY index 0), with dr_mode "peripheral" in its gadget patch.
+#     It has NO VBUS regulator: the PHY's VBUS supply is named per index (usb0_vbus for PHY 0, phy-sun4i-usb.c:819),
+#     and the dts sets only usb1_vbus. So device mode on this port sources no 5 V. The GMAC's phy-supply is its own
+#     PHY rail, not USB. Evidence: compiled dtb of the bring-up board (B19), usb@4100000 dr_mode peripheral, no supply.
+#   USB-C 2 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): the "J4" host port on the USB 3 controller, sourcing
+#     VBUS from DRVVBUS (PL2) through its own regulator (usbc-vbus). Host only in DockSeed's dts. Not a device port.
 #   USB Type-A (host). Not device.
-# The schematic was NOT read; the J16/J4 match to Radxa's labels is the series' own naming, not a schematic check.
+# The J16/J4 labels are DockSeed's; the match to Radxa's "USB-C 1" and "USB-C 2" is by function (5 V input and
+# OTG on USB 2; USB 3 and DisplayPort). The schematic was NOT read. OPEN: the schematic's port names (Radxa A7S
+# schematic, the USB-C page) to confirm the match. Nothing here is a board run.
 #
 # Ethernet: the gigabit GMAC (gmac210, its PHY is named MAE0621A-Q3C in B12's notes), built in by the family fragment.
 #
 # LED: the blue status LED is PJ26 (the series' gpio-leds; "PJ26" is in its comment). Radxa's page says it blinks
-# during a normal boot. The bring-up board's dts sets it to the heartbeat trigger (pending/cubie-a7-bringup/board).
+# during a normal boot. The bring-up board (cubie-a7-bringup, deleted in PADS: a copy of this board) set it to the heartbeat trigger.
 
-# The Lemnos board file (C1, the bench image): names the board to lemnos-ctl (`[board] id` = this board's name).
-# A product that carries lemnosd resolves to it (devices/README.md, "The Lemnos board file").
-[descriptions]
-lemnos = "lemnos-board.toml"
-
-# The partitions, in table order. A board's list replaces the family's, so the family's two raw areas are repeated here.
-# u-boot: the SPL + BL31 + U-Boot file at 128 KiB (outside the table; the boot ROM reads it there). Family line, unchanged.
-[[partitions]]
-name = "u-boot"
-role = "bootloader"
-offset = "128K"
-in_table = false
-content = "u-boot-sunxi-with-spl.bin"
-
-# uboot-env: the U-Boot environment, found by its GPT type GUID (Lemnos's writer and U-Boot both look for it). 128 KiB at 16 MiB.
-[[partitions]]
-name = "uboot-env"
-role = "raw"
-type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
-offset = "16M"
-size = "128K"
-
-# boot: the FAT boot partition (role boot): the slot bays, the pointers and the boot.cmd Lemnos's boot-partition writes.
-# Sized like the Raze's boot partition (82,837,504 = 79 MiB). PLACEHOLDER, NOT MEASURED: the number is
-# `lemnos-ctl boot-partition --layout-of radxa-cubie-a7s --min-size` (L2-partition-requirements 8.8: "the U-Boot block
-# bring-up products ... gain one" a FAT boot partition; its size is still MISSING). The product's boot_size must equal it.
-# type: the EFI System GUID, the GPT form of a FAT boot partition. F8?: Gaia's GPT type spelling for role boot.
-[[partitions]]
-name = "boot"
-role = "boot"
-type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-size = "82837504"
-
-# data: the slots and the slot state (Lemnos's data partition), the last partition, no size: the board grows it on first boot.
-[[partitions]]
-name = "data"
-role = "data"
-type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+# FIRST-BOOT RECORD (required, PR A7RAILS; docs/research/a7s-rail-voltages.md section 11). The first boot of an A7S image
+# reads, read-only, the regulator summary and each /sys/class/regulator/*/microvolts, and the pin bank modes (POW_MOD_SEL and
+# each bank's vcc-p* supply read-back). The result is recorded in the boot log and the pads.toml statements are then updated
+# as "measured on board, our image <sha>, <date>". No stock-image boot or meter is asked for.
+# Recorded edits to the series (the rails this board's kernel leaves unprogrammed): kernel/edits.toml. For Gaia's
+# unprogrammed_rails check, to be added when Gaia's rev with the key is pinned (not added now):
+#   unprogrammed_rails = ["aldo1", "bldo1", "dcdc1", "dcdc4"]
