@@ -34,7 +34,7 @@
 use std::io::ErrorKind;
 use std::time::Duration;
 
-use atlas_session::{Failure, Handle, Hold, Presence, SessionError};
+use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
@@ -53,6 +53,17 @@ pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+
+/// The prefix a board's reply carries once the caller's lease ended and its holds were released:
+/// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
+/// match, kept until Lemnos sends the typed reply field (M40); then that field replaces it.
+pub const LEASE_ENDED_PREFIX: &str = "lease-ended:";
+
+/// Whether a reply's detail says the board released the caller's holds when its lease ended.
+#[must_use]
+pub fn lease_ended(detail: &str) -> bool {
+    detail.starts_with(LEASE_ENDED_PREFIX)
+}
 
 /// A run that ended successfully.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -285,6 +296,13 @@ impl BoardActions {
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
+                    // The board says the caller's lease ended before this reply: its holds are gone.
+                    if lease_ended(&finished.detail) {
+                        return Err(ActionError::HoldLapsed {
+                            call,
+                            reason: finished.detail,
+                        });
+                    }
                     let result = ended(finished);
                     let on_issuing_session = self.handle.session() == issued.session;
                     let done = match (hold, result) {
@@ -469,8 +487,11 @@ impl Seen {
     }
 }
 
-/// How a run that ended is answered: the board's words for anything that did not succeed.
+/// How a run that ended is answered: the board's words for anything that did not succeed. The
+/// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
+/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
 fn ended(finished: Finished) -> Result<Done, ActionError> {
+    let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
     let detail = finished.detail;
     let reason = |default: &str| {
         if detail.trim().is_empty() {
@@ -485,14 +506,26 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
             output: finished.output,
             detail,
         }),
-        Outcome::Rejected => Err(ActionError::Refused(
-            reason("the board refused it, without a reason").into(),
-        )),
+        // Lemnos M39: a refusal without running is Rejected with the status's code.
+        Outcome::Rejected => Err(ActionError::Refused(match code {
+            Some(code) => Failure::new(
+                FailureKind::Refused,
+                Some(code),
+                reason("the board refused it, without a reason"),
+            ),
+            None => reason("the board refused it, without a reason").into(),
+        })),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
-        Outcome::Failed => Err(ActionError::Failed(reason("the action failed").into())),
-        Outcome::TimedOut => Err(ActionError::Failed(
-            reason("the action ran out of time").into(),
-        )),
+        Outcome::Failed => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action failed"),
+        ))),
+        Outcome::TimedOut => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action ran out of time"),
+        ))),
         Outcome::Unknown(code) => Err(ActionError::Failed(
             reason(&format!("the board ended the action with outcome {code}")).into(),
         )),
@@ -554,5 +587,53 @@ impl Followed {
         match self {
             Self::Confirmed(done) | Self::Reconnected(done) => done,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finished(outcome: Outcome, code: u32, detail: &str) -> Finished {
+        Finished {
+            outcome,
+            output: Vec::new(),
+            detail: detail.to_owned(),
+            code,
+        }
+    }
+
+    #[test]
+    fn a_rejected_run_keeps_its_code_and_busy_is_read_from_it() {
+        let busy = ended(finished(Outcome::Rejected, 16, "an install is running")).unwrap_err();
+        assert!(busy.is_busy(), "{busy:?}");
+        assert_eq!(busy.board_reason(), Some("an install is running"));
+        // The words alone never make it busy.
+        let words = ended(finished(
+            Outcome::Rejected,
+            0,
+            "busy: an install is running",
+        ))
+        .unwrap_err();
+        assert!(!words.is_busy(), "{words:?}");
+        let missing = ended(finished(Outcome::Rejected, 2, "there is no pushed file")).unwrap_err();
+        assert!(!missing.is_busy());
+        assert_eq!(missing.failure().and_then(Failure::code), Some(2));
+    }
+
+    #[test]
+    fn a_failed_or_cancelled_run_keeps_its_code_when_it_has_one() {
+        let failed = ended(finished(Outcome::Failed, 0, "")).unwrap_err();
+        assert_eq!(failed.failure().and_then(Failure::code), None);
+        let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
+        assert_eq!(timed.failure().and_then(Failure::code), Some(110));
+        assert!(!timed.is_busy());
+    }
+
+    #[test]
+    fn the_lease_note_is_read_by_its_prefix() {
+        assert!(lease_ended("lease-ended: holds released"));
+        assert!(lease_ended("lease-ended: holds released; cancelled"));
+        assert!(!lease_ended("the board says lease-ended"));
     }
 }

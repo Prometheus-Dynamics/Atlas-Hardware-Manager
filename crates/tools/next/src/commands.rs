@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use atlas_actions::BUSY_CODE;
 use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
@@ -39,6 +40,8 @@ pub struct Refusal {
     pub code: i32,
     pub words: String,
     pub denied: bool,
+    /// The board refused it as busy: its run ended Rejected with BUSY (typed from the status code).
+    pub busy: bool,
 }
 
 impl Refusal {
@@ -47,6 +50,7 @@ impl Refusal {
             code,
             words: words.into(),
             denied: false,
+            busy: false,
         }
     }
 }
@@ -54,10 +58,12 @@ impl Refusal {
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
         let denied = error.failure().is_some_and(Failure::is_denied);
+        let busy = matches!(&error, SlotError::Board(board) if board.is_busy());
         Self {
             code: 1,
             words: error.to_string(),
             denied,
+            busy,
         }
     }
 }
@@ -490,7 +496,16 @@ pub(crate) async fn install<W: Write>(
                 r.field("slot", slot.clone());
                 return Ok(slot);
             }
-            Some(Stage::Failed { reason }) => return Err(Refusal::new(1, reason)),
+            Some(Stage::Failed { reason }) => {
+                // The run's typed failure keeps the board's status code: BUSY is read from it.
+                let busy = installs
+                    .failure(job)
+                    .is_some_and(|failure| failure.code() == Some(BUSY_CODE));
+                return Err(Refusal {
+                    busy,
+                    ..Refusal::new(1, reason)
+                });
+            }
             Some(Stage::Cancelled) => return Err(Refusal::new(1, "the install was cancelled")),
             Some(Stage::Unknown { reason, checking }) => {
                 let since = *unknown_since.get_or_insert_with(std::time::Instant::now);

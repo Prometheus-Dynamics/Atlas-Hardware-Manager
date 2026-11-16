@@ -755,10 +755,23 @@ impl InstallKind {
                             "the board refused the install ({words}), but its list shows a new {} {} slot, {}: the two disagree",
                             identity.product, identity.version, slot.id
                         )),
-                        None => Step::Settled(format!(
-                            "{words}; the list confirmed nothing was installed: no new {} {} slot",
-                            identity.product, identity.version
-                        )),
+                        // The board's refusal stays typed (its code says BUSY); the list's agreement is
+                        // added to its words.
+                        None => match error {
+                            ActionError::Refused(failure) | ActionError::Failed(failure) => {
+                                Step::Refused(Failure::new(
+                                    failure.kind(),
+                                    failure.code(),
+                                    format!(
+                                        "{} (the list confirmed nothing was installed: no new {} {} slot)",
+                                        failure.text(),
+                                        identity.product,
+                                        identity.version
+                                    ),
+                                ))
+                            }
+                            other => classify(other),
+                        },
                     });
                 }
                 Answered::Nothing => match decide(&before, &list, &identity) {
