@@ -24,16 +24,37 @@ Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (
    no code change. The Orion-using crates' tests pass: atlas-actions, atlas-nt, atlas-topics, atlas-sim-node,
    atlas-board-slots.
 
-2. **Run handles in the six follow and cancel sites: NOT DONE in this PR (stopped).** The sites are
-   `board.rs` (follow, cancel), `jobs.rs` (the step, the cancel) and `install.rs` (the step, the cancel).
-   The open question is where the handle is kept:
-   - The job record's steps are fixed at submit (`crates/core/jobs`, `Jobs` has no step update), and the
-     call number is held only in memory (`jobs.rs` `Tracked`, `install.rs` `Run`). Nothing is persisted
-     today, so "persist the handle in the job file" needs a write-back path in the jobs crate, and a rule
-     for when it is written (the start returns the call before ACTION_STARTED names the handle).
-   - The Unknown state is T6b's (PR #141, not in next). Until it is, the minimal typed error lands with
-     the handle work and joins T6b's Unknown state when both are in.
-   The handle work is therefore not in this PR; the collision the handles fix stays open until it lands.
+2. **Run handles on T6b's guards** (`ddb6d414` merges `origin/pr/T6b`, since #141 is not on next yet; the handle
+   commits sit on top of it). Each stored run (`Issued`, the one a job or an install keeps) carries the run's handle
+   in memory beside its number, shared by every clone. Nothing is saved (no job-file or core/jobs change).
+   - The handle is learned at the start (the node's started frame, waited for briefly: `START_HANDLE_WAIT`), and again
+     at every follow or cancel that reads it.
+   - Follow and cancel name the run by its handle when it is known. A handle names the run whatever the session.
+   - With no handle, a number is never used across a session change (`may_use_number`): the follow or cancel is
+     refused as `Unconfirmed` (the outcome is unknown), and nothing is sent. Same-session use of a bare number is
+     unchanged.
+   - Orion's `RunGone` (a handle from before a node-logic restart) becomes the typed unknown outcome
+     `Unconfirmed` with the words "the board restarted while this ran; outcome unknown", which is T6b's Unknown state.
+   - Orion's `NotFound` becomes "no such run", kept as a refusal (`Failure` kind Refused).
+   - A cancel by handle is sent only after the attach is not refused (`CANCEL_CHECK`, half a second for the node's
+     answer to the attach).
+   - Unit tests (run now): the rule (`may_use_number`), the shared handle across clones, `RunGone` and `NotFound`
+     mapping for follow and cancel.
+   - **Sim tests, ignored, waiting on Orion's stub** (`crates/board/actions/tests/actions.rs`), each with
+     `#[ignore = "needs Orion's stub to issue run handles (asked 2026-11-16)"]`. They must be un-ignored before this
+     PR leaves draft:
+     - `the_exact_collision_a_stored_handle_never_returns_the_newer_runs_answer`
+     - `a_handle_from_before_a_node_logic_restart_is_refused_as_restarted`
+     - `a_stale_handle_cancel_is_refused_and_the_newer_run_keeps_running`
+   - The characterization test `until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer` is
+     unchanged: it asserts today's known-bad answer on the stub, which issues no handles, and it flips only when the
+     stub does.
+   - The T6b install behaviour changes where a later session's refusal used to be followed by number. Such a
+     follow is now `Unconfirmed` without a handle, so the install's list decides. A refusal from an earlier session
+     is then reported as the list's outcome, not as the run's own words.
+   - **Known limit (not built here):** nothing is persisted. After an Atlas restart a running board job cannot be
+     re-followed, because neither the number nor the handle is saved. Persisting the handle would make that possible;
+     it is a possible later item.
 
 3. **The image's Orion component** (`57f69fd4`), `devices/components/orion` and `orion-recovery`:
    - Source ref is `3dde304e`. `scripts/check-devices.sh --write-locks` (GAIA_BIN at Gaia a6299c62, which
@@ -87,6 +108,7 @@ Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (
 
 ## Open
 
-- The run-handle design above (item 2) needs a ruling on the jobs crate's write-back and on when the handle is
-  saved.
+- Orion's stub at 3dde304 issues no handles, so the three ignored sim tests cannot run. Orion has been asked for a
+  stub that does (2026-11-16). They must be un-ignored, and the characterization test then flips, before this PR
+  leaves draft.
 - The pair (Lemnos rev + Orion rev) is announced later; this PR is re-pinned then and goes to ready.
