@@ -1,0 +1,63 @@
+From 7f02f61c11f91c7bd33ebcd74fa98488217ba366 Mon Sep 17 00:00:00 2001
+From: "Claude Haiku 5.5" <a@b>
+Date: Mon, 16 Nov 2026 06:23:31 -0700
+Subject: [PATCH] rv1126b: rkcommon row for the RV1126B V2 idblock, and an
+ exact name match (6 of 6)
+
+Adds the rkcommon row for the RV1126B idblock (tools/rkcommon.c), and fixes the row lookup it exposed.
+
+Row: { "rv1126b", "110F", 0x10000 - 0x1000, false, RK_HEADER_V2 }. Facts, all from disk:
+- RKBOOT/RV1126BMINIALL.ini (rkbin 3e288fe): NAME=RV110F at line 2 (the boot ROM's chip tag, 110F);
+  NEWIDB=true at line 25 (the V2 idblock); 471_RC4_OFF and RC4_OFF at lines 27-28 (spl_rc4 false);
+  LOAD_ADDR=0x4fe00000 at line 20 (the SPL load address, the seed's CONFIG_SPL_TEXT_BASE).
+- The size limit 0x10000 - 0x1000 is the 64 KiB system SRAM at 0x3ffb0000 less the 4 KiB header
+  block, the rk3568 and rk3576 rows' convention. The SPL is 78027 bytes, far under it.
+- For V2 rows spl_hdr is a label, not written into the image: the image starts with the RK_MAGIC_V2
+  word ("RKNS"), and the rv1126b row prints as "Rockchip 110F boot image".
+UNVERIFIED until a board boots an image built with it.
+
+Fix (shared code, minimal): the lookup in rkcommon_get_spl_info compared only the first six characters
+(strncmp(..., 6)), so "rv1126b" matched the rv1126 row (its first six characters) and was packed with
+the 110B header. It now compares the whole name. Every existing name is unchanged: each one is an exact
+image name.
+
+Checked: tools-only builds rkcommon.o with 0 warnings. mkimage -n rv1126b -T rksd -d <rkbin DDR blob>:<SPL>
+produces a "RKNS" header with the 110F label; -n rv1126 still produces 110B.
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+---
+ tools/rkcommon.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/tools/rkcommon.c b/tools/rkcommon.c
+index b39777fc..4cab3f71 100644
+--- a/tools/rkcommon.c
++++ b/tools/rkcommon.c
+@@ -155,6 +155,12 @@ static struct spl_info spl_infos[] = {
+ 	{ "rk3588", "RK35", 0x100000 - 0x1000, false, RK_HEADER_V2 },
+ 	{ "rv1108", "RK11", 0x1800, false, RK_HEADER_V1 },
+ 	{ "rv1126", "110B", 0x10000 - 0x1000, false, RK_HEADER_V1 },
++	/* RV1126B (Luckfox Aura). UNVERIFIED until a board boots it. The boot ROM chip tag is 110F
++	 * (RKBOOT/RV1126BMINIALL.ini line 2, NAME=RV110F). NEWIDB=true (line 25) makes this a V2 idblock: the
++	 * image starts with RK_MAGIC_V2 ("RKNS"), and spl_hdr is only a label on V2 rows (rk3568 and rk3576 use
++	 * "RK35" for the family). Size limit: the 64 KiB system SRAM at 0x3ffb0000 (BSP dtsi system_sram), with
++	 * the rk3568 and rk3576 rows' 0x1000 reserve. RC4 is off (RC4_OFF=true, line 28; 471_RC4_OFF line 27). */
++	{ "rv1126b", "110F", 0x10000 - 0x1000, false, RK_HEADER_V2 },
+ };
+ 
+ /**
+@@ -188,7 +194,8 @@ static struct spl_info *rkcommon_get_spl_info(char *imagename)
+ 		return NULL;
+ 
+ 	for (i = 0; i < ARRAY_SIZE(spl_infos); i++)
+-		if (!strncmp(imagename, spl_infos[i].imagename, 6))
++		/* exact match: strncmp(..., 6) made "rv1126b" match the "rv1126" row (its first 6 characters) */
++		if (!strcmp(imagename, spl_infos[i].imagename))
+ 			return spl_infos + i;
+ 
+ 	return NULL;
+-- 
+2.56.0
+
