@@ -98,3 +98,32 @@ The vendor regulator (DockSeed series fe0a8ed, patches/a733-a7s-usbc/arm64-dts-a
 Result: nothing to remove. The image builds the whole series (the family's `patches` lists the full directory), and neither property is set on the node, so no patch is written here.
 
 Step 5 (apply with --fuzz=0): not run here, because the applied kernel tree is not on disk; Gaia's strict build is the apply check.
+
+## Watchdog: what arms it, the timeout, and the first-boot measurements (C1 ruling 2026-11-16)
+
+Kernel fragment: `CONFIG_WATCHDOG_OPEN_TIMEOUT=30` beside `CONFIG_SUNXI_WATCHDOG=y` (devices/families/sun60i/assets/linux.fragment). Reason: Linux's `WATCHDOG_HANDLE_BOOT_ENABLED` (default y) feeds a bootloader-armed watchdog until userspace opens it; without an open timeout that is forever, so a boot that never reaches the opener never resets and a trial never rolls back. 30 s covers driver probe to slot-init's open. Value is Lemnos's, for every slot family until a board measures it (this PR changes only the sun60i fragment; Raze and rk35xx are their owners').
+
+**(a) What arms r_wdt (WDT_CPUS, `/soc@0/watchdog@7021000`) before Linux**
+- U-Boot, by the DockSeed series: `patches/u-boot/sunxi-cubie-a7s-watchdog-autostart.patch` sets `CONFIG_WDT`, `CONFIG_WDT_SUNXI`, `CONFIG_WATCHDOG`, `CONFIG_WATCHDOG_AUTOSTART` (patch lines 55-58); its header says U-Boot starts the 16 s watchdog (`CONFIG_WATCHDOG_TIMEOUT_MSECS` default 16000 for ARCH_SUNXI). `patches/u-boot/sunxi-cubie-a7s-watchdog-on-wdt-cpus.patch` says the watchdog U-Boot arms is WDT_CPUS and WDT0 is disabled (lines 58-62), and enables the r_wdt node (lines 65-73). Series pin b6f6872b, read from its FETCH_HEAD.
+- Our `devices/families/sun60i/assets/u-boot.fragment` has no watchdog line: the arming is the series' config, not ours.
+- SPL and BootROM: NOT CHECKED. The autostart patch sets U-Boot's config, not SPL's; nothing in our data says SPL arms a watchdog.
+- Note: the autostart patch's own text names WDT0 (watchdog@2050000) in its DT context; the wdt-cpus patch says WDT_CPUS is the one. The wdt-cpus patch is the later and the one that disables WDT0; read as WDT_CPUS. UNVERIFIED on a board.
+
+**(b) The boot path to the opener**
+- The image boots through Lemnos's slot-init as the initramfs `/init` (product.toml `initramfs = ["lemnos-slot-init"]`; component installs the binary at `/init`). Read at 31e0f736: `service/slot-init/src/boot.rs:186` calls `ops.arm_watchdog()` right after devtmpfs mounts. `arm_watchdog` (`sys.rs` ~217) calls `arm()` (`sys.rs:60-82`): open `<dev>/watchdog` for write (this arms it), `set_timeout(15)`, read back. Feeding: `sys.rs:46` `feed()`, called from `sleep()` (`sys.rs` ~206-214, every 5 s while a wait runs) and the feed points at `sys.rs:112`. Whether the feed runs continuously until `switch_root` is NOT fully CHECKED: `switch_root` is `sys.rs` (`fn switch_root`), and the feeding stops only at `main.rs:26` (`stop_feeding`) after `boot` returns.
+- Then the root's `lemnosd` binds the `hw-watchdog` device (board file `[[devices]] driver = "hw-watchdog"`, `uses = { watchdog = "watchdog:/soc@0/watchdog@7021000" }`, `config = { timeout_s = 15 }`, keepalive). Read at 31e0f736: `drivers/hw-watchdog/src/lib.rs` (header lines 37-42, 45 "Binding opens the node for writing, which arms the watchdog with whatever timeout it has", 50 feed interval half the applied timeout). The driver clamps to sysfs `min_timeout`/`max_timeout` when present (not verified on the A7S: the DockSeed watchdog patch replaces `max_timeout` with `max_hw_heartbeat_ms`, so sysfs may not show it).
+
+**(c) The sunxi hardware maximum and what 15 s becomes**
+- Hardware maximum 16 s: the Lemnos board note cites `drivers/watchdog/sunxi_wdt.c:25` (as they cite it; read in the Lemnos repo, not the kernel tree here).
+- Rounding, read from the DockSeed kernel patch `patches/sunxi-wdt-heartbeat/watchdog-sunxi_wdt-let-the-watchdog-core-serve-timeouts-above-16-s.patch` (in series, line 543): `sunxi_wdt_set_timeout()` does `hw_timeout = min(timeout, WDT_MAX_TIMEOUT)`, then `if (wdt_timeout_map[hw_timeout] == 0) hw_timeout++`. A value with no entry in `wdt_timeout_map[]` is bumped to the next index.
+- The map itself is NOT on disk (not in the series, Lemnos, or Gaia). So: whether 15 is in the table is NOT CHECKED. If it is not, 15 becomes 16.
+- Consequence, if 15 → 16: Lemnos's slot-init `arm()` reads back 16 and returns "not within 15 s" (sys.rs `arm`), logs `slot-init: NO WATCHDOG`, drops the file, and leaves the device unfed by slot-init. The kernel core then feeds until the 30 s open timeout, and the hardware resets 16 s after the last feed. So a boot would reset rather than hang, but the slot-init stage is not fed, and the trial rollback depends on that. Lemnos is fixing the refusal on their side (coordinator).
+- **KNOWN BLOCKER for a first A7S boot, pending: read `wdt_timeout_map[]` from the pinned 7.3.4 sunxi_wdt.c (with the DockSeed patch) before the first boot. If 15 is not in the table, do not boot until the Lemnos fix that accepts 16 is pinned (or the slot-init timeout is changed to a value the table holds).**
+
+**First-boot measurement list (A7S; all UNVERIFIED until measured)**
+1. Bootloader's last feed (U-Boot's WDT_CPUS, 16 s) to driver probe: from the boot log timestamps (`sunxi_wdt` probe line).
+2. Driver probe to slot-init's open: the kernel log's probe time to slot-init's `watchdog armed` line.
+3. slot-init's last feed to lemnosd's open at bind to first feed: slot-init's final feed (`stop_feeding` in `main.rs:26`, or the last `feed()`), lemnosd's bind line, and the first feed after it.
+4. Bind to running-ok: lemnosd's `running` state in `lemnos-ctl list` (the hw-watchdog device's health).
+5. The applied timeout read back at each open: slot-init's `watchdog armed: N s` (or its `NO WATCHDOG` line), and lemnosd's applied value at bind.
+6. Whether `NO WATCHDOG` was logged at any step (slot-init `arm()` error path).

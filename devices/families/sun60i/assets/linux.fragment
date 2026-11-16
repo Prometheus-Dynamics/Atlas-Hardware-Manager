@@ -75,6 +75,12 @@ CONFIG_MMC_BLOCK=y
 #    device exists when PID 1 opens it. The driver's 16 s hardware maximum and the sunxi-wdt-heartbeat patch: see
 #    components/bringup-alive/files/10-watchdog.conf.
 CONFIG_SUNXI_WATCHDOG=y
+# The open timeout (C1 ruling, Lemnos's value, every slot family: Raze, rk35xx, sun60i, until a board measures it). Linux's
+# WATCHDOG_HANDLE_BOOT_ENABLED (default y) makes the kernel feed a bootloader-armed watchdog until userspace opens it. With no
+# open timeout that is forever, so a boot that never reaches the opener would never reset and a trial would never roll back.
+# 30 s covers the gap from driver probe to slot-init's open of /dev/watchdog. Built in (=y): the watchdog must exist before
+# PID 1 opens it. UNVERIFIED on a board.
+CONFIG_WATCHDOG_OPEN_TIMEOUT=30
 # CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink the bring-up LEDs switch to (board-alive-led). The heartbeat is already above.
 CONFIG_LEDS_TRIGGER_TIMER=y
 
