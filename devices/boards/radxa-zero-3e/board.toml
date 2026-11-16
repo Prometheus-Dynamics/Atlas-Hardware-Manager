@@ -48,10 +48,21 @@ lemnos = "lemnos-board.toml"
 # bootloader output) and `uboot-env` (the environment, 16M, 128K). Then `boot` (the FAT partition the U-Boot form reads
 # boot.scr and the three bay sets from: its size is the product's boot_size, check-devices requires that) and `data`
 # (the slot file; last, and its size is the one number `@data-size@` takes and the ext4 filesystem is made to).
-# DATA SIZE 1 GiB (1073741824): one slot is an EROFS root of about 18 to 40 MB (the Raze's measured root: 18,178,048 bytes
-# at lzma level 6) and the data partition holds the slot files of every install (the keep-last-N policy), so the first flash
-# holds several slots with room; a 1 GiB card area is small for the 8 GB+ SD cards the bench uses. Not grown on first boot:
-# the first-start grow is Lemnos M36b, not at the pin. UNVERIFIED on board.
+# DATA SIZE (Z2, final; the data partition does NOT grow on this GPT board: Lemnos's grow is MBR-only until Lemnos GROW).
+# Smallest card the bench supports: 8 GB (the tree's own statement, "8 GB+ SD cards the bench uses"). A 16 GB card is the
+# alternative if the coordinator rules it; the arithmetic below is for 8 GB, so 16 GB only adds unused space after data.
+# Layout, MiB (8 GB = 7,629 MiB): GPT headers ~1; u-boot raw at 32 KiB (inside the first MiB); uboot-env at 16 MiB, 0.125;
+# boot 128 (the FAT partition, bays included, = boot_size 134217728); data 1024 (last). Total used ~1,169 MiB; nothing after data.
+# Data minimum (check-devices data_size_rule): data >= 1.10 x (keep x largest slot + reserve_mb).
+#   largest slot: 40 MiB, the design bound from this file's own estimate ("one slot is an EROFS root of about 18 to 40 MB";
+#   the Raze's measured root is 18,178,048 bytes at lzma 6). NOT MEASURED on the ZERO 3E.
+#   keep = 2 (the system-slots device below): running + the new install, which is also the one rollback target. keep = 3
+#   (the Raze's reference) would add one slot of room and is not needed for a bench image.
+#   reserve_mb = 128 (the system-slots device below): free space an install leaves behind (Lemnos suggests 64-128).
+#   minimum = 1.10 x (2 x 40 + 128) = 228.8 MiB; 1024 MiB is 4.5 times it.
+# The bench's slot is not on the card's free area: data is the card's partition, fixed here, so the value is the final size.
+# UNKNOWN from Lemnos (to confirm): whether a pushed bundle is spooled on the data partition before an install (it may add
+# a term to the minimum). UNVERIFIED on board: nothing has been written to a card.
 [[partitions]]
 name = "u-boot"
 role = "bootloader"

@@ -96,10 +96,13 @@ config = { timeout_s = 15 }
 # own redundant environment (the GPT partition of type 3de21764..., 128 KiB, copies of uboot_env_size 0x10000) holds the
 # record. The SD is U-Boot's mmc 1 (uboot_env_mmc_index = 1): the eMMC socket is disabled on this board. boot_sources names the SD
 # controller's device-tree path, which the boot script hands on (Lemnos docs/slots.md "the boot source").
+# Sizing (Z2; the arithmetic is in board.toml, [[partitions]] data): keep = 2 (running + the new install), reserve_mb = 128
+# (free space an install leaves). Neither inherits Lemnos's defaults (keep 3, reserve 2048 MiB). grow_data = false: GPT: Lemnos's
+# grow is MBR-only until Lemnos GROW; this stops its 8 s refusal loop (grow.rs:1-5, lib.rs:1344, :1666). Remove when Lemnos says.
 [[devices]]
 id = "slots"
 driver = "system-slots"
-config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/mmc@fe2b0000=/mmc@fe2b0000"], uboot_env_size = 0x10000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001 }
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/mmc@fe2b0000=/mmc@fe2b0000"], uboot_env_size = 0x10000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, keep = 2, reserve_mb = 128, grow_data = false }
 
 # The gadget (the Lemnos usb-gadget driver), with the Raze's addressing: the default composition (the orion link, NCM
 # derived from the board serial, one ACM console); the NCM interface is lemnos<N>, addressed by the lemnos0-addressing

@@ -2108,6 +2108,54 @@ if ! pads_out=$(pads_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
 fi
 
+# The slot-disk data size rule (Z2, 2026-11-16): on a GPT board, a slot-disk product's data partition must hold keep slots
+# plus the reserve, with a 10 % margin for the filesystem: data >= 1.10 x (keep x largest slot + reserve_mb). keep and
+# reserve_mb must be stated in the board's system-slots device (no inherited Lemnos default: 3 and 2048 MiB). The largest
+# slot is 40 MiB, the design bound from the ZERO 3E board's own estimate (board.toml). MBR boards (the Raze, slot-boot) are not checked.
+DATA_SLOT_MAX=$((40 * 1048576))
+data_size_rule() {  # <devices dir>
+  local dev=$1 p b name size keep reserve need typ lem out=""
+  while IFS= read -r p; do
+    grep -qE '^recipe = "slot-disk"' "$p" || continue
+    b=$(product_board "$p"); [[ -n $b && -f $b ]] || continue
+    name=$(basename "$(dirname "$p")")
+    typ=$(awk '/^\[\[partitions\]\]/{f=0} /^role = "data"/{f=1} f && /^type = /{print $3; exit}' "$b" | tr -d '"')
+    [[ $typ =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    size=$(awk '/^\[\[partitions\]\]/{f=0} /^role = "data"/{f=1} f && /^size = /{gsub(/"/,"",$3); print $3; exit}' "$b")
+    [[ -n $size ]] || { out+="FAIL $name: its board declares no size for the data partition"$'\n'; continue; }
+    lem=$(dirname "$b")/lemnos-board.toml
+    keep=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'keep = [0-9]*' | head -1 | grep -o '[0-9]*$')
+    reserve=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'reserve_mb = [0-9]*' | head -1 | grep -o '[0-9]*$')
+    if [[ -z $keep || -z $reserve ]]; then
+      out+="FAIL $name: its board's system-slots device does not state keep and reserve_mb (Lemnos's defaults are 3 and 2048 MiB: a GPT bench must state its own)"$'\n'; continue
+    fi
+    need=$(( (keep * DATA_SLOT_MAX + reserve * 1048576) * 11 / 10 ))
+    if (( size < need )); then
+      out+="FAIL $name: data partition $size bytes is below 1.10 x (keep $keep x 40 MiB + reserve ${reserve} MiB) = $need bytes: the first install would be refused NO_SPACE"$'\n'
+    fi
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+
+# Self-test: the data size rule passes the real tree, refuses a data partition below the minimum and a missing keep.
+data_size_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: the data size rule refuses the real tree: $out" >&2; rc=1; fi
+  sed -i 's/^size = "1073741824"$/size = "104857600"/' "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a 100 MiB data partition was not refused" >&2; rc=1
+  elif [[ $out != *"data partition 104857600 bytes is below"* ]]; then echo "check-devices: self-test: the refusal does not name the size: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  sed -i 's/ keep = 2, reserve_mb = 128,/ reserve_mb = 128,/' "$tmp/devices/boards/radxa-zero-3e/lemnos-board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a slot-disk board without keep was not refused" >&2; rc=1
+  elif [[ $out != *"does not state keep and reserve_mb"* ]]; then echo "check-devices: self-test: the keep refusal does not say so: $out" >&2; rc=1; fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the data size rule passes the tree and refuses a data partition below 1.10 x (keep x 40 MiB + reserve) and a missing keep"
+  return $rc
+}
+
 # The open-timeout condition (Z2): every rk35xx family fragment builds the watchdog driver in (=y, not =m) and sets the
 # open timeout to 30 s, the Raze's value. The timeout only covers the driver probe to slot-init's open, and it runs only
 # when the driver is built in (watchdog_dev.c:1088; the coordinator's ruling 2026-11-16). Prints one FAIL line per problem.
@@ -2122,6 +2170,10 @@ open_timeout_rule() {  # <devices dir>
   [[ -z $out ]]
 }
 
+# The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
+if ! ds_out=$(data_size_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
+fi
 # The open-timeout condition (Z2): the rk35xx kernel fragments build the watchdog in and set the open timeout.
 if ! ot_out=$(open_timeout_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ot_out"
@@ -2176,6 +2228,7 @@ if [[ $root_given -eq 0 ]]; then
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   pads_self_test || die "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
+  data_size_self_test || die "self-check: the data size rule no longer refuses a too-small data partition or a missing keep"
   rk_env_self_test || die "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
