@@ -2108,6 +2108,24 @@ if ! pads_out=$(pads_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
 fi
 
+# The open-timeout condition (Z2): every rk35xx family fragment builds the watchdog driver in (=y, not =m) and sets the
+# open timeout to 30 s, the Raze's value. The timeout only covers the driver probe to slot-init's open, and it runs only
+# when the driver is built in (watchdog_dev.c:1088; the coordinator's ruling 2026-11-16). Prints one FAIL line per problem.
+open_timeout_rule() {  # <devices dir>
+  local dev=$1 f out=""
+  for f in "$dev"/families/rk35*/assets/linux.fragment; do
+    [[ -f $f ]] || continue
+    grep -qx 'CONFIG_DW_WATCHDOG=y' "$f" || out+="FAIL $(basename "$(dirname "$(dirname "$f")")"): its kernel fragment does not build the watchdog driver in (CONFIG_DW_WATCHDOG=y): the open timeout would not run"$'\n'
+    grep -qx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=30' "$f" || out+="FAIL $(basename "$(dirname "$(dirname "$f")")"): its kernel fragment does not set CONFIG_WATCHDOG_OPEN_TIMEOUT=30 (the Raze's value)"$'\n'
+  done
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+
+# The open-timeout condition (Z2): the rk35xx kernel fragments build the watchdog in and set the open timeout.
+if ! ot_out=$(open_timeout_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ot_out"
+fi
 # The RK35xx U-Boot environment rule (Z2): every rk35xx slot image's U-Boot config is the hard-rule one.
 if ! rk_env_out=$(rk_env_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$rk_env_out"
