@@ -1,6 +1,6 @@
 # dtmerge for Lemnos's `boot-partition --verify --dtmerge` (the firmware's own overlay merge, run on the host to prove
 # each config.txt overlay applies to the board dtb). Reason to carry it now: the coordinator's 2026-11-14 ruling (G11),
-# so M38's PR only wires it. Unused until then: Gaia d8441c9d refuses a `tools` entry that no run names ("no run names
+# so M38's PR only wires it. Unused until then: Gaia (d8441c9d, PR G11) refuses a `tools` entry that no run names ("no run names
 # @tool:dtmerge@"), so raze-lemnos-board's [generate.image] gets `tools = { dtmerge = "rpi-dtmerge:bin/dtmerge" }` and
 # `"--dtmerge", "@tool:dtmerge@"` in `verify` together, when Lemnos's flag lands (M38). An unnamed component is not in
 # the plan, so nothing builds it before then. From Gaia's working proof (/mnt/ssd-samsung/gaia/work/make-proof).
