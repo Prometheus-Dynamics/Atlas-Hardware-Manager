@@ -462,7 +462,7 @@ new file mode 100644
 index 00000000..0c3252e5
 --- /dev/null
 +++ b/configs/luckfox-aura-rv1126b_defconfig
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,96 @@
 +CONFIG_ARM=y
 +CONFIG_ARCH_ROCKCHIP=y
 +CONFIG_ROCKCHIP_RV1126B=y
@@ -531,6 +531,11 @@ index 00000000..0c3252e5
 +CONFIG_WDT=y
 +CONFIG_WDT_DW=y
 +CONFIG_WATCHDOG=y
++# No watchdog owner on this image: nothing may arm it. Autostart is off explicitly (WATCHDOG_AUTOSTART
++# defaults to y). An armed DesignWare watchdog here has a window as short as 21.5 s (TOP max at a 100 MHz
++# clock; clock UNVERIFIED) while U-Boot stops polling during the kernel load, and the kernel's
++# HANDLE_BOOT_ENABLED then keeps an armed, ownerless watchdog fed forever. No protection either way.
++# CONFIG_WATCHDOG_AUTOSTART is not set
 +CONFIG_FASTBOOT=y
 +CONFIG_FASTBOOT_FLASH=y
 +CONFIG_FASTBOOT_FLASH_MMC_DEV=0

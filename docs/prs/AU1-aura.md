@@ -237,7 +237,7 @@ Not built, not on a board: no image build, TPL/binman not run (pylibfdt absent o
 
 Nothing we carry writes a pad-voltage register. `scripts/check-no-vsel.sh` is run by `scripts/check-devices.sh` (the "no-VSEL rule") over the carried patches of every family whose pads.toml says no pad table applies: 18 patch files, none refused. So the bench sees exactly the vendor power-on state of each pad bank. The bank voltages are not stated because they are not established; this image does not set them.
 
-The first-boot board check must read back each bank's VSEL/IO-domain state before any pin on that bank is driven by us. Registers: io_vsel per domain (pmuio0/pmuio1 0x900, vccio1 0x908, vccio2 0x90c, vccio3 0x910, vccio4 0x914, vccio5 0x918, vccio6 0x91c, vccio7 0x920; from the vendor ioc_rv1126b.h). Until that read-back is recorded, the statements stay "not established".
+The first-boot board check must read back each bank's VSEL/IO-domain state before any pin on that bank is driven by us. Registers: io_vsel per domain (pmuio0/pmuio1 0x900, vccio1 0x908, vccio2 0x90c, vccio3 0x910, vccio4 0x914, vccio5 0x918, vccio6 0x91c, vccio7 0x920; from the vendor ioc_rv1126b.h). Until that read-back is recorded, the statements stay "not established". The same first-boot list also reads the watchdog WDT_CR enable bit (see the ruling section below).
 
 ## 2026-11-16: watchdog owner for the Aura (findings only, no change made)
 
@@ -256,3 +256,22 @@ Timing windows if armed by our U-Boot:
 - Arm vs first feed: arm at initr_watchdog (common/board_r.c 663) through wdt_start (wdt-uclass.c 119-148), which calls designware_wdt_start (designware_wdt.c 93-103) and resets the counter at arm time. Periodic feed: wdt_cyclic every reset_period = 1000 ms (wdt-uclass.c 236-245), run from the cyclic poll (common/cyclic.c 60, 126-129). The danger is any stretch where U-Boot does not poll cyclics for longer than the hardware window (21.5 s or 89.5 s).
 
 Consequence for the rule: a board that boots this image with U-Boot armed and no owner feeding is a FINDING until one owner is named. Fix options for the owner (not applied): (a) a Lemnos hw-watchdog device with keepalive = true plus lemnosd installed, and no RuntimeWatchdogSec; or (b) systemd RuntimeWatchdogSec with the U-Boot arm disabled by a WATCHDOG_AUTOSTART=n (not applied: the coordinator asked for findings first).
+
+## 2026-11-16 ruling: the Aura does not arm the watchdog
+
+The Aura bench product has no watchdog owner and is not a slot product (recipe `firmware`). So nothing may arm the watchdog.
+
+U-Boot (patches/uboot/0005, defconfig, lines 534-538): `# CONFIG_WATCHDOG_AUTOSTART is not set` is set explicitly, with a comment. CONFIG_WDT, CONFIG_WDT_DW and CONFIG_CMD_WDT stay (the `wdt` command is useful on the bench).
+- Why nothing starts the device at probe (U-Boot, file:line): initr_watchdog (drivers/watchdog/wdt-uclass.c 95-113) probes each device and calls init_watchdog_dev; init_watchdog_dev returns at 83-86 when `priv->autostart` is false. autostart comes from CONFIG_WATCHDOG_AUTOSTART (wdt-uclass.c 239); no `u-boot,autostart` property is set in the rv11xx family. The DesignWare probe ends with designware_wdt_stop (designware_wdt.c 147), so it disables a running timer rather than starting one. The only other start path, wdt_expire_now (wdt-uclass.c 220), runs on an explicit expire request only.
+- The window if it were armed (for the record): an armed DesignWare watchdog has a hardware window as short as 21.5 s (TOP max at a 100 MHz clock; the clock is UNVERIFIED), while U-Boot stops polling during the kernel load. The kernel's CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED (default y, drivers/watchdog/Kconfig 50-52; watchdog_dev.c 60-61, 1209) then keeps an armed but ownerless watchdog fed forever. So an armed ownerless watchdog gives no protection either way.
+
+Kernel (patches/linux/0011, `&wdt status = "okay"`, lines 141-143): KEPT, because the node is inert. The probe at dw_wdt.c 641-643 only marks the watchdog HW_RUNNING if it is already enabled, and does not start it. dw_wdt_start (dw_wdt.c 274-280) runs only on a userspace open or a core start. The enable bit is written only there and in dw_wdt_arm_system_reset, whose other caller is the reboot restart handler (dw_wdt.c 311), which arms a reset on reboot. So with U-Boot not arming it, the kernel never starts it at boot. The WDT_EN reset value on the RV1126B is UNVERIFIED: that is what the first-boot check reads.
+
+Closed SPL: NOT CHECKED. The vendor SPL is a closed blob, and our defconfig has no SPL_WDT (the SPL does not probe a watchdog). The first-boot board check below proves nothing armed it.
+
+First-boot board check (before anything else; bench only; no Lemnos owner yet):
+1. Read WDT_CR (base 0x20b60000 from rv1126b.dtsi 1570-1572, control register at offset 0x00, WDT_EN = bit 0, dw_wdt.c 32-33) at the U-Boot prompt: `md.l 0x20b60000 1`. Bit 0 must be 0.
+2. Read the same register again from Linux, before any other step (devmem, root on the bench). Bit 0 must still be 0.
+3. The same first-boot check reads each bank's io_vsel (the bank list above) before any pin on that bank is driven by us.
+
+When the Aura becomes a slot product: it gets exactly one owner (a Lemnos hw-watchdog with keepalive = true, with lemnosd installed). U-Boot's autostart comes back with the family's kernel open timeout, and the timing windows are stated then.
