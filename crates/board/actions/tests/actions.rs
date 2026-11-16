@@ -449,6 +449,64 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
 }
 
 #[tokio::test]
+async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
+    // The run's number is from the session it was started on. After the session goes and comes
+    // back, that number may belong to another run on the board, so the cancel is not sent.
+    let rig = Rig::start("cancel-guard", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    // Two stalls: the first run, and the one started on the later session.
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on");
+    connected(&handle).await;
+    let issued = BoardActions::new(handle)
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to start and stall", || {
+        rig.node.stalled_runs() == 1
+    })
+    .await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on again");
+    connected(&handle).await;
+
+    let refused = BoardActions::new(handle.clone()).cancel(&issued).await;
+    assert!(
+        matches!(refused, Err(ActionError::Unconfirmed { .. })),
+        "a cancel by a number from an earlier session is refused: {refused:?}"
+    );
+
+    // A run started on this session is cancelled: its own follow reports the cancel.
+    let fresh = BoardActions::new(handle.clone())
+        .start(named(&catalog, SELF_TEST), &[])
+        .await
+        .expect("a run starts on this session");
+    until("the second run to stall", || rig.node.stalled_runs() == 2).await;
+    BoardActions::new(handle.clone())
+        .cancel(&fresh)
+        .await
+        .expect("a run started on this session is cancelled");
+    let ended = BoardActions::new(handle)
+        .follow(&fresh, atlas_actions::any_answer, |_| {})
+        .await;
+    assert!(
+        matches!(ended, Err(ActionError::Cancelled(_))),
+        "the run ends cancelled: {ended:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     // A call's wait of one second: the blocked monitor makes the start's answer late.
     let node = start(&scratch("inflight").join("node"), &lemnos_kind());
@@ -584,9 +642,12 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     let mut seen: Vec<Progress> = Vec::new();
     let done = rig
         .board
-        .follow(call, |progress| seen.push(progress.clone()))
+        .follow(&call, atlas_actions::any_answer, |progress| {
+            seen.push(progress.clone());
+        })
         .await
-        .expect("the run ends");
+        .expect("the run ends")
+        .into_done();
     assert_eq!(done.output, b"dry run label: 100 steps");
     assert!(!seen.is_empty(), "the board reported progress");
     assert!(
@@ -665,7 +726,12 @@ async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_w
         .expect("the run is started");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
     let board = rig.board.clone();
-    let following = tokio::spawn(async move { board.follow(call, |_| {}).await });
+    let following = tokio::spawn(async move {
+        board
+            .follow(&call, atlas_actions::any_answer, |_| {})
+            .await
+            .map(atlas_actions::Followed::into_done)
+    });
 
     // The board drops the silent caller's run; the run ends Failed with the bridge's words.
     rig.node.lease_advance(61);

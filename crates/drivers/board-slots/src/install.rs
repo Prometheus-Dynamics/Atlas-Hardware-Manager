@@ -48,7 +48,9 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use atlas_actions::{ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState};
+use atlas_actions::{
+    ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState, Followed, Issued, any_answer,
+};
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobTiming, Jobs};
@@ -150,11 +152,11 @@ struct Run {
     /// The push's counters, kept when the install ends (the push handle is dropped then).
     push_counters: Option<atlas_files::Counters>,
     pushed: bool,
-    call: Option<u64>,
+    call: Option<Issued>,
     /// The install run's start while its reply is awaited: `None` in the channel until the board
     /// answers, then `Some(Some(call))` or `Some(None)` when it did not start. A cancel waits on it,
     /// so a run the board started while the cancel came in is still stopped.
-    starting: Option<watch::Receiver<Option<Option<u64>>>>,
+    starting: Option<watch::Receiver<Option<Option<Issued>>>>,
     stage: Option<Stage>,
     /// The typed refusal the install ended with, when the board or the session gave one (kind,
     /// code and text: see [`Failure`]). `None` when the install did not end by a refusal.
@@ -432,7 +434,7 @@ impl InstallKind {
 
     /// Step 5 and 6: install_file, started once, then followed to its result.
     async fn install(&self, spec: &Spec, board: &BoardActions) -> Result<String, Step> {
-        let call = match self.with_run(&spec.nonce, |run| run.call) {
+        let call = match self.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => call,
             None => {
                 let words = [spec.dest.clone(), flag(spec.starred), "false".to_owned()];
@@ -454,10 +456,10 @@ impl InstallKind {
                 let starter = board.clone();
                 let started = tokio::spawn(async move {
                     let result = starter.start(&action, &words).await;
-                    let call = result.as_ref().ok().copied();
+                    let call = result.as_ref().ok().cloned();
                     // Recorded only while the install is still known: an install already ended
                     // (a cancel that gave up waiting) gets no new entry.
-                    if let Some(call) = call
+                    if let Some(call) = call.clone()
                         && let Some(run) = runs
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
@@ -503,9 +505,10 @@ impl InstallKind {
             });
         };
         let followed = match &hold {
-            Some(hold) => board.follow_while_held(call, hold, on_progress).await,
-            None => board.follow(call, on_progress).await,
-        };
+            Some(hold) => board.follow_while_held(&call, any_answer, hold, on_progress).await,
+            None => board.follow(&call, any_answer, on_progress).await,
+        }
+        .map(Followed::into_done);
         let done = followed.map_err(|error| classify(&error))?;
         String::from_utf8(done.output)
             .map_err(|_| Step::Settled("the board's result is not a slot id".into()))
@@ -891,7 +894,7 @@ impl SlotInstalls {
         if !self.jobs.cancel(job) {
             return false;
         }
-        let call = match self.kind.with_run(&spec.nonce, |run| run.call) {
+        let call = match self.kind.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => Some(call),
             // A start in flight: wait for the board's answer, so a run it started is stopped too.
             None => match self.kind.with_run(&spec.nonce, |run| run.starting.clone()) {
@@ -900,7 +903,7 @@ impl SlotInstalls {
                         .await
                         .ok()
                         .and_then(Result::ok)
-                        .and_then(|said| *said)
+                        .and_then(|said| said.clone())
                         .flatten()
                 }
                 None => None,
@@ -915,7 +918,7 @@ impl SlotInstalls {
             push.cancel();
         }
         let state = match call {
-            Some(call) => stop_on_board(&self.kind, &spec, call).await,
+            Some(call) => stop_on_board(&self.kind, &spec, &call).await,
             None => CancelState::NoRun,
         };
         self.kind.with(&spec.nonce, |run| {
@@ -933,7 +936,8 @@ impl SlotInstalls {
     }
 }
 
-async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelState {
+async fn stop_on_board(kind: &InstallKind, spec: &Spec, issued: &Issued) -> CancelState {
+    let call = issued.call();
     let Ok(address) = Address::from_str(&spec.address) else {
         return CancelState::NotConfirmed(format!("{} is not an address", spec.address));
     };
@@ -943,12 +947,14 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelStat
         ));
     };
     let board = BoardActions::new(handle);
-    if let Err(error) = board.cancel(call).await {
+    if let Err(error) = board.cancel(issued).await {
         return CancelState::NotConfirmed(format!(
             "the cancel did not reach the board ({error}); install run {call} may still be going"
         ));
     }
-    match time::timeout(CANCEL_CONFIRM, board.follow(call, |_| {})).await {
+    match time::timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {})).await
+        .map(|result| result.map(Followed::into_done))
+    {
         Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
         Ok(Ok(_)) => {
             CancelState::NotConfirmed("the install finished before the cancel took effect".into())
