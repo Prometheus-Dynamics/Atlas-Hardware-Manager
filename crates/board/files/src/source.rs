@@ -16,7 +16,7 @@ use atlas_session::Cancel;
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
-use crate::progress::{Meter, Progress, Stage};
+use crate::progress::{Meter, Progress, Restart, Stage};
 
 /// A file to push: read from the start, and from any offset. A [`std::fs::File`] is one, and so
 /// is a generated stream. It is moved to the job, which reads it on the node's session.
@@ -159,6 +159,11 @@ impl Shared {
                 progress.stage,
                 Stage::Committed | Stage::Failed { .. } | Stage::Cancelled
             ) {
+                let count = progress.restart.as_ref().map_or(0, |restart| restart.count) + 1;
+                progress.restart = Some(Restart {
+                    count,
+                    reason: reason.clone(),
+                });
                 progress.stage = Stage::Resending { reason };
             }
         });
