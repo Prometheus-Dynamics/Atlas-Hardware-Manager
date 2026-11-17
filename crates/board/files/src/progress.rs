@@ -53,6 +53,19 @@ pub struct Progress {
     /// Bytes per second the board acknowledged over the last few seconds. Zero when nothing
     /// is moving.
     pub rate_bytes_per_sec: u64,
+    /// Whether the file was begun again from its start, and why. Durable: it is set when the
+    /// push restarts and stays set to the end, after the stage has moved on to sending.
+    pub restart: Option<Restart>,
+}
+
+/// A restart of a push from its start, kept as a fact of the push rather than a stage it passes
+/// through: a stage can be left before anyone looks at it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Restart {
+    /// How many times the push has been begun again from its start.
+    pub count: u64,
+    /// Why the file starts over, in words.
+    pub reason: String,
 }
 
 impl Progress {
@@ -64,6 +77,7 @@ impl Progress {
             sent: 0,
             total,
             rate_bytes_per_sec: 0,
+            restart: None,
         }
     }
 }

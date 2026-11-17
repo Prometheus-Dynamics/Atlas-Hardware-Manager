@@ -29,6 +29,6 @@ mod push;
 mod source;
 mod transfer;
 
-pub use progress::{Progress, Stage};
+pub use progress::{Progress, Restart, Stage};
 pub use push::{KIND, PUSH_WAIT, Push, PushError, PushKind, submit};
 pub use source::{Counters, PushSource};
