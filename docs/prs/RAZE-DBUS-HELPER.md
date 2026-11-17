@@ -410,3 +410,161 @@ space the check no longer sees once it is used. The budget, to be kept true with
   limits never remove a slot file: SystemKeepFree is what journald keeps free for everything else on the filesystem.
 - Lemnos confirms nothing forbids other directories on /data (its store owns only its own paths), so /data/journal is
   allowed by Lemnos.
+
+## 18. Journal on /data: the design (NOT committed; waits for Gaia's fixed rev)
+
+### 18.1 Machine-id: stable per board, the same across slots and installs
+Options checked, at Lemnos 31e0f736 and systemd 258.7:
+- (a) `systemd.machine_id=` on the slot cmdline. REJECTED for the pin. The cmdline is one per slot image, not per board:
+  `<boot_args>.slot=<id> <boot_args>.roothash=<hex> ... panic=5` (Lemnos docs/slots.md:31), built into the bundle whose
+  `boot/cmdline.txt` is digested (docs/slots.md:181, :352). Lemnos's source has no `systemd.` argument anywhere (grep:
+  docs/daemon.md and packaging comments only). A per-board value needs an install-time write of the cmdline: a Lemnos and
+  Gaia change, not ours.
+- (b) an id held on /data that slot-init binds over /etc/machine-id. REJECTED for the pin: slot-init has no machine-id code
+  (grep of service/slot-init at 31e0f736: no matches). It would be a Lemnos ask.
+- (c) CHOSEN, image-side, no Lemnos or Gaia change: derive the id from the board's serial, the same source as lemnos0-address
+  (`devices/components/raze-base-files/files/lemnos0-address`, reading /proc/device-tree/serial-number, raze-base-files/
+  component.toml:21-24). A oneshot writes `/run/machine-id` (32 hex digits from a hash of the serial, formatted as systemd
+  expects); a bind mount puts it on `/etc/machine-id`. The root's empty `/etc/machine-id` (Buildroot `touch`, systemd.mk:673-675)
+  is the mount point, which exists in the image. Reasons: the id is the same on every slot and every install of the same
+  board, since it is the board's own serial; it needs no file on /data, so it is never the per-boot transient id, even when
+  /data is missing; it is public, so no secret is held.
+  Mechanics (NEEDS-BUILD): oneshot `raze-machine-id.service` (DefaultDependencies=no, Before=sysinit.target,
+  Before=etc-machine-id.mount, WantedBy=sysinit.target) and `etc-machine-id.mount` (What=/run/machine-id, Where=/etc/machine-id,
+  Options=bind). Owner: both units are listed in raze-base-files [[services]] (one owner; the mount unit enabled there).
+  `dbus`'s `/var/lib/dbus/machine-id` is a symlink to /etc/machine-id (dbus.mk:136-138): it follows the bind.
+  Failure: if the serial is missing, the oneshot fails, the id is absent, and systemd makes a transient one. That is the one
+  case we must refuse: the oneshot ends with a journal event and the board check (18.4) fails.
+
+### 18.2 Sizes: SystemMaxUse and SystemKeepFree against the 8 GB card
+Inputs: the bench set's journal allowance SystemMaxUse=64M and reserve_mb=128 (the coordinator's figures; not read from the bench
+files here). Smallest card 8 GB, 7.4 GiB usable. Slot: the raze root image is 18,178,048 bytes = 17.3 MiB
+(devices/products/raze-base/product.toml:61-62); keep = 3 (the reference, devices/boards/raze/lemnos-board.toml:147).
+Bench slot sizes NOT read: 17.3 MiB is used as the example.
+- Budget (§17): data ≥ 1.10 × (keep × slot + reserve_mb + journal cap)
+  = 1.10 × (3 × 17.3 + 128 + 64) = 1.10 × 244 = 268 MiB, which is 3.5 % of 7.4 GiB. It fits.
+- SystemMaxUse = 64M (the journal's own cap; the budget term above).
+- SystemKeepFree = 256M: journald keeps this much free on the filesystem for everything else. It covers the reserve (128 MiB)
+  plus keep × slot (52 MiB) with margin: 180 MiB, rounded up to 256 MiB.
+- RateLimitIntervalSec=30s, RateLimitBurst=200: PROPOSAL; journald.conf(5) defaults (30 s / 10000) are not verified against
+  the 258.7 source here (journald-server.c is not in the tarball).
+- The change to the image: `devices/components/raze-base-files/files/60-board-journald.conf` goes from SystemMaxUse=16M to 64M,
+  and gains SystemKeepFree=256M and the rate limits. NOT committed.
+- Flash wear, condition 2 of the coordinator's list: SyncIntervalSec stays at the default (5 min, journald.conf(5); NOT
+  verified in source here). journald syncs at once on CRIT/ALERT/EMERG (NOT verified in source). The write rate on a quiet
+  robot is an ESTIMATE, NEEDS-THE-BOARD (method in §16).
+
+### 18.3 /data missing or read-only: the journal stays in RAM, an event says so, boot is never blocked
+- Storage=persistent: journald uses /var/log/journal, "with a fallback to /run/log/journal ... during early boot and if the disk
+  is not writable" (man/journald.conf.xml:74-80). The same for a missing target: the directory check fails, so it is the
+  fallback (documented by the auto mode: "persistent ... if the directory exists", :82-83; the source path for the check is
+  journald-server.c, NOT read here).
+- The /var/log/journal link: a symlink in the factory tree, `usr/share/factory/var/log/journal -> /data/journal`, made by our
+  overlay. The skeleton hook recreates it at boot in the /var tmpfs: `L+! /var/log/journal - - - - ../usr/share/factory/var/log/journal`
+  for each factory symlink (skeleton-init-systemd.mk:48-51), which resolves to /data/journal. When /data is missing, the link is
+  dangling, the directory check fails, and journald is volatile (above).
+- The event: `raze-journal-check.service` (oneshot, After=systemd-journald.service, not ordered before any boot target, so
+  it never blocks boot) tests `/data` and `/var/log/journal`, and writes one message to the journal: "journal: volatile,
+  /data/journal unavailable" or "journal: persistent on /data". The message is in RAM when it is volatile, which is the point.
+  Owner: raze-base-files [[services]] (one owner).
+- Boot is never blocked: no unit orders on /data beyond the slot-init mount (already done before switch_root, §14).
+
+### 18.4 Checks
+- Build check (new, `scripts/check-journal-layout.sh`, to add with the pin): in the merged root, assert (a) the factory symlink
+  `usr/share/factory/var/log/journal` exists and points to /data/journal; (b) `journald.conf.d/60-board.conf` names
+  Storage=persistent, SystemMaxUse=64M, SystemKeepFree=256M; (c) `etc/systemd/system/systemd-networkd-wait-online.service` is
+  a mask; (d) the machine-id oneshot and its mount unit exist and are enabled in raze-base-files' [[services]]. Refused
+  otherwise, naming the missing item.
+- Board check (first board run): (1) read /etc/machine-id; (2) reboot; (3) machine-id unchanged; (4) `journalctl -b -1`
+  shows the previous boot's entries; (5) `ls /data/journal` shows the directory named by the id. Each step prints PASS or
+  FAIL. Not run here: no board.
+
+### 18.5 What is verified, and what is NOT
+VERIFIED-BY-READING: Lemnos writes no systemd.* argument and has no machine-id code (grep); the cmdline is per image
+(docs/slots.md:31, :181); journald's documented storage fallback (man/journald.conf.xml:74-91); skeleton symlink handling
+(skeleton-init-systemd.mk:48-51); the empty /etc/machine-id (systemd.mk:673-675); dbus's machine-id link (dbus.mk:136-138).
+NEEDS-BUILD: the bind mount over the empty file; the factory symlink chain; the event unit's ordering; whether systemd
+accepts a bind-mounted machine-id before journald starts; the rate-limit and sync values.
+NEEDS-SOURCE: journald-server.c (not in the 258.7 tarball here) for the exact fallback check.
+
+## 19. §18 REVISED (supersedes §18.1 to §18.3; the coordinator's two corrections)
+
+### 19.1 Machine-id: the id must exist before PID1 starts
+VERIFIED in the systemd 258.7 source (the full tree is on disk in the Gaia download cache: `store-build/buildroot-downloads/
+systemd/systemd-258.7.tar.gz`; src/journal is complete there, journald-manager.c and journald-rate-limit.c included):
+- PID1 sets the machine-id before it starts any unit: `src/core/main.c:2456` calls `machine_id_setup(NULL, arg_machine_id, …)`.
+  The argument comes from `systemd.machine_id=` on the kernel command line (`main.c:401-413`).
+- With `/etc/machine-id` empty on a read-only root, `machine-id-setup.c` cannot write it (`writable = false`; the open is
+  read-only, around lines 176-200). It then takes an id: `acquire_machine_id` (lines 60-127), which reads a credential, then
+  the firmware id if asked, and otherwise RANDOMISES one (`sd_id128_randomize`, line 124). It writes that id to
+  `/run/machine-id` (`write_run_machine_id`, around lines 262-278) and BIND-MOUNTS it over `/etc/machine-id` (MS_BIND, line
+  276), then remounts it read-only (line 286). PID1 does this before any unit: the id is transient, per boot.
+- journald then reads `/etc/machine-id` (`MANAGER_MACHINE_ID`) and uses it for its directory: `/var/log/journal/<id>` or
+  `/run/log/journal/<id>` (`journald-manager.c:2518-2530`).
+- So a later oneshot that writes or binds `/etc/machine-id` (§18.1 of the earlier draft) is too late: PID1 already holds the
+  transient id, and journald already named its directory. That design is WITHDRAWN.
+
+What must be true: the file PID1 reads at its start already holds the per-board id. The two ways to do it:
+- (A) `systemd.machine_id=<id>` on the kernel command line: `main.c:401-413` honours it. Not per board: the cmdline is one
+  per slot image (docs/slots.md:31, :181). REJECTED unless the install writes a per-board cmdline.
+- (B) slot-init binds a per-board file over `<newroot>/etc/machine-id` BEFORE switch_root, the same way PID1 overmounts
+  (MS_BIND of a file in /run). slot-init already has the mount step and the move of /data into the new root
+  (`service/slot-init/src/boot.rs:1278` mount of data; `:1397` the erofs root mount on newroot; `:1405` the move of data into
+  newroot). A bind of one more file is the same kind of step. CHOSEN, and it is a LEMNOS ASK.
+
+LEMNOS ASK (to the Lemnos owner; not in this PR):
+- WHAT: slot-init derives a board id and bind-mounts a file holding it over `<newroot>/etc/machine-id`, before switch_root.
+  The file is a 33-byte text: 32 lowercase hex digits and a newline.
+- WHY: PID1 reads `/etc/machine-id` at start (`main.c:2456`); an empty file on a read-only root makes PID1 mount a random id
+  per boot (`machine-id-setup.c:124, :276`), so the journal directory changes every boot. A per-board id keeps one directory
+  per board across slots and installs.
+- DERIVATION (proposed): the first 128 bits of SHA-256 over the bytes `"lemnos-machine-id:"` followed by the identity serial,
+  as 32 lowercase hex digits. The serial is the one lemnos0-address reads (`/proc/device-tree/serial-number`,
+  `raze-base-files/files/lemnos0-address:13`, with the `LEMNOS0_SERIAL` override). Never all zero (if the derived 128 bits
+  are zero, refuse and log; never write a zero id: systemd treats the all-zero id as invalid).
+- FAILURE: no serial → slot-init refuses (logs, does not write), and the board keeps the random id; the board check (§19.4)
+  fails. Not silent.
+- SYSTEMD LINES relied on: `main.c:2456` (PID1 setup), `machine-id-setup.c:124` (random fallback), `:276` and `:286`
+  (overmount and remount), `journald-manager.c:2518-2530` (directory naming).
+
+### 19.2 Sizes, for Raze (lemnos-board.toml:156: keep = 3, reserve_mb = 2048)
+- SystemKeepFree ≥ reserve_mb + one slot payload bound. Reserve 2048 MiB. Slot payload bound: the measured raze root is
+  18,178,048 bytes = 17.3 MiB (product.toml:61-62); the bound used is 64 MiB (about 3.7 times the measurement; an ESTIMATE of
+  the manifest, bundle and any growth, to be measured). So SystemKeepFree = 2048 + 64 = 2112 MiB (set as 2112M).
+- SystemMaxUse = 64M (kept).
+- Budget: data ≥ 1.10 × (keep × slot + reserve + journal cap) = 1.10 × (3 × 64 + 2048 + 64) = 1.10 × 2304 = 2534 MiB
+  with the 64 MiB slot bound (or 1.10 × (3 × 17.3 + 2048 + 64) = 2380 MiB with the measured size). About 2.5 GiB.
+- The install check (Lemnos): free ≥ new slot + reserve, with keep slots already present. The minimum data partition for it:
+  (keep + 1) × slot + reserve + journal cap, with the 10 % margin: 1.10 × (4 × 64 + 2048 + 64) = 2605 MiB (bound) or 2399 MiB
+  (measured). So ≈ 2.4 to 2.6 GiB.
+- The Raze's actual card size: NOT IN THE TREE. boards/raze/board.toml:66-72 gives the data partition the last place and no
+  size. So the Raze's data partition is "the rest of the disk", and the minimum CARD is the data minimum plus the boot
+  partition (boot_size = 82,837,504 bytes = 79 MiB, product.toml:86) plus the root slots' own partitions (not in the tree):
+  NEEDS-THE-DISK to state the card. A card of 2.5 GiB + 79 MiB + boot margin is the MINIMUM this arithmetic allows; the bench
+  card (8 GB, 7.4 GiB usable) is far above it.
+- Bench GPT boards (Z2, R1, C1) NOT CHANGED: their reserve_mb is theirs to set (the coordinator's 128 MiB, on their branches).
+
+### 19.3 Until Lemnos ships the id: the journal is VOLATILE (RAM), no half-step
+- The drop-in `60-board-journald.conf` (raze-base-files/files) gets `Storage=volatile` NOW. Reason: with Storage=persistent,
+  journald's directory `/var/log/journal/<id>` would change every boot (19.1), scattering the journal. Volatile is the one
+  mode that does not depend on the id: journald writes `/run/log/journal/<id>`, one directory per boot, which is RAM and is
+  lost at a reboot. That is the accepted state until Lemnos ships the id.
+- The §18.3 /data plan (the factory symlink to /data/journal, the event unit) is NOT applied now. It returns with the stable id.
+- Caps for volatile: RuntimeMaxUse=4M (the file as it is) stays, since RAM is what volatile uses; SystemMaxUse=64M applies only
+  when persistent. (Proposal; the RAM budget of 4M is the current value, verified in the file.)
+- Persistent on /data then needs: the Lemnos id (19.1), the factory symlink, SystemMaxUse=64M, SystemKeepFree=2112M (19.2).
+
+### 19.4 Checks, revised
+- Build check (with the pin): the merged root has `journald.conf.d` with `Storage=volatile` (now) and no `/var/log/journal`
+  link; when the Lemnos id lands, the check changes to: the factory symlink and `Storage=persistent` with the 64M / 2112M values.
+- Board check (first run, after the Lemnos id): (1) `cat /etc/machine-id` before and after a reboot: equal; (2) the id equals
+  the derivation of the board's serial (the check computes it from `/proc/device-tree/serial-number`); (3) `journalctl -b -1`
+  shows the previous boot; (4) `/data/journal/<id>` exists. Each prints PASS or FAIL. Not run: no board.
+
+### 19.5 VERIFIED / NOT
+VERIFIED-BY-SOURCE (258.7, on disk): main.c:401-413, :2456; machine-id-setup.c:60-127 (random), :176-200 (read-only open),
+:262-286 (run file and bind overmount); journald-manager.c:362-372 (persistent mkdir), :2518-2530 (directory names); and
+man/journald.conf.xml:74-91 (the storage modes).
+NEEDS-BUILD: that slot-init's bind over the file is accepted by PID1 (it is the same kind of bind PID1 does itself); the
+journald directory behaviour when a symlink target is missing (the source path is journald-manager.c, verified only for
+mkdir here); the sync and rate-limit values; the Raze card's size (not in the tree).
