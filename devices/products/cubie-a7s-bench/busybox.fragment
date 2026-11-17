@@ -1,0 +1,13 @@
+# BusyBox applets the usb-gadget-network component's script runs (PR B24). Each is a real need:
+# CONFIG_UDHCPD: the DHCP server that hands the PC 10.55.0.2 on usb0 (the only DHCP server on usb0).
+# CONFIG_IFCONFIG: ifconfig usb0 10.55.0.1 netmask 255.255.255.0 up.
+# CONFIG_KILLALL: the script's stop step (killall udhcpd).
+# CONFIG_SHA256SUM: the address derivation (sha256sum of the Lemnos rule's input).
+# CONFIG_MOUNTPOINT: the script's test for /sys/kernel/config before it mounts configfs.
+# Not verified against BusyBox's own Kconfig here (no BusyBox tree on disk); a missing symbol shows at
+# Buildroot's configuration step.
+CONFIG_UDHCPD=y
+CONFIG_IFCONFIG=y
+CONFIG_KILLALL=y
+CONFIG_SHA256SUM=y
+CONFIG_MOUNTPOINT=y

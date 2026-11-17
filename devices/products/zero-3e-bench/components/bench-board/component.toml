@@ -1,0 +1,12 @@
+# The bench's Lemnos board file, installed as /etc/lemnos/board.toml: the board's own file, named by the board under
+# [descriptions] (devices/boards/radxa-zero-3e/board.toml), the way raze-base installs the Raze's. One copy: the board's.
+# The file declares the USB device port as Lemnos's usb-gadget (default composition, NCM derived, lemnos<N>), the identity from
+# the device tree, and the security switch off. See that file for the reasons.
+version = 1
+name = "bench-board"
+description = "The bench's Lemnos board file: the board's own description (lemnos-board.toml), installed as /etc/lemnos/board.toml."
+
+[[install]]
+from = { description = "lemnos" }
+to = "/etc/lemnos/board.toml"
+mode = "0644"

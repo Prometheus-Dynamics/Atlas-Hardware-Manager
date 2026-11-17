@@ -1,0 +1,27 @@
+# One Lemnos cargo package: lemnos-slot-init, built from Lemnos Lemnos 31e0f736 (BB1b, merged to next) (the C1 rev for the A7S bench image).
+# The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
+# Gaia's rust builder, at 4abf626 and later: `--package lemnos-slot-init --profile service`.
+version = 1
+name = "lemnos-slot-init"
+description = "the Lemnos slot init, lemnos-slot-init: it goes in the slot INITRAMFS, not the root filesystem (service profile)"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos 31e0f736 (BB1b, merged to next; bench-board slot declarations; the pin follows the branch head until BB1b merges), the C1 rev for the A7S bench image
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "lemnos-slot-init"
+profile = "service"
+
+[[install]]
+from = "bin/lemnos-slot-init"
+to = "/init"   # the slot initramfs's /init (lemnos-slot-init is the slot's init). The locked Gaia has no field that targets an initramfs tree: field wanted, see the PR text.
+mode = "0755"

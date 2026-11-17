@@ -11,6 +11,9 @@ description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on 
 # the USB-C ports (see the notes below). candidate, UNVERIFIED.
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7s"
+# The words every kernel command line of this board starts with: the console (UART ttyS0; Lemnos's slot words follow).
+# The console baud and the port are the bring-up's own (cubie-a7s-extlinux, the getty on ttyS0). UNVERIFIED on a board.
+cmdline = "console=ttyS0,115200"
 # The board's own kernel patches. Gaia appends them to the family's list (the DockSeed series, sun60i family.toml [kernel]):
 # the effective list is the family's entries, then this one. Our correction (kernel/a7s-rails.patch; recorded edits in
 # kernel/edits.toml). Applied with patch -p1 --fuzz=0 after the series.
@@ -28,22 +31,67 @@ defconfig = "radxa-cubie-a7s_defconfig"
 SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 
 # Ports (Radxa's interface page and DockSeed's series, read 2026-11-13):
-#   USB-C 1 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE-CAPABLE port. In DockSeed's dts it is the
-#     "J16" 5 V input, on the MUSB controller usb_otg (PHY index 0), with dr_mode "peripheral" in its gadget patch.
-#     It has NO VBUS regulator: the PHY's VBUS supply is named per index (usb0_vbus for PHY 0, phy-sun4i-usb.c:819),
-#     and the dts sets only usb1_vbus. So device mode on this port sources no 5 V. The GMAC's phy-supply is its own
-#     PHY rail, not USB. Evidence: compiled dtb of the bring-up board (B19), usb@4100000 dr_mode peripheral, no supply.
-#   USB-C 2 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): the "J4" host port on the USB 3 controller, sourcing
-#     VBUS from DRVVBUS (PL2) through its own regulator (usbc-vbus). Host only in DockSeed's dts. Not a device port.
+#   USB-C 1 = the Type-C port J16 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE port, the board's 5 V input.
+#     Confirmed by the series (fe0a8ed, patches/a733-usb0-gadget/arm64-dts-allwinner-a733-cubie-a7s-enable-usb0-as-a-usb-gadget.patch):
+#     J16 is on USB0, the MUSB controller usb@4100000 (the series' usb_otg), dr_mode "peripheral". It has NO VBUS supply and no
+#     ID or VBUS detect line to the SoC, so device mode sources no 5 V. Family linux.fragment: CONFIG_USB_MUSB_GADGET=y.
+#   USB-C 2 = the Type-C port J4 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): a USB 3 host (DWC3), per the series' own note
+#     ("Not covered: the USB-C port J4, which is a USB 3 host"). Not a device port.
 #   USB Type-A (host). Not device.
-# The J16/J4 labels are DockSeed's; the match to Radxa's "USB-C 1" and "USB-C 2" is by function (5 V input and
-# OTG on USB 2; USB 3 and DisplayPort). The schematic was NOT read. OPEN: the schematic's port names (Radxa A7S
-# schematic, the USB-C page) to confirm the match. Nothing here is a board run.
+# The schematic was NOT read; the J16/J4 match to Radxa's labels is the series' own naming, not a schematic check.
 #
 # Ethernet: the gigabit GMAC (gmac210, its PHY is named MAE0621A-Q3C in B12's notes), built in by the family fragment.
 #
 # LED: the blue status LED is PJ26 (the series' gpio-leds; "PJ26" is in its comment). Radxa's page says it blinks
 # during a normal boot. The bring-up board (cubie-a7-bringup, deleted in PADS: a copy of this board) set it to the heartbeat trigger.
+
+# The Lemnos board file (C1, the bench image): names the board to lemnos-ctl (`[board] id` = this board's name).
+# A product that carries lemnosd resolves to it (devices/README.md, "The Lemnos board file").
+[descriptions]
+lemnos = "lemnos-board.toml"
+
+# The partitions, in table order. A board's list replaces the family's, so the family's two raw areas are repeated here.
+# u-boot: the SPL + BL31 + U-Boot file at 128 KiB (outside the table; the boot ROM reads it there). Family line, unchanged.
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "128K"
+in_table = false
+content = "u-boot-sunxi-with-spl.bin"
+
+# uboot-env: the U-Boot environment, found by its GPT type GUID (Lemnos's writer and U-Boot both look for it). 128 KiB at 16 MiB.
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+# boot: the FAT boot partition (role boot): the three bay sets (slots/bay0 to bay2, docs/slots.md:1054), the pointers and the
+# boot.cmd. SIZE 128 MiB (134217728), the ZERO 3E's (Z2): three sets of the bays in lemnos-board.toml's [boot] (34,885,632 B
+# each) need 104,656,896 B of payload alone, above the 79 MiB this board had before (82,837,504 B). The product's boot_size equals
+# this number (check-devices requires it). Layout: boot is not a fixed area of the disk; it sits between uboot-env and data.
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+size = "134217728"
+
+# data: the slots and the slot state (Lemnos's data partition), the last partition. Its size is the one number @data-size@ takes
+# (the ext4 filesystem is made that size). SIZE 1 GiB (1073741824). The enforced rule (Lemnos install.rs:698 and the ZERO 3E's
+# data_size_rule, Z2): minimum = 1.10 x (keep x bay_set + reserve_mb + journal allowance), with keep = 2, bay_set = 34,885,632 B
+# (the five [boot] bay_* sizes in lemnos-board.toml), reserve_mb = 128 MiB (134,217,728 B), journal 64 MiB (67,108,864 B):
+#   1.10 x (2 x 34,885,632 + 134,217,728 + 67,108,864) = 1.10 x 271,097,856 = 298,207,641 B (284.4 MiB) minimum.
+#   1 GiB (1,073,741,824 B) is above it, the same as the ZERO 3E bench (Z2), and leaves room for keep = 3.
+# Layout on the smallest card (8 GB taken as 7.4 GiB usable, 7,945,689,497 B): 16 MiB offset + uboot-env 128 KiB + boot 128 MiB
+#   + data 1 GiB + 1 MiB backup GPT = 1,225,916,416 B, nothing after data; free on the card 6,719,773,081 B.
+# UNCHECKED by the rule (Lemnos): the slot root image has no enforced cap; whether a pushed bundle is spooled on the data
+# partition is unknown (if it is, it adds a term). The medium the A7S boots from is its SD card (lemnos-board.toml, SD first).
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "1073741824"
 
 # FIRST-BOOT RECORD (required, PR A7RAILS; docs/research/a7s-rail-voltages.md section 11). The first boot of an A7S image
 # reads, read-only, the regulator summary and each /sys/class/regulator/*/microvolts, and the pin bank modes (POW_MOD_SEL and

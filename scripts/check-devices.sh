@@ -2014,6 +2014,13 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   if grep -rqs 'input = "bench-key"' "$pdir"; then
     plan_args=(--input "bench-key=$(bench_key_pub)")
   fi
+  # pc-key (zero-3e-bench): the throwaway key with its comment removed by pc-key-strip.sh, as build-product does.
+  if grep -rqs 'input = "pc-key"' "$pdir"; then
+    pckey_dir=$(mktemp -d)
+    ssh-keygen -q -t ed25519 -N '' -C atlas-check-throwaway -f "$pckey_dir/key" && rm -f "$pckey_dir/key"
+    "$repo/scripts/pc-key-strip.sh" "$pckey_dir/key.pub" "$pckey_dir/pc-key.pub"
+    plan_args+=(--input "pc-key=$pckey_dir/pc-key.pub")
+  fi
   # A slot-boot image's version and slot are Gaia --settings, from the rule's TEST value (CHECK_VERSION, not a release).
   mapfile -t slot_args < <(slot_settings_args "$product" "$CHECK_VERSION")
   if [[ ${#slot_args[@]} -gt 0 ]]; then plan_args+=("${slot_args[@]}"); fi
