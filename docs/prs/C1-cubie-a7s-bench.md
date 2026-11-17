@@ -144,3 +144,24 @@ Watchdog owner check (scripts/check-watchdog-owner.sh, next c2482fb9, run on 5ab
 - NOTE product cubie-a7s-bench: bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)
 
 Reading: one owner, Lemnos (the hw-watchdog keepalive device plus lemnosd). The first arming line is the initramfs slot-init. The U-Boot line is NOT CHECKED: the autostart line (CONFIG_WATCHDOG_AUTOSTART=y) is in the DockSeed series patch sunxi-cubie-a7s-watchdog-autostart.patch, not in this tree's explicit lines, so the check cannot see it. The expected "armed by U-Boot" is therefore the series' claim, not the check's result.
+
+## Enforced data-size rule and layout table (supersedes the 64 MiB planning bound above)
+
+Rule (Z2's data_size_rule, check-devices.sh; Lemnos enforces it at install.rs:698 at 31e0f736): minimum data = 1.10 x (keep x bay_set + reserve_mb + journal allowance 64 MiB). bay_set = the sum of the five `[boot]` bay sizes in lemnos-board.toml. Layout end = 16 MiB + uboot-env 128 KiB + boot + data + 1 MiB backup GPT, nothing after data. Smallest card: 8 GB taken as 7.4 GiB usable (7,945,689,497 B).
+
+| Item | Value | Source |
+|---|---|---|
+| bay_set | 34,885,632 B (kernel 33,554,432; initramfs 1,048,576; device tree 262,144; overlay 16,384; cmdline 4,096) | lemnos-board.toml [boot], from Z2's ZERO 3E bench; UNVERIFIED on the first A7S build |
+| keep | 2 | lemnos-board.toml, system-slots config (the minimum that takes an update) |
+| reserve_mb | 128 MiB = 134,217,728 B | lemnos-board.toml (Lemnos default 2048) |
+| journal allowance | 64 MiB = 67,108,864 B | Z2's rule |
+| minimum data | 1.10 x (2 x 34,885,632 + 134,217,728 + 67,108,864) = 298,207,641 B (284.4 MiB) | the rule |
+| data (declared) | 1 GiB = 1,073,741,824 B | board.toml; above the minimum; same as the ZERO 3E bench |
+| boot (declared) | 128 MiB = 134,217,728 B | board.toml; product boot_size equal; three bay sets need 104,656,896 B of payload |
+| uboot-env | 128 KiB at 16 MiB (16,777,216 B) | board.toml |
+| layout end | 16,777,216 + 131,072 + 134,217,728 + 1,073,741,824 + 1,048,576 = 1,225,916,416 B; nothing after data | the rule's layout check |
+| free on the 7.4 GiB card | 7,945,689,497 - 1,225,916,416 = 6,719,773,081 B | the rule's layout check |
+
+Boot size changed from 79 MiB to 128 MiB: three bay sets (docs/slots.md:1054) of these bays do not fit 79 MiB. The first 79 MiB number was the Raze's, and it is a fact of the Raze's bays, not this board's.
+
+Flags (as on Z2's board): the slot root image has no enforced cap. Whether a pushed bundle is spooled on the data partition is unknown; if it is, it adds a term to the minimum. The SD card's smallest supported size is 8 GB here (7.4 GiB usable); it is not stated in the tree, and the coordinator ruled on it.

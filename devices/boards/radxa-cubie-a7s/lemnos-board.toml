@@ -40,16 +40,10 @@ config = { timeout_s = 15 }
 # SD first: `/soc@0/mmc@4020000` (the series' mmc0 alias; sun60i-a733-slots.toml, same node). No eMMC boot source here: the
 # boot ROM's eMMC support is UNVERIFIED (the BB1b sample names it; this bench image does not use it).
 # The fastboot pair 1209:0001 is the pid.codes TEST pair (not registered): replaced before any release (boards.md, uboot_usb_*).
-# Data-partition sizing (C1, 2026-11-16; the numbers the coordinator asked to align). keep and reserve_mb are set explicitly:
-#   keep = 2 (Lemnos default 3, store.rs:32): the bench holds the default slot and the previous one, so an update always has a
-#     slot to fall back to. Two is the minimum that takes an update; three costs one more slot of data (see board.toml).
-#   reserve_mb = 128 (Lemnos default 2048 MiB, lib.rs:82): the room an install keeps back for live work. 2048 on a 1 GiB data
-#     partition would refuse every install (free < slot + reserve), so the bench sets 128 MiB (the 64-128 MiB Lemnos suggests).
-#   Arithmetic (lemnos-board.toml's rule, board.toml's comment): data = 1024 MiB >= 1.10 x (keep 2 x S 64 MiB + reserve 128 MiB)
-#     = 281.6 MiB. S is a planning bound (64 MiB), not a measurement.
-#   grow_data = false: GPT: Lemnos's grow is MBR-only until Lemnos GROW; stops its 8 s refusal loop; remove when Lemnos says.
-#     Key check: drivers/system-slots/src/lib.rs:1344 (Key::optional("grow_data", Kind::Bool)) at Lemnos 31e0f736, read by grow.rs:61.
-#   Known limit: the data partition does not grow on GPT boards until Lemnos GROW.
+# Data-partition sizing (C1, 2026-11-16; the enforced rule is in board.toml's data comment). keep = 2 (Lemnos default 3,
+# store.rs:32): the default slot and the previous one, the minimum that takes an update. reserve_mb = 128 (Lemnos default
+# 2048, lib.rs:82, which would refuse every install on this 1 GiB partition). grow_data = false: GPT, Lemnos's grow is MBR-only
+# until Lemnos GROW (stops its 8 s refusal loop; key at drivers/system-slots/src/lib.rs:1344; remove when Lemnos says).
 [[devices]]
 id = "slots"
 driver = "system-slots"
@@ -83,6 +77,17 @@ id = "gadget"
 driver = "usb-gadget"
 uses = { function = "udc:4100000.usb" }
 config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
+
+# The payload bays of the U-Boot form (the board's [boot] table, docs/boards.md:564-594): one size per role, in bytes.
+# Taken from the ZERO 3E bench (Z2, the same family and the same stored-file sizes): kernel 32 MiB (Gaia's untrimmed Image was
+# 23,577,088 B), initramfs 1 MiB (the Raze's slot-init archive 495,328 B), device tree 256 KiB, overlay 16 KiB, cmdline 4 KiB.
+# UNVERIFIED on the first A7S build; the bay set sum is 34,885,632 B and Lemnos's install refuses a larger payload by name.
+[boot]
+bay_kernel_bytes = 33554432
+bay_initramfs_bytes = 1048576
+bay_device_tree_bytes = 262144
+bay_overlay_bytes = 16384
+bay_cmdline_bytes = 4096
 
 # The security switch OFF: no record kept, Orion not authenticating here. The bench image is security-off (the coordinator's
 # ruling, 2026-11-14; INPUTS "RULING REPLACED: security off"). The trust list is the bench's public line (keys below).

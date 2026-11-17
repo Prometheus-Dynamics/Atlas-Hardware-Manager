@@ -66,7 +66,7 @@ recipe = "slot-disk"
 # The slot settings (slot-disk, which is slot-boot plus the data partition and the disk, at c0d084f; each names what it sets; the Raze's product states them the same way).
 #  slot, version   NOT SET HERE: `--setting cubie-a7s-bench.slot=...` and `.version=...`, from scripts/version-rule.sh (as the Raze).
 #  device          where the slot is read from on the board: the data partition's slots directory.
-#  boot_size       the boot partition's size in bytes (board.toml's boot partition). PLACEHOLDER, NOT MEASURED: the Raze's 79 MiB,
+#  boot_size       the boot partition's size in bytes (board.toml's boot partition): 128 MiB (134217728), three bay sets (the ZERO 3E's size, Z2). Was the Raze's 79 MiB,
 #                  copied so the check has a number that agrees with the board. The real one is `lemnos-ctl boot-partition
 #                  --layout-of radxa-cubie-a7s --min-size` (L2-partition-requirements 8.8: missing). Set it from that output.
 #  compression     lzma, the one the build's own mkfs.erofs writes (Buildroot's host tool has no zstd). The kernel holds
@@ -81,7 +81,7 @@ board_id = "radxa-cubie-a7s"
 data_label = "lemnos-data"
 device = "/data/slots/root.img"
 product = "cubie-a7s-bench"
-boot_size = 82837504
+boot_size = 134217728
 compression = "lzma"
 level = 6
 dictsize = 2097152

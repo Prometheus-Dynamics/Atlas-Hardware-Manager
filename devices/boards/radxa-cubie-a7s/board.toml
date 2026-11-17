@@ -67,31 +67,26 @@ type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
 offset = "16M"
 size = "128K"
 
-# boot: the FAT boot partition (role boot): the slot bays, the pointers and the boot.cmd Lemnos's boot-partition writes.
-# Sized like the Raze's boot partition (82,837,504 = 79 MiB). PLACEHOLDER, NOT MEASURED: the number is
-# `lemnos-ctl boot-partition --layout-of radxa-cubie-a7s --min-size` (L2-partition-requirements 8.8: "the U-Boot block
-# bring-up products ... gain one" a FAT boot partition; its size is still MISSING). The product's boot_size must equal it.
-# type: the EFI System GUID, the GPT form of a FAT boot partition. F8?: Gaia's GPT type spelling for role boot.
+# boot: the FAT boot partition (role boot): the three bay sets (slots/bay0 to bay2, docs/slots.md:1054), the pointers and the
+# boot.cmd. SIZE 128 MiB (134217728), the ZERO 3E's (Z2): three sets of the bays in lemnos-board.toml's [boot] (34,885,632 B
+# each) need 104,656,896 B of payload alone, above the 79 MiB this board had before (82,837,504 B). The product's boot_size equals
+# this number (check-devices requires it). Layout: boot is not a fixed area of the disk; it sits between uboot-env and data.
 [[partitions]]
 name = "boot"
 role = "boot"
 type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-size = "82837504"
+size = "134217728"
 
 # data: the slots and the slot state (Lemnos's data partition), the last partition. Its size is the one number @data-size@ takes
-# (the ext4 filesystem is made that size). SIZE 1 GiB (1073741824), sized as follows (C1, 2026-11-16; the arithmetic, and the
-# rule it meets, are in lemnos-board.toml's system-slots config):
-#   medium: the A7S's SD card (lemnos-board.toml: SD first; its mmc0 is /soc@0/mmc@4020000). The smallest card supported:
-#           16 GB PROPOSED, not stated in the tree (flagged for the coordinator's ruling).
-#   fixed areas: u-boot 128 KiB at 32 KiB offset, uboot-env 128 KiB at 16 MiB, boot 82,837,504 bytes (79 MiB, the Raze's
-#           placeholder; the boot partition's measured size is still open). Total below 81 MiB before data.
-#   slot bound S = 64 MiB (a planning bound, not measured on the A7S): the Raze's measured EROFS root is 18,178,048 bytes
-#           (raze-base product.toml, lzma level 6); the ZERO 3E estimates 18 to 40 MB (Z2). 64 MiB is above both.
-#   rule: data >= 1.10 x (keep x S + reserve_mb). With keep = 2, reserve_mb = 128 MiB: 1.10 x (2 x 64 + 128) = 281.6 MiB minimum.
-#   chosen: 1024 MiB. It is above the minimum, the same data size as the ZERO 3E bench (Z2), and leaves room for a third slot
-#           (keep = 3: 1.10 x (3 x 64 + 128) = 352 MiB) and the ext4 overhead the rule leaves out.
-#   UNCONFIRMED (Lemnos): whether a pushed bundle is spooled on the data partition; if it is, it adds a term.
-#   Known limit: the data partition does not grow on GPT boards until Lemnos GROW (grow_data = false, lemnos-board.toml).
+# (the ext4 filesystem is made that size). SIZE 1 GiB (1073741824). The enforced rule (Lemnos install.rs:698 and the ZERO 3E's
+# data_size_rule, Z2): minimum = 1.10 x (keep x bay_set + reserve_mb + journal allowance), with keep = 2, bay_set = 34,885,632 B
+# (the five [boot] bay_* sizes in lemnos-board.toml), reserve_mb = 128 MiB (134,217,728 B), journal 64 MiB (67,108,864 B):
+#   1.10 x (2 x 34,885,632 + 134,217,728 + 67,108,864) = 1.10 x 271,097,856 = 298,207,641 B (284.4 MiB) minimum.
+#   1 GiB (1,073,741,824 B) is above it, the same as the ZERO 3E bench (Z2), and leaves room for keep = 3.
+# Layout on the smallest card (8 GB taken as 7.4 GiB usable, 7,945,689,497 B): 16 MiB offset + uboot-env 128 KiB + boot 128 MiB
+#   + data 1 GiB + 1 MiB backup GPT = 1,225,916,416 B, nothing after data; free on the card 6,719,773,081 B.
+# UNCHECKED by the rule (Lemnos): the slot root image has no enforced cap; whether a pushed bundle is spooled on the data
+# partition is unknown (if it is, it adds a term). The medium the A7S boots from is its SD card (lemnos-board.toml, SD first).
 [[partitions]]
 name = "data"
 role = "data"
