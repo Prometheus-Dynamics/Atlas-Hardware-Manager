@@ -398,16 +398,18 @@ bringup_rule_self_test() {
   local tmp rc=0 out
   tmp=$(mktemp -d)
   cp -a "$repo/devices" "$tmp/devices"
+  # The fixture stands in for a bring-up product (generic name, not a live product): devices/tests/fixtures/bringup.
+  mkdir -p "$tmp/devices/products/example-bringup" && cp -a "$repo/devices/tests/fixtures/bringup/." "$tmp/devices/products/example-bringup/"
   if ! out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: the real tree no longer passes the bring-up rule: $out" >&2; rc=1
   fi
-  sed -i '/^bringup-alive = /d' "$tmp/devices/products/zero-3e-bringup/product.toml"
+  sed -i '/^bringup-alive = /d' "$tmp/devices/products/example-bringup/product.toml"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up product with no watchdog component was not refused" >&2; rc=1
-  elif [[ $out != *"product zero-3e-bringup: no bringup-alive component"* ]]; then
+  elif [[ $out != *"product example-bringup: no bringup-alive component"* ]]; then
     echo "check-devices: self-test: the refusal does not name the product: $out" >&2; rc=1
   fi
-  cp -a "$repo/devices/products/zero-3e-bringup/product.toml" "$tmp/devices/products/zero-3e-bringup/product.toml"
+  cp -a "$repo/devices/products/example-bringup/product.toml" "$tmp/devices/products/example-bringup/product.toml"
   sed -i '/^to = "\/etc\/board-alive.leds"$/d' "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: settings that do not install the LED file were not refused" >&2; rc=1
@@ -429,13 +431,13 @@ bringup_rule_self_test() {
     echo "check-devices: self-test: the link refusal does not name the product and link: $out" >&2; rc=1
   fi
   echo ether > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
-  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/example-bringup/os.fragment"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up product that leaves BR2_SYSTEM_DHCP on was not refused" >&2; rc=1
-  elif [[ $out != *"product zero-3e-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
+  elif [[ $out != *"product example-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
     echo "check-devices: self-test: the DHCP refusal does not name the product: $out" >&2; rc=1
   fi
-  cp -a "$repo/devices/products/zero-3e-bringup/os.fragment" "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  cp -a "$repo/devices/products/example-bringup/os.fragment" "$tmp/devices/products/example-bringup/os.fragment"
   sed -i 's/^Type=ether$/Name=eth0/' "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up network file matching eth0 by name was not refused" >&2; rc=1
@@ -445,7 +447,7 @@ bringup_rule_self_test() {
   sed -i 's/offset = <0x40>;/offset = <0x44>;/' "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a reboot-mode node at the wrong offset was not refused" >&2; rc=1
-  elif [[ $out != *"product rock-4d-bringup: its board's dts"* ]]; then
+  elif [[ $out != *"product example-bringup: its board's dts"* ]]; then
     echo "check-devices: self-test: the reboot-mode refusal does not name the product: $out" >&2; rc=1
   fi
   cp -a "$repo/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts" "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
@@ -1454,6 +1456,61 @@ pad_table_reason = "no table (test)"'
   return $rc
 }
 
+# The RK35xx U-Boot environment rule (Z2, the coordinator's HARD RULE of 2026-11-14): no RK slot image ships with an
+# as-built U-Boot environment. A product on a slot recipe whose board extends an rk35xx family must have, in the U-Boot
+# fragments that board builds with (the board's own [bootloader] fragments when it names some, else the family's), the lines
+# CONFIG_ENV_MMC_USE_DT=y (no raw-offset fallback over the partition table) and CONFIG_ENV_MMC_DEVICE_INDEX=1 (the SD card is
+# U-Boot's mmc 1), and the family's table must carry the uboot-env partition (16M, 128K) the environment lives in.
+# Prints one FAIL line per problem and returns 1 when any. Reads the descriptions only (no Gaia run).
+RK_ENV_RECIPES="slot|slot-boot|slot-disk"
+bootloader_fragments() {  # <family.toml or board.toml> -> the [bootloader] fragments, as paths
+  local f=$1
+  awk '/^\[bootloader\]/{s=1;next} /^\[/{s=0} s && /^fragments = /' "$f" | grep -ho '"[^"]*"' | tr -d '"' \
+    | while IFS= read -r x; do realpath -m "$(dirname "$f")/$x"; done
+}
+rk_env_rule() {  # <devices dir>
+  local dev=$1 p b fam famfile frags=() text out="" f
+  while IFS= read -r p; do
+    grep -qE "^recipe = \"($RK_ENV_RECIPES)\"" "$p" || continue
+    b=$(product_board "$p")
+    [[ -n $b && -f $b ]] || continue
+    fam=$(product_family "$p")
+    [[ $fam == rk35* ]] || continue
+    famfile=$dev/families/$fam/family.toml
+    local name; name=$(basename "$(dirname "$p")")
+    mapfile -t frags < <(bootloader_fragments "$b")
+    [[ ${#frags[@]} -gt 0 ]] || mapfile -t frags < <(bootloader_fragments "$famfile")
+    text=""
+    for f in ${frags[@]+"${frags[@]}"}; do [[ -f $f ]] && text+=$(grep -v '^[[:space:]]*#' "$f")$'\n'; done
+    grep -qx 'CONFIG_ENV_MMC_USE_DT=y' <<<"$text" \
+      || out+="FAIL $name: its U-Boot config lacks CONFIG_ENV_MMC_USE_DT=y: without it the environment falls back to the raw offsets over the partition table, so a slot record is lost: add it to the U-Boot fragment (rk35xx family assets/u-boot.fragment)"$'\n'
+    grep -qx 'CONFIG_ENV_MMC_DEVICE_INDEX=1' <<<"$text" \
+      || out+="FAIL $name: its U-Boot config lacks CONFIG_ENV_MMC_DEVICE_INDEX=1: the SD card is U-Boot's mmc 1 on this family, so the environment would be looked for on the disabled eMMC (mmc 0): add it to the U-Boot fragment"$'\n'
+    awk '/name = "uboot-env"/{s=1} s&&/^\[\[/{s=0} s' "$famfile" | grep -q 'offset = "16M"' \
+      && awk '/name = "uboot-env"/{s=1} s&&/^\[\[/{s=0} s' "$famfile" | grep -q 'size = "128K"' \
+      || out+="FAIL $name: its family $fam has no uboot-env partition at 16M of 128K: the image GPT must carry the environment partition"$'\n'
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+# Proves the RK env rule passes the real tree and refuses a scratch copy whose rk35xx U-Boot fragment lacks each line.
+rk_env_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(rk_env_rule "$repo/devices"); then echo "check-devices: self-test: the RK env rule refuses the real tree: $out" >&2; rc=1; fi
+  sed -i '/^CONFIG_ENV_MMC_USE_DT=y$/d' "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  if out=$(rk_env_rule "$tmp/devices"); then echo "check-devices: self-test: a slot image without CONFIG_ENV_MMC_USE_DT=y was not refused" >&2; rc=1
+  elif [[ $out != *"CONFIG_ENV_MMC_USE_DT=y"* ]]; then echo "check-devices: self-test: the USE_DT refusal does not name the line: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  sed -i '/^CONFIG_ENV_MMC_DEVICE_INDEX=1$/d' "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  if out=$(rk_env_rule "$tmp/devices"); then echo "check-devices: self-test: a slot image without CONFIG_ENV_MMC_DEVICE_INDEX=1 was not refused" >&2; rc=1
+  elif [[ $out != *"CONFIG_ENV_MMC_DEVICE_INDEX=1"* ]]; then echo "check-devices: self-test: the DEVICE_INDEX refusal does not name the line: $out" >&2; rc=1; fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the RK env rule passes the tree and refuses a slot image missing USE_DT or DEVICE_INDEX"
+  return $rc
+}
+
 # Prints each description file (family.toml, board.toml, component.toml) under <devices dir> that no product or board
 # names, relative to that dir. A product or board names a file by a quoted path ending .toml. Only description files count:
 # a board's other .toml files (lemnos-board.toml, lemnos-board.pending.toml) are not descriptions. (PR B32: the note used to
@@ -2014,6 +2071,13 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   if grep -rqs 'input = "bench-key"' "$pdir"; then
     plan_args=(--input "bench-key=$(bench_key_pub)")
   fi
+  # pc-key (zero-3e-bench): the throwaway key with its comment removed by pc-key-strip.sh, as build-product does.
+  if grep -rqs 'input = "pc-key"' "$pdir"; then
+    pckey_dir=$(mktemp -d)
+    ssh-keygen -q -t ed25519 -N '' -C atlas-check-throwaway -f "$pckey_dir/key" && rm -f "$pckey_dir/key"
+    "$repo/scripts/pc-key-strip.sh" "$pckey_dir/key.pub" "$pckey_dir/pc-key.pub"
+    plan_args+=(--input "pc-key=$pckey_dir/pc-key.pub")
+  fi
   # A slot-boot image's version and slot are Gaia --settings, from the rule's TEST value (CHECK_VERSION, not a release).
   mapfile -t slot_args < <(slot_settings_args "$product" "$CHECK_VERSION")
   if [[ ${#slot_args[@]} -gt 0 ]]; then plan_args+=("${slot_args[@]}"); fi
@@ -2042,6 +2106,117 @@ done <<<"$erofs_msg"
 # The pad-table provenance rule (PR PADS): a family that applies a pad table is built only from its boards' own sourced, stated tables.
 if ! pads_out=$(pads_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pads_out"
+fi
+
+# The slot-disk data size and layout rule (Z2; the set the bench boards copy, coordinator 2026-11-16). On a GPT board a
+# slot-disk product must (a) hold keep slots' bay sets, the reserve and the journal allowance in its data partition with a
+# 10 % margin: data >= 1.10 x (keep x bay + reserve_mb + journal); and (b) fit the whole layout on the smallest card:
+# layout end (the first partition's offset + the table's sizes + the backup GPT header) <= the card's usable bytes.
+# keep and reserve_mb must be stated in the board's system-slots device (no inherited Lemnos default: 3 and 2048 MiB).
+# bay = the sum of the board's enforced bay sizes ([boot] bay_*: refused by name beyond their size, Lemnos install.rs:698).
+# The smallest bench card is 8 GB (board.toml's own statement); it is taken as 7.4 GiB usable (7,945,689,497 bytes): a safety
+# margin for cards that are smaller than nominal. Journal allowance: 64 MiB, the journal cap when it lands (not yet built).
+DATA_CARD_USABLE_BYTES=7945689497
+DATA_JOURNAL_BYTES=67108864
+DATA_MARGIN_PCT=10
+DATA_BACKUP_GPT_BYTES=1048576
+to_bytes() {  # <K|M|G suffixed or plain number> -> bytes
+  case $1 in
+    *K) echo $(( ${1%K} * 1024 )) ;;
+    *M) echo $(( ${1%M} * 1048576 )) ;;
+    *G) echo $(( ${1%G} * 1073741824 )) ;;
+    *) echo "$1" ;;
+  esac
+}
+data_size_rule() {  # <devices dir>
+  local dev=$1 p b name size keep reserve bay need typ lem out="" k v sizes_sum=0 off_max=0 total x
+  while IFS= read -r p; do
+    grep -qE '^recipe = "slot-disk"' "$p" || continue
+    b=$(product_board "$p"); [[ -n $b && -f $b ]] || continue
+    name=$(basename "$(dirname "$p")")
+    typ=$(awk '/^\[\[partitions\]\]/{f=0} /^role = "data"/{f=1} f && /^type = /{print $3; exit}' "$b" | tr -d '"')
+    [[ $typ =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] || continue
+    size=$(awk '/^\[\[partitions\]\]/{f=0} /^role = "data"/{f=1} f && /^size = /{gsub(/"/,"",$3); print $3; exit}' "$b")
+    [[ -n $size ]] || { out+="FAIL $name: its board declares no size for the data partition"$'\n'; continue; }
+    size=$(to_bytes "$size")
+    lem=$(dirname "$b")/lemnos-board.toml
+    keep=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'keep = [0-9]*' | head -1 | grep -o '[0-9]*$')
+    reserve=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o 'reserve_mb = [0-9]*' | head -1 | grep -o '[0-9]*$')
+    if [[ -z $keep || -z $reserve ]]; then
+      out+="FAIL $name: its board's system-slots device does not state keep and reserve_mb explicitly (Lemnos's defaults are 3 and 2048 MiB: a GPT bench states its own)"$'\n'; continue
+    fi
+    bay=0
+    for k in bay_kernel_bytes bay_initramfs_bytes bay_device_tree_bytes bay_cmdline_bytes bay_overlay_bytes; do
+      v=$(grep -v '^[[:space:]]*#' "$lem" 2>/dev/null | grep -o "$k = [0-9]*" | head -1 | grep -o '[0-9]*$')
+      if [[ -z $v ]]; then out+="FAIL $name: its board file states no $k (the enforced bay sizes the rule reads)"$'\n'; bay=-1; break; fi
+      bay=$(( bay + v ))
+    done
+    (( bay >= 0 )) || continue
+    need=$(( (keep * bay + reserve * 1048576 + DATA_JOURNAL_BYTES) * (100 + DATA_MARGIN_PCT) / 100 ))
+    if (( size < need )); then
+      out+="FAIL $name: data partition $size bytes is below 1.10 x (keep $keep x bays $bay + reserve ${reserve} MiB + journal 64 MiB) = $need bytes: the first install would be refused NO_SPACE"$'\n'
+    fi
+    # (b) the layout on the smallest card: the largest explicit offset, plus every sized partition, plus the backup GPT header.
+    sizes_sum=0; off_max=0
+    while IFS= read -r x; do [[ -n $x ]] && sizes_sum=$(( sizes_sum + $(to_bytes "$x") )); done < <(grep -E '^size = ' "$b" | tr -d '"' | awk '{print $3}')
+    while IFS= read -r x; do [[ -n $x ]] && { x=$(to_bytes "$x"); (( x > off_max )) && off_max=$x; }; done < <(grep -E '^offset = ' "$b" | tr -d '"' | awk '{print $3}')
+    total=$(( off_max + sizes_sum + DATA_BACKUP_GPT_BYTES ))
+    if (( total > DATA_CARD_USABLE_BYTES )); then
+      out+="FAIL $name: the layout is $total bytes (offset $off_max + partitions $sizes_sum + backup GPT $DATA_BACKUP_GPT_BYTES), above the smallest card's $DATA_CARD_USABLE_BYTES usable bytes (7.4 GiB): it does not fit"$'\n'
+    fi
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+
+# Self-test: the data size and layout rule passes the tree; refuses a data partition below the minimum, a layout larger than
+# the card, and a missing keep.
+data_size_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: the data size rule refuses the real tree: $out" >&2; rc=1; fi
+  sed -i 's/^size = "1073741824"$/size = "104857600"/' "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a 100 MiB data partition was not refused" >&2; rc=1
+  elif [[ $out != *"data partition 104857600 bytes is below"* ]]; then echo "check-devices: self-test: the refusal does not name the size: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  sed -i 's/^size = "1073741824"$/size = "8589934592"/' "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: an 8 GiB data partition (a layout larger than the card) was not refused" >&2; rc=1
+  elif [[ $out != *"it does not fit"* ]]; then echo "check-devices: self-test: the layout refusal does not say so: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$tmp/devices/boards/radxa-zero-3e/board.toml"
+  sed -i 's/ keep = 2, reserve_mb = 128,/ reserve_mb = 128,/' "$tmp/devices/boards/radxa-zero-3e/lemnos-board.toml"
+  if out=$(data_size_rule "$tmp/devices"); then echo "check-devices: self-test: a slot-disk board without keep was not refused" >&2; rc=1
+  elif [[ $out != *"does not state keep and reserve_mb explicitly"* ]]; then echo "check-devices: self-test: the keep refusal does not say so: $out" >&2; rc=1; fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the data size and layout rule passes the tree and refuses a data partition below the minimum, a layout larger than the card, and a missing keep"
+  return $rc
+}
+
+# The open-timeout condition (Z2): every rk35xx family fragment builds the watchdog driver in (=y, not =m) and sets the
+# open timeout to 30 s, the Raze's value. The timeout only covers the driver probe to slot-init's open, and it runs only
+# when the driver is built in (watchdog_dev.c:1088; the coordinator's ruling 2026-11-16). Prints one FAIL line per problem.
+open_timeout_rule() {  # <devices dir>
+  local dev=$1 f out=""
+  for f in "$dev"/families/rk35*/assets/linux.fragment; do
+    [[ -f $f ]] || continue
+    grep -qx 'CONFIG_DW_WATCHDOG=y' "$f" || out+="FAIL $(basename "$(dirname "$(dirname "$f")")"): its kernel fragment does not build the watchdog driver in (CONFIG_DW_WATCHDOG=y): the open timeout would not run"$'\n'
+    grep -qx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=30' "$f" || out+="FAIL $(basename "$(dirname "$(dirname "$f")")"): its kernel fragment does not set CONFIG_WATCHDOG_OPEN_TIMEOUT=30 (the Raze's value)"$'\n'
+  done
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+
+# The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
+if ! ds_out=$(data_size_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
+fi
+# The open-timeout condition (Z2): the rk35xx kernel fragments build the watchdog in and set the open timeout.
+if ! ot_out=$(open_timeout_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ot_out"
+fi
+# The RK35xx U-Boot environment rule (Z2): every rk35xx slot image's U-Boot config is the hard-rule one.
+if ! rk_env_out=$(rk_env_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$rk_env_out"
 fi
 
 # The Atlas side of the Lemnos pin and the one-copy rule (PR L3). Both read this repository's own Cargo files,
@@ -2089,6 +2264,8 @@ if [[ $root_given -eq 0 ]]; then
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   pads_self_test || die "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
+  data_size_self_test || die "self-check: the data size rule no longer refuses a too-small data partition or a missing keep"
+  rk_env_self_test || die "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
   wd_self_test "$repo" >/dev/null || die "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs"

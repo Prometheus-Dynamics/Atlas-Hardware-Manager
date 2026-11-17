@@ -1,0 +1,5 @@
+# DEV ONLY (bring-up). Dropbear's options, read by dropbear.service.
+# -s: no password logins. Root's password is empty in the base's console policy,
+# so without -s a password login would need a blank password; with -s the bench
+# key is the only way in over SSH.
+DROPBEAR_ARGS="-s"

@@ -1,0 +1,36 @@
+# The Raze's USB network address scheme, shared by every product that uses it (Raze, and the ZERO 3E bench): serial-hash-v1.
+# The gadget's NCM interface lemnos0 (Lemnos's usb-gadget names it lemnos<N>) gets its address at boot from the board serial:
+# a /29 in 172.31.0.0/16, excluding 172.31.250.0/24, with systemd-networkd's DHCPServer for the host on the rest of that /29.
+# The four files are the one copy of the scheme: the script (lemnos0-address), its data (lemnos0-addressing.conf), the unit that
+# runs it before systemd-networkd, and the interim sysctl (the comm core binds its USB address before lemnos0 exists; the Raze's
+# interim ruling). Moved here from raze-base-files so two copies cannot drift; check-lemnos0-address.py tests this file.
+# Untested on the bench; the Raze's proofs are in docs/prs/L2b.md and check-lemnos0-address.py.
+version = 1
+name = "lemnos0-addressing"
+description = "The USB network address of lemnos0 by serial-hash-v1 (a /29 in 172.31.0.0/16): the script, its data, its unit and the interim sysctl."
+
+[[install]]
+from = { file = "files/lemnos0-addressing.conf" }
+to = "/etc/lemnos/lemnos0-addressing.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/lemnos0-address" }
+to = "/usr/lib/lemnos/lemnos0-address"
+mode = "0755"
+
+[[install]]
+from = { file = "files/lemnos0-address.service" }
+to = "/etc/systemd/system/lemnos0-address.service"
+mode = "0644"
+
+# The interim sysctl: the comm core may bind its USB address before the address exists (see the file's comment).
+[[install]]
+from = { file = "files/60-raze-lemnos0.conf" }
+to = "/etc/sysctl.d/60-raze-lemnos0.conf"
+mode = "0644"
+
+# The address unit runs before systemd-networkd, which runs the network file it writes.
+[[services]]
+unit = "lemnos0-address.service"
+enable = true
