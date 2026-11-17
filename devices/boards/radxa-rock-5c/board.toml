@@ -25,6 +25,10 @@ fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35x
 # checked). Gaia strips the `_defconfig` suffix.
 [bootloader]
 defconfig = "rock-5c-rk3588s"
+# The U-Boot patches (R1): the gpio-hog that holds the upper USB 3.0 port's VBUS enable (GPIO0 PD4) low from U-Boot on.
+# Gaia applies the directory's *.patch files in series order, patch -p1 --fuzz=0, and fails naming the patch. See
+# docs/prs/R1-rock-5c-bench.md ("VBUS: the hold"); UNVERIFIED against U-Boot v2026.10's file text.
+patches = [{ file = "assets/patches/u-boot/0001-rock-5c-hold-usb-otg-vbus-low.patch" }]
 
 # The 5C's own rkbin pin: f43a462e, the commit dev pinned for this board
 # (dev's fetch.lock; Gaia's ROCK 5C build uses the same Buildroot pin). The
@@ -56,3 +60,60 @@ platform = "rk3588"
 # build makes it.
 [flash.files]
 loader_ini = { source = "rkbin", path = "RKBOOT/RK3588MINIALL.ini" }
+
+# R1 (the bench slot image, as the ZERO 3E's Z2): the board's Lemnos file, and the partitions restated in full. A board's
+# [[partitions]] REPLACE the family's, so the two family areas are restated unchanged here (u-boot at 32K, uboot-env 16M/128K),
+# then boot (the FAT partition the U-Boot form reads boot.scr and the bays from; size = the product's boot_size, which check-devices
+# requires to match) and data (the slot file; last; its size is the one number @data-size@ takes). Sizes as the ZERO 3E's (Z2):
+# DATA 1 GiB (1073741824), BOOT 128 MiB. One bench set with Z2's formula (the coordinator's ruling 2026-11-16):
+#   minimum data = 1.10 x (keep x bay_set + reserve_mb + journal allowance)
+#   bay_set      = the sum of this board's [boot] bay_* sizes (lemnos-board.toml lines 33-37), enforced by Lemnos at the
+#                  boot payload write (drivers/system-slots/src/install.rs, the bay check before any write, around :698 at 31e0f736):
+#                  kernel 33554432 + initramfs 1048576 + device tree 262144 + cmdline 4096 + overlay 16384 = 34885632 B (33.27 MiB)
+#   keep         = 2 (the running slot and one rollback slot; lemnos-board.toml system-slots config)
+#   reserve_mb   = 128 MiB (lemnos-board.toml; Lemnos's default is 2048 MiB, which the bench does not inherit)
+#   journal      = 64 MiB allowance (the coordinator's figure; not measured here)
+#   keep x bay_set          =  2 x 34885632 B   =  69771264 B  (66.54 MiB)
+#   + reserve               =                    134217728 B (128 MiB)
+#   + journal               =                     67108864 B (64 MiB)
+#   sum                     =                    271097856 B (258.54 MiB)
+#   x 1.10 minimum          =                    298207642 B (284.39 MiB)  -> declared 1 GiB (1073741824 B) satisfies it
+#   Layout on an 8 GB card (7,945,689,497 B = 7.4 GiB usable, the smallest medium the bench uses):
+#     16 MiB offset (u-boot at 32K) + uboot-env 128 KiB + boot 128 MiB + data 1 GiB + 1 MiB backup GPT
+#     = 1225916416 B (1169.13 MiB); nothing follows the data partition.
+#     Free on the card after the layout: 7945689497 - 1225916416 = 6719773081 B (6.26 GiB), unpartitioned.
+#   Flags (as Z2 states them):
+#     - the slot root image has NO enforced cap in Lemnos (drivers/slot-store/src/bundle.rs: only block alignment and the
+#       verity table are checked). The bays bound the boot payloads, not the slot. An over-size install is refused by the room
+#       check (NO_SPACE, drivers/system-slots/src/lib.rs:746-772), so it is refused, not silently broken. The device-check rule
+#       needs an enforced cap for the slot root to compute from; none exists yet (UNVERIFIED, flagged).
+#     - whether a pushed bundle is spooled on the data partition is UNKNOWN (Lemnos has not confirmed); if it is, it adds a term.
+#     - the data partition does not grow on GPT boards until Lemnos GROW (grow_data = false, lemnos-board.toml).
+[descriptions]
+lemnos = "lemnos-board.toml"
+
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "32K"
+in_table = false
+content = "u-boot-rockchip.bin"
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
+size = "134217728"
+
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "1073741824"

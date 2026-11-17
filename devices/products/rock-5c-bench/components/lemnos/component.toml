@@ -1,0 +1,80 @@
+# Lemnos's packaging for an image with systemd, at Lemnos 31e0f736 (next pin) (Z2; a copy of devices/components/lemnos for this product only, so Raze keeps f4a295c6): the units, sysusers, udev rules
+# and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
+# setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
+#
+# The binaries are the four Rust components beside this one (lemnosd, lemnos-ctl, lemnos-orion,
+# lemnos-slot-init), one cargo package each. Not installed here, and why:
+#   - init/S50lemnosd, init/S51lemnos-orion, init/mdev.conf.fragment: BusyBox init, for an image
+#     without systemd (this image has systemd).
+#   - systemd/lemnos-module.conf: loads lemnos.ko, which this kernel does not build yet (the
+#     generator's modprobe.d output is the module's options; see the Raze board component).
+version = 1
+name = "lemnos"
+description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos 31e0f736 (next pin, BB1b slot declarations)
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.service" }
+to = "/usr/lib/systemd/system/lemnosd.service"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.service" }
+to = "/usr/lib/systemd/system/lemnos-orion.service"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos.conf" }
+to = "/usr/lib/sysusers.d/lemnos.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/udev/70-lemnos.rules" }
+to = "/usr/lib/udev/rules.d/70-lemnos.rules"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
+to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+# The Raze's USB link for the bridge (Atlas, not Lemnos's example): LEMNOS_ORION_LINKS=gadget=orion-link, as a drop-in on
+# lemnos-orion.service. MOVES to the generated output at Lemnos R1j; then this drop-in goes.
+[[install]]
+from = { file = "files/lemnos-orion-links.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
+mode = "0644"
+
+# The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the
+# image's root is read-only, so systemd-sysusers cannot add them at boot. No fixed ids (Lemnos's
+# sysusers file leaves them to the system).
+[[groups]]
+name = "lemnos"
+
+[[groups]]
+name = "lemnos-orion"
+
+[[users]]
+name = "lemnos"
+group = "lemnos"
+
+[[users]]
+name = "lemnos-orion"
+group = "lemnos-orion"
+groups = ["lemnos", "orion"]
+
+[[services]]
+unit = "lemnosd.service"
+enable = true
+
+[[services]]
+unit = "lemnos-orion.service"
+enable = true

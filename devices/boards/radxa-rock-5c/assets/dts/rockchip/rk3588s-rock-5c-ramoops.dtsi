@@ -1,0 +1,29 @@
+// Radxa ROCK 5C (RK3588S): the crash log kept across a reset (pstore, ramoops). Included by rk3588s-rock-5c-loader.dts (R1).
+//
+// Values: the vendor's RK3588 reservation, read from Radxa's own kernel:
+//   /mnt/ssd-samsung/gaia/bsp/radxa-kernel-6.1/arch/arm64/boot/dts/rockchip/rk3588-linux.dtsi lines 92-102
+//   ("0x110000 to 0x1f0000 is for ramoops"): reg 0x110000 / 0xe0000, console 0x80000, pmsg 0x30000, ftrace 0, record 0x14000.
+// Firefly's tree (4f6ee8c16, rk3588-linux.dtsi:85-87, size 0xf0000) is the other vendor's value; 0xe0000 fits inside both.
+// The next node, minidump-smem@1f0000 (rk3588-linux.dtsi:103-104), starts where this region ends, so the size must not grow.
+//
+// Left out, and why: boot-log-size and boot-log-count (Rockchip vendor extensions; mainline ramoops has no such property).
+// Sizes in the form: console 0x80000 + pmsg 0x30000 + record 0x14000 = 0xc4000, inside 0xe0000. Mainline ramoops rounds the
+// console and record sizes down to a power of two (UNVERIFIED for this kernel; record 0x14000 becomes 0x10000 if it does).
+// Address and size: CONFIRM WITH /proc/iomem AT FIRST BOOT. Not run on a board.
+/ {
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops: ramoops@110000 {
+			compatible = "ramoops";
+			reg = <0x0 0x110000 0x0 0xe0000>;
+			console-size = <0x80000>;
+			pmsg-size = <0x30000>;
+			record-size = <0x14000>;
+			ftrace-size = <0>;
+			ecc-size = <0>;
+		};
+	};
+};

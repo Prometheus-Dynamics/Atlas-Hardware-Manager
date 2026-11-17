@@ -1,0 +1,17 @@
+# The Raze's USB network address, computed at boot from the board serial (scheme serial-hash-v1; data in
+# /etc/lemnos/lemnos0-addressing.conf). It writes /run/systemd/network/10-lemnos0.network for systemd-networkd
+# and exits. Before systemd-networkd, so the network file is there when networkd starts. If the serial gives no
+# subnet the unit fails and says why in the journal: no address is invented.
+[Unit]
+Description=Lemnos: the USB network address of lemnos0 (serial-hash-v1)
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-networkd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/lib/lemnos/lemnos0-address
+
+[Install]
+WantedBy=multi-user.target

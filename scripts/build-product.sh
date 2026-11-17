@@ -6,11 +6,13 @@
 #
 #   scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--tool NAME=PATH]... [--out DIR]
 #
-#   <product>     a directory name under devices/products (raze-base, rock-5c-bringup, ...)
+#   <product>     a directory name under devices/products (raze-base, rock-5c-bench, ...)
 #   --plan        plan only: print the version and slot, run `gaia plan` with them, build nothing
 #   The version is the Atlas dev scheme, <release>-dev.<count>+<commit> (dev's scripts/version.sh, via
 #   scripts/version-rule.sh atlas_version); a slot-boot product's slot is <product>-<version> (slot_id_for). Gaia takes
 #   both as --setting (IMAGE.version, IMAGE.slot): the product's product.toml sets neither. Printed before the build.
+#   --pc-key      the PC's public key for a product that names `{ input = "pc-key" }`: its comment is removed first
+#                 (scripts/pc-key-strip.sh), so only the ssh-ed25519 part reaches the image. Required for such a product.
 #   --bench-key   the public key a bring-up product installs for its bench login (`{ input = "bench-key" }`).
 #                 A product that names the input refuses to build without it: there is no throwaway key here,
 #                 because an image nobody can log into proves nothing on a board.
@@ -30,12 +32,13 @@ die() { echo "build-product: $*" >&2; exit 1; }
 # atlas_version, slot_id_for, slot_settings_args: scripts/version-rule.sh, the one rule's one place.
 source "$repo/scripts/version-rule.sh"
 
-pname="" key="" until_step="" jobs="" out="" plan_only=0
+pname="" key="" pckey="" until_step="" jobs="" out="" plan_only=0
 tools=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --plan) plan_only=1; shift ;;
     --bench-key) key=${2:?--bench-key needs a file}; shift 2 ;;
+    --pc-key) pckey=${2:?--pc-key needs a file}; shift 2 ;;
     --until) until_step=${2:?--until needs a step}; shift 2 ;;
     --jobs) jobs=${2:?--jobs needs a count}; shift 2 ;;
     --tool) tools+=(--tool "${2:?--tool needs NAME=PATH}"); shift 2 ;;
@@ -71,6 +74,15 @@ if grep -rqs 'input = "bench-key"' "$(dirname "$product")"; then
   args+=(--input "bench-key=$(realpath "$key")")
 elif [[ -n $key ]]; then
   die "$pname names no bench key, so --bench-key has nothing to go into"
+fi
+if grep -rqs 'input = "pc-key"' "$(dirname "$product")"; then
+  [[ -n $pckey ]] || die "$pname installs the PC's key: give --pc-key FILE.pub"
+  pcdir=$(mktemp -d)
+  trap 'rm -rf "$pcdir"' EXIT
+  "$repo/scripts/pc-key-strip.sh" "$pckey" "$pcdir/pc-key.pub" || die "--pc-key $pckey refused (see above)"
+  args+=(--input "pc-key=$pcdir/pc-key.pub")
+elif [[ -n $pckey ]]; then
+  die "$pname names no pc-key input, so --pc-key has nothing to go into"
 fi
 args+=(${tools[@]+"${tools[@]}"})
 [[ -z $jobs ]] || args+=(--jobs "$jobs")

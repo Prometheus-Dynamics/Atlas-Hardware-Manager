@@ -76,3 +76,9 @@ CONFIG_DW_WATCHDOG=y
 CONFIG_LEDS_TRIGGER_HEARTBEAT=y
 # CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink, the second state once the named link has an address (board-alive-led).
 CONFIG_LEDS_TRIGGER_TIMER=y
+# -- The crash log (Z2; Lemnos BB3, the coordinator's 2026-11-14 ruling): a slot board's pstore keeps the console across a
+#    reset, built in (Lemnos refuses a slot board at check time otherwise). The region is the board's ramoops node
+#    (boards/radxa-zero-3e/assets/dts/rockchip/rk3566-radxa-zero-3e-ramoops.dtsi). The Raze has the same three lines (raze.config).
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y

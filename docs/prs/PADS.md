@@ -85,7 +85,7 @@ They have no products, so nothing is refused today. Any product on them is refus
 ## Products on next: what the rule says
 
 Tree run (pr/PADS, after the changes): zero refusals on the products that exist. The rule passes:
-raze-base (bcm2712 reason), zero-3e-base and zero-3e-bringup (io-domain table, `vccio3` with `switched_by`), rock-5c-base and
+raze-base (bcm2712 reason), zero-3e-base and zero-3e-bringup (io-domain table, `vccio3` with `switched_by`), rock-5c-base (deleted in R1, #131) and
 rock-5c-bringup (the not-applied statement), rock-4d-base and rock-4d-bringup (the not-applied statement).
 
 ## Deleted in this PR

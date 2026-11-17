@@ -1,0 +1,22 @@
+# Shared by the bench images (ZERO 3E, Cubie A7S): names the board from its device-tree serial, <prefix>-<last six hex digits>.
+# Moved here from devices/products/zero-3e-bench/components/bench-network (pr/Z1) so the two products share one script and
+# unit. The only content change from the move: the prefix is read from /etc/bench-hostname.prefix, which each product
+# installs (its own bench-hostname-prefix component), instead of being written into the script.
+# Untested on board.
+version = 1
+name = "bench-hostname"
+description = "Names the bench from its device-tree serial before networkd and resolved start: <prefix>-<last six hex digits>."
+
+[[install]]
+from = { file = "files/bench-hostname.sh" }
+to = "/usr/libexec/bench-hostname"
+mode = "0755"
+
+[[install]]
+from = { file = "files/bench-hostname.service" }
+to = "/etc/systemd/system/bench-hostname.service"
+mode = "0644"
+
+[[services]]
+unit = "bench-hostname.service"
+enable = true
