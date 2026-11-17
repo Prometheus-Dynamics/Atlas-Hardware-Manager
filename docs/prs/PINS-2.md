@@ -90,6 +90,14 @@ Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (
   - `atlas-sim-node` (`tests/sim_node.rs`): `a_detached_install_survives_its_starter_and_can_be_attached_to_again`.
   - Observed: bare-number and handle attaches of sim-scripted runs return `no such run` (code 8, NotFound) from the real list. Cause not yet diagnosed; it is not the cycle path.
 
+## The 10 `no such run` failures on the pair: findings (not ready)
+
+- **H1 (sim runs outside the list) is refuted.** The list issues the handles: the cancel debug shows `known=Some(RunHandle { instance, run: 2 })` for a run the sim scripted, so the run has a list entry (`crates/node/action-list/src/lib.rs` `ACTION_RUN` → `running.push`, :528). The handle attach did not return `RunGone`, so the instance matches.
+- **Where it fails**: the cancel's own attach and cancel succeed (no refusal from them). The refusal is the **follow after the cancel** (`crates/board/actions/src/board.rs` `stop_on_board` → `board.follow`), which attaches by handle and gets `NotFound`. In the list, a handle attach with no match in `running` and none in `ended` gives `NotFound` (`crates/node/action-list/src/attach.rs:47–58`, `:124–125`). Every detached end is pushed to `ended` with the run's `starter` (`lib.rs:378–402`), so the miss is the lookup `ended.id == handle.run && ended.starter == starter` (`attach.rs:55–56`), not eviction.
+- **Not yet established**: which of id or starter differs for the ended entry. The starter is `(class, uid, caller)` (`lib.rs:62–76`); `caller` is empty for a program on the board.
+- **H2 deadlines**: the list refuses a detached run with no deadline (`lib.rs:455–458`) and one above `max_detached_ms` (`lib.rs:460`, `MAX_DETACHED_MS` = 1 h, `lib.rs:58`). Our install ceiling of 4 h would have been refused as too long; the ceiling is now 1 h (`crates/board/actions/src/bounds.rs`). Generic interim (1 h) is at the limit and allowed.
+- **Tests whose premise was the missing handles** (`until_orion_run_handles_…`) are unchanged so far; they are rewritten only once the stop-after-cancel lookup is understood.
+
 ## Detached-run deadlines, per kind (one table in code: `crates/board/actions/src/bounds.rs`)
 
 A real node refuses a detached run with no deadline (`NoDeadline`), and it ends a run at its deadline as `TimedOut`
@@ -98,7 +106,7 @@ huge constant.
 
 | Kind | What the run does on the board | What bounds it | Deadline | Floor / ceiling |
 |---|---|---|---|---|
-| Install (`install_file`, `RunKind::Install { bytes }`) | writes the bundle into the slot's bay, reads it back to verify | the bundle's size (the caller knows it), a minimum write rate of 1 MiB/s, a read-back rate of 4 MiB/s, and a fixed 2 min overhead (bundle check, slot record, list refresh) | `120 s + ceil(bytes / 1 MiB/s) + ceil(bytes / 4 MiB/s)` | floor 5 min, ceiling 4 h |
+| Install (`install_file`, `RunKind::Install { bytes }`) | writes the bundle into the slot's bay, reads it back to verify | the bundle's size (the caller knows it), a minimum write rate of 1 MiB/s, a read-back rate of 4 MiB/s, and a fixed 2 min overhead (bundle check, slot record, list refresh) | `120 s + ceil(bytes / 1 MiB/s) + ceil(bytes / 4 MiB/s)` | floor 5 min, ceiling 1 h (the node's largest detached deadline, Orion 8eaf3b8 `lib.rs:58`) |
 | Generic board action (`RunKind::Generic`, `ActionJobs`) | whatever the action does | nothing Atlas knows: the catalog's `long_running` says it is long, not how long | interim 1 h | interim, pending the ruling |
 | Trial (`BoardSlots::start_trial`) | not a detached run: a direct, attached call that returns at once, after which the trial is followed by the slot list | the board's own confirm deadline (`confirm_deadline_s`), which Atlas does not read | none here | missing (below) |
 

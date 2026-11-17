@@ -4,7 +4,7 @@
 //!
 //! | kind | what the run does on the board | what bounds it | deadline |
 //! |---|---|---|---|
-//! | `Install { bytes }` (`install_file`) | writes the bundle into the slot's bay, then reads it back to verify | the payload size the caller knows, times a stated minimum write rate, plus the read-back, plus a fixed overhead | `install_bound(bytes)`: floor 5 min, ceiling 4 h |
+//! | `Install { bytes }` (`install_file`) | writes the bundle into the slot's bay, then reads it back to verify | the payload size the caller knows, times a stated minimum write rate, plus the read-back, plus a fixed overhead | `install_bound(bytes)`: floor 5 min, ceiling 1 h (the node's largest detached deadline) |
 //! | `Generic` (a board action job, `ActionJobs`) | whatever the action does; Atlas does not know its length | nothing Atlas knows today: Lemnos's per-job stall bound (M40) is not in the pin | `GENERIC_INTERIM`, 1 h, an interim value pending the ruling |
 //! | trial (`BoardSlots::start_trial`) | nothing detached: the trial start is a direct, attached call that returns at once, and the trial then follows by the slot list | the board's own confirm deadline (`confirm_deadline_s`), which Atlas does not read | not a detached run, so no row here; the bound is missing (see the doc) |
 
@@ -20,8 +20,10 @@ pub const VERIFY_BYTES_PER_SEC: u64 = 4 * 1024 * 1024;
 pub const INSTALL_OVERHEAD: Duration = Duration::from_secs(120);
 /// The shortest install bound: a small bundle still gets five minutes.
 pub const INSTALL_FLOOR: Duration = Duration::from_secs(5 * 60);
-/// The longest install bound: four hours, so a stuck write cannot hold the lease and the slot longer than that.
-pub const INSTALL_CEILING: Duration = Duration::from_secs(4 * 60 * 60);
+/// The longest install bound: one hour, the node's largest detached deadline (`MAX_DETACHED_MS` in Orion
+/// 8eaf3b8's action list, `crates/node/action-list/src/lib.rs:58`). A longer deadline is refused as too long, so an
+/// install that needs more than an hour needs the node's limit raised first (a ruling, not done here).
+pub const INSTALL_CEILING: Duration = Duration::from_secs(60 * 60);
 /// The interim bound of a generic board action (an action Atlas knows nothing about): one hour. Interim, pending
 /// the ruling and Lemnos's per-job stall bound (M40).
 pub const GENERIC_INTERIM: Duration = Duration::from_secs(60 * 60);
