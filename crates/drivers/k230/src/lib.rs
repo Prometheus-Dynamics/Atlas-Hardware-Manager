@@ -23,7 +23,13 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
-use atlas_usb::{DeviceSummary, OpenOptions, UsbBus, UsbError, UsbId, await_device};
+use std::str::FromStr;
+
+use atlas_usb::UsbIdMatch;
+use atlas_usb::{
+    DeviceSummary, Expect, OpenOptions, Opened, PortPath, UsbBus, UsbError, UsbId, observe_stop,
+    open_among, open_expected,
+};
 
 /// The device family: the vendor's chip family, as `devices/families` names it.
 pub const FAMILY: &str = "canaan-k230";
@@ -67,22 +73,47 @@ impl K230Driver {
     /// The device must be in the boot ROM. This returns once the start request
     /// is through, or the reset that follows it. It does not wait for the
     /// image to come back: which stage answers next depends on the image. The
-    /// caller waits with `atlas_usb::await_device` and asks the stage again.
-    /// `address` is the caller's (dev's notes record 0x80360000 and
+    /// caller waits with [`await_restart`](Self::await_restart) and asks the
+    /// stage again. `address` is the caller's (dev's notes record 0x80360000 and
     /// 0x80300000); it is never picked here.
+    ///
+    /// The device is selected by its port path and must hold `expected` there:
+    /// another identity on that port is refused before anything is claimed.
     pub async fn start_image(
         &self,
         location: &str,
+        expected: UsbId,
         image: &[u8],
         address: u32,
     ) -> Result<(), DriverError> {
         bootrom::check_address(address).map_err(incompatible)?;
-        let mut io = self
-            .bus
-            .open(location, &self.options)
-            .await
-            .map_err(unreachable)?;
-        match bootrom::stage(&mut *io).await.map_err(unreachable)? {
+        let port = port_of(location)?;
+        self.check_id(expected)?;
+        let Opened { mut io, .. } = open_expected(
+            self.bus.as_ref(),
+            &port,
+            Expect::Exactly(expected),
+            &self.options,
+            Duration::ZERO,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
+        let stage = match bootrom::stage(&mut *io).await {
+            Ok(stage) => stage,
+            Err(error) => {
+                return Err(self
+                    .observed(
+                        &port,
+                        Expect::Exactly(expected),
+                        "asking the boot ROM its stage",
+                        error,
+                        false,
+                    )
+                    .await);
+            }
+        };
+        match stage {
             Stage::BootRom => {}
             Stage::Burner => {
                 return Err(DriverError::Incompatible(
@@ -96,23 +127,85 @@ impl K230Driver {
                 )));
             }
         }
-        bootrom::load_and_start(&mut *io, image, address)
-            .await
-            .map_err(unreachable)
+        match bootrom::load_and_start(&mut *io, image, address).await {
+            Ok(()) => Ok(()),
+            Err(error) => Err(self
+                .observed(
+                    &port,
+                    Expect::Exactly(expected),
+                    "loading the image into the boot ROM",
+                    error,
+                    true,
+                )
+                .await),
+        }
     }
 
     /// Waits for the device at `location` to come back after a start, for at
     /// most `timeout`. Returns the stage it answers. The caller decides
-    /// whether that is the image it started.
+    /// whether that is the image it started. Any identity may come back: the
+    /// image decides which stage answers, so only the port selects the device.
     pub async fn await_restart(
         &self,
         location: &str,
         timeout: Duration,
     ) -> Result<Stage, DriverError> {
-        let mut io = await_device(self.bus.as_ref(), location, &self.options, timeout)
-            .await
-            .map_err(unreachable)?;
-        bootrom::stage(&mut *io).await.map_err(unreachable)
+        let port = port_of(location)?;
+        let Opened { mut io, .. } = open_expected(
+            self.bus.as_ref(),
+            &port,
+            Expect::AnyIdentity,
+            &self.options,
+            timeout,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
+        match bootrom::stage(&mut *io).await {
+            Ok(stage) => Ok(stage),
+            Err(error) => Err(self
+                .observed(
+                    &port,
+                    Expect::AnyIdentity,
+                    "asking the stage its name",
+                    error,
+                    false,
+                )
+                .await),
+        }
+    }
+
+    fn check_id(&self, expected: UsbId) -> Result<(), DriverError> {
+        if self.ids.contains(&expected) {
+            Ok(())
+        } else {
+            Err(DriverError::Incompatible(format!(
+                "{expected} is not an id this K230 driver handles"
+            )))
+        }
+    }
+
+    /// A transfer error as a typed stop: what the bus shows on the port decides.
+    async fn observed(
+        &self,
+        port: &PortPath,
+        expect: Expect,
+        step: &str,
+        error: UsbError,
+        may_have_applied: bool,
+    ) -> DriverError {
+        DriverError::Flash(
+            observe_stop(
+                self.bus.as_ref(),
+                port,
+                expect,
+                step,
+                self.options.timeouts.bulk,
+                may_have_applied,
+                error,
+            )
+            .await,
+        )
     }
 }
 
@@ -123,6 +216,11 @@ impl std::fmt::Debug for K230Driver {
             .field("ids", &self.ids)
             .finish_non_exhaustive()
     }
+}
+
+/// The port path a location names, refused when it is not one.
+fn port_of(location: &str) -> Result<PortPath, DriverError> {
+    PortPath::from_str(location).map_err(|error| DriverError::Incompatible(error.to_string()))
 }
 
 /// A transfer error as the driver reports it. An access problem carries its
@@ -160,22 +258,17 @@ impl Driver for K230Driver {
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let device = self
-            .matching()
-            .await?
-            .into_iter()
-            .find(|device| device.location == candidate.address)
-            .ok_or_else(|| {
-                DriverError::Unreachable(format!(
-                    "no K230 at {}; it may have been unplugged",
-                    candidate.address
-                ))
-            })?;
-        let mut io = self
-            .bus
-            .open(&candidate.address, &self.options)
-            .await
-            .map_err(unreachable)?;
+        let port = port_of(&candidate.address)?;
+        let Opened { mut io, device } = open_among(
+            self.bus.as_ref(),
+            &port,
+            &self.ids,
+            &self.options,
+            Duration::ZERO,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
         let stage = bootrom::stage(&mut *io).await.map_err(unreachable)?;
         let stage_name = match stage {
             Stage::BootRom => "boot-rom",

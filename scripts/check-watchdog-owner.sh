@@ -518,12 +518,19 @@ wd_self_test() {  # <repo>
   tmp=$(mktemp -d)
   dev=$tmp/devices
   cp -a "$repo/devices" "$dev"
+  # A synthetic sd-image product with no owner: the bring-up fixture with its systemd watchdog lines removed (zero-3e-base is deleted in Z2).
+  mkdir -p "$dev/products/example-bringup" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/example-bringup/"
+  mkdir -p "$dev/products/sd-noowner" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/sd-noowner/"
+  sed -i -e '/^bringup-alive = /d' -e '/^bringup-alive-settings = /d' -e 's/"bringup-alive", "bringup-alive-settings", //' "$dev/products/sd-noowner/product.toml"
+  # On the ZERO 3E board (it keeps a hw-watchdog keepalive nothing feeds: one NOTE, as zero-3e-base was).
+  sed -i -e 's#boards/radxa-rock-4d/board.toml#boards/radxa-zero-3e/board.toml#' "$dev/products/sd-noowner/product.toml"
   raze=$dev/products/raze-base
-  zbase=$dev/products/zero-3e-base
-  zbring=$dev/products/zero-3e-bringup
+  zbase=$dev/products/sd-noowner
   local rboard=$dev/boards/raze/lemnos-board.toml
   local zboard=$dev/boards/radxa-zero-3e/lemnos-board.toml
   local fam=$dev/families/rk35xx/assets/u-boot.fragment
+  # The baseline is UNARMED: the NOTE cases are no-owner products the family does not arm. The armed cases restore and arm it below.
+  sed -i '/^CONFIG_WATCHDOG_AUTOSTART=y$/d' "$fam"
 
   fail() { echo "watchdog owner self-test: $1" >&2; rc=1; }
   has() { [[ $out == *"$1"* ]]; }
@@ -532,10 +539,10 @@ wd_self_test() {  # <repo>
   # with no owner is one NOTE line (not a FINDING), and its U-Boot arming is NOT CHECKED.
   out=$(watchdog_owner_rule "$dev") || true
   has "NOTE product raze-base: inputs say Lemnos; built config unverified" || fail "raze-base's line is not the exact inputs line: $out"
-  has "NOTE product zero-3e-base (sd-image, not a slot product): no watchdog owner" || fail "zero-3e-base is not one NOTE line: $out"
-  has "bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || fail "zero-3e-base's U-Boot arming was not NOT CHECKED: $out"
-  has "FINDING product zero-3e-base" && fail "an sd-image product without an owner failed the gate: $out"
-  has "NOTE product zero-3e-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
+  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner" || fail "sd-noowner is not one NOTE line: $out"
+  has "bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || fail "sd-noowner's U-Boot arming was not NOT CHECKED: $out"
+  has "FINDING product sd-noowner" && fail "an sd-image product without an owner failed the gate: $out"
+  has "NOTE product example-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
   has "rock-4d-base" && fail "rock-4d-base is still in the tree: $out"
   has "FINDING" && fail "the real tree has a FINDING: $out"
 
@@ -581,12 +588,12 @@ wd_self_test() {  # <repo>
   has "FINDING product raze-base: two owners" || fail "the feeder pair is not two owners: $out"
   rm -rf "$raze/os/overlay/usr/lib/systemd/system"
 
-  # A keepalive nothing feeds, on an sd-image product: one NOTE line (zero-3e-base with a keepalive in its board).
+  # A keepalive nothing feeds, on an sd-image product: one NOTE line (sd-noowner with a keepalive in its board).
   cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
   printf '\n[descriptions]\nlemnos = "lemnos-board.toml"\n' >> "$dev/boards/radxa-zero-3e/board.toml"
   printf '\n[[devices]]\nid = "watchdog"\ndriver = "hw-watchdog"\nkeepalive = true\n\n[[hardware]]\ncontroller = "watchdog"\n' >> "$zboard"
   out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product zero-3e-base (sd-image, not a slot product): no watchdog owner; boards/radxa-zero-3e/lemnos-board.toml keeps a hw-watchdog keepalive (line" || fail "an unfed keepalive on an sd-image product was not on its NOTE line: $out"
+  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; boards/radxa-zero-3e/lemnos-board.toml keeps a hw-watchdog keepalive (line" || fail "an unfed keepalive on an sd-image product was not on its NOTE line: $out"
   has "nothing feeds" || fail "the NOTE line does not say nothing feeds the keepalive: $out"
   cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
   cp -a "$repo/devices/boards/radxa-zero-3e/lemnos-board.toml" "$zboard"
@@ -606,34 +613,34 @@ wd_self_test() {  # <repo>
   cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
   cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
 
-  # Armed + no owner (any product): U-Boot's autostart line on zero-3e-base, which has no owner: a FINDING.
+  # Armed + no owner (any product): U-Boot's autostart line on sd-noowner, which has no owner: a FINDING.
   cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
   printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' >> "$fam"
   out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product zero-3e-base: the boot chain arms the watchdog (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot" || fail "armed with no owner was not refused: $out"
+  has "FINDING product sd-noowner: the boot chain arms the watchdog (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot" || fail "armed with no owner was not refused: $out"
   # Armed + one owner: the same line on the bring-up product (its systemd owner feeds it): a pass.
-  has "NOTE product zero-3e-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
-  has "FINDING product zero-3e-bringup" && fail "armed with an owner was a FINDING: $out"
+  has "NOTE product example-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
+  has "FINDING product example-bringup" && fail "armed with an owner was a FINDING: $out"
 
   # A boot script's wdt command arms too (a Lemnos-free product with an owner passes; this one has none: a FINDING).
   cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
   printf 'wdt dev 0\nwdt start\n' > "$dev/families/rk35xx/assets/boot.cmd"
   out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product zero-3e-base: the boot chain arms the watchdog (boot script command \"wdt\"" || fail "a wdt boot-script command was not seen: $out"
+  has "FINDING product sd-noowner: the boot chain arms the watchdog (boot script command \"wdt\"" || fail "a wdt boot-script command was not seen: $out"
   rm -f "$dev/families/rk35xx/assets/boot.cmd"
 
   # A built U-Boot config (the bootloader dir) decides for the owner-less base product: autostart on is a FINDING.
   b=$tmp/built-boot
   mkdir -p "$b"
   printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' > "$b/u-boot.config"
-  out=$(watchdog_owner_rule "$dev" -- "zero-3e-base=$b") || true
-  has "FINDING product zero-3e-base: the boot chain arms the watchdog (built U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "a built U-Boot autostart was not refused: $out"
+  out=$(watchdog_owner_rule "$dev" -- "sd-noowner=$b") || true
+  has "FINDING product sd-noowner: the boot chain arms the watchdog (built U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "a built U-Boot autostart was not refused: $out"
   rm -rf "$b"
   cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
 
   # No U-Boot autostart line and no build: NOT CHECKED, exactly.
   out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product zero-3e-base (sd-image, not a slot product): no watchdog owner; bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || true
+  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || true
 
   # A built system tree that disagrees with the inputs (inputs say Lemnos only; the built drop-in sets the watchdog).
   bl=$tmp/built-raze

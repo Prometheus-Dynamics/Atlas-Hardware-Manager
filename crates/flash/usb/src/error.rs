@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::{PortPath, UsbId};
+
 /// What went wrong on the USB link. Loaders match on the variant to decide
 /// whether waiting or reopening can help.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +19,13 @@ pub enum UsbError {
     Access { message: String, fix: String },
     /// The device answered, but not as the protocol says.
     Protocol(String),
+    /// A device is at the port, but its vendor and product ids are not the
+    /// ones the caller expects. Nothing was claimed.
+    WrongIdentity {
+        location: PortPath,
+        expected: UsbId,
+        found: UsbId,
+    },
     /// Anything else the operating system reported.
     Other(String),
 }
@@ -30,6 +39,14 @@ impl fmt::Display for UsbError {
             Self::Timeout(what) => write!(f, "{what} timed out"),
             Self::Access { message, fix } => write!(f, "{message} {fix}"),
             Self::Protocol(message) => write!(f, "the device answered unexpectedly: {message}"),
+            Self::WrongIdentity {
+                location,
+                expected,
+                found,
+            } => write!(
+                f,
+                "the device at {location} is {found}, not the expected {expected}"
+            ),
             Self::Other(message) => write!(f, "USB error: {message}"),
         }
     }

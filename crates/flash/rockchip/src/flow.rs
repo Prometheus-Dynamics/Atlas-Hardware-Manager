@@ -9,7 +9,10 @@
 
 use std::time::Duration;
 
-use atlas_usb::{OpenOptions, UsbBus, UsbIo};
+use atlas_usb::{
+    Expect, OpenOptions, Opened, Outcome, PortPath, UsbBus, UsbId, UsbIo, observe_stop,
+    open_expected,
+};
 
 use crate::UsbResult;
 use crate::loader::Loader;
@@ -20,22 +23,50 @@ use crate::rockusb::{FlashInfo, Rockusb};
 const READY_TRIES: u32 = 10;
 const READY_GAP: Duration = Duration::from_millis(500);
 
-/// Runs `loader`'s 471 and 472 entries on the device at `location`, then
-/// waits up to `reenumerate` for the board to come back at the same location
-/// in loader mode. `file` is the loader's bytes, which `loader` was parsed
-/// from. Returns the loader-mode handle.
+/// Runs `loader`'s 471 and 472 entries on the device on `port`, then waits up to
+/// `reenumerate` for the board to come back on the same port in loader mode.
+/// `file` is the loader's bytes, which `loader` was parsed from.
+///
+/// The device must hold `expected` on `port` before the download starts; a
+/// different identity there is refused and nothing is written. The loader-mode
+/// device that comes back has an identity this crate does not know in advance,
+/// so only its port selects it.
 pub async fn run_usbplug(
     bus: &dyn UsbBus,
-    location: &str,
+    port: &PortPath,
+    expected: UsbId,
     loader: &Loader,
     file: &[u8],
     options: &OpenOptions,
     reenumerate: Duration,
-) -> UsbResult<Box<dyn UsbIo>> {
-    let mut io = bus.open(location, options).await?;
-    maskrom::download_boot(io.as_mut(), loader, file).await?;
-    drop(io);
-    atlas_usb::await_device(bus, location, options, reenumerate).await
+) -> Outcome<Opened> {
+    let mut opened = match open_expected(
+        bus,
+        port,
+        Expect::Exactly(expected),
+        options,
+        Duration::ZERO,
+    )
+    .await
+    {
+        Outcome::Done(opened) => opened,
+        stopped => return stopped,
+    };
+    if let Err(error) = maskrom::download_boot(opened.io.as_mut(), loader, file).await {
+        return observe_stop(
+            bus,
+            port,
+            Expect::Exactly(expected),
+            "the loader's download",
+            options.timeouts.bulk,
+            true,
+            error,
+        )
+        .await
+        .typed();
+    }
+    drop(opened);
+    open_expected(bus, port, Expect::AnyIdentity, options, reenumerate).await
 }
 
 /// Asks the usbplug until it answers TEST UNIT READY, up to ten times half a

@@ -314,8 +314,7 @@ by hand.
 ## Named inputs (the bench key)
 
 A component may install a file the command line gives, `from = { input = "bench-key" }`, instead of a file
-committed beside it (`gaia plan --input bench-key=PATH`). The bring-up products (`zero-3e-bringup`,
-`rock-4d-bringup`, `rock-5c-bringup`) take the bench's SSH public key that way. The check
+committed beside it (`gaia plan --input bench-key=PATH`). The bring-up products (`rock-4d-bringup`, `rock-5c-bringup`) take the bench's SSH public key that way. The check
 gives every product that names `bench-key` a throwaway public key it makes in a temp dir for that run (only
 the `.pub` file is kept; the private half is deleted at once). No key is committed. A product that names
 an input is planned with it; gaia refuses an input nothing uses, so no other product gets one.

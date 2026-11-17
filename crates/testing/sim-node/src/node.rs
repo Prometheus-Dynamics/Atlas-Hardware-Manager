@@ -371,6 +371,9 @@ impl SimNode {
         atlas_types::socket::check_socket_path(&dir.join(atlas_types::socket::NODE_SOCKET))
             .map_err(|error| error.to_string())?;
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+        // A node that names no port gets one outside the ephemeral range, so a restart on the same
+        // port cannot lose it to an outgoing connect (see `crate::ports`).
+        let port = Some(port.unwrap_or_else(crate::ports::node_port));
         let board = Arc::new(Board::start_with(
             dir,
             Options {

@@ -61,7 +61,7 @@ def network_names(path):
 
 # The Raze's address script writes the network file at boot: its name is `interface` in the data file the
 # component installs (the same file scripts/check-lemnos0-address.py reads). The script's Name= is that value.
-ADDRESSING = os.path.join("devices", "components", "raze-base-files", "files", "lemnos0-addressing.conf")
+ADDRESSING = os.path.join("devices", "components", "lemnos0-addressing", "files", "lemnos0-addressing.conf")
 
 
 def addressing_interface(root):

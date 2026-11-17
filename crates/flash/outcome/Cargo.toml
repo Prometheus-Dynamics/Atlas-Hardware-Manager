@@ -1,0 +1,12 @@
+[package]
+name = "atlas-flash-outcome"
+description = "The typed outcome of a flashing step (Done, Refused, Deaf, Absent, TimedOut with what was observed), the USB port path, and the USB id. Std only: no USB stack, so every crate that reports a flash result can depend on it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
