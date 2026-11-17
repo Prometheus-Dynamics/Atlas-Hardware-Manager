@@ -1,0 +1,10 @@
+# This product's name prefix for the shared bench-hostname component: the board is named zero3e-<last six hex digits>
+# (the Z1 name, unchanged). The one file the product gives the shared script (/etc/bench-hostname.prefix). Untested on board.
+version = 1
+name = "bench-hostname-prefix"
+description = "This bench's hostname prefix: /etc/bench-hostname.prefix (zero3e)."
+
+[[install]]
+from = { file = "files/bench-hostname.prefix" }
+to = "/etc/bench-hostname.prefix"
+mode = "0644"

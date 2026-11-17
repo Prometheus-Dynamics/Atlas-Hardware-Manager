@@ -3,7 +3,7 @@
 # bring-up board. The board's tree enables no device-mode port (usb_drd0_dwc3 and usb_drd1_dwc3 are
 # dr_mode = host), so there is no USB network: the first proof is Ethernet, DHCP on eth0 through
 # systemd-networkd (from the base). The bench public key is the named input `bench-key` (see the
-# zero-3e-bringup product). Untested on board: nothing here has booted; the user flashes the card.
+# bring-up product of ZERO 3E was deleted in Z2.) Untested on board: nothing here has booted; the user flashes the card.
 # DO NOT CONNECT ANY OF THIS BOARD'S USB PORTS TO A PC. This image enables no USB device port and has no
 # gadget, so every USB port on the board is a HOST port that supplies 5 V. Two supplies on one cable can
 # damage the PC's port or the board. Reach the board over Ethernet only. (Condition set by the
