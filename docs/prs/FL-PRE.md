@@ -277,3 +277,28 @@ sha256 87de9f1d…1deff0, checked by the test). It decodes to 167,772,160 bytes,
 - Slot reader: not run on the sample. The sample is not known to be a disk image with our
   slot layout, so `open` was not attempted.
 - The decode test takes about 5 s in a debug build.
+
+## Review rulings applied (revision 2)
+
+- **No nusb in the driver chain.** The outcome vocabulary (`Outcome`, `Stop`, `Refused`,
+  `Deaf`, `Absent`, `TimedOut`, `Expect`, `PortPath`, `UsbId`) moved to the std-only crate
+  `crates/flash/outcome` (`atlas-flash-outcome`, no dependencies). `atlas-usb` depends on it
+  and re-exports every name, so the flash crates keep their paths. `atlas-driver` and
+  `atlas-jobs` depend on `atlas-flash-outcome` only. `UsbId::matches(&DeviceSummary)` is now
+  the `UsbIdMatch` trait in `atlas-usb`.
+  Check, run on this tree:
+  `cargo tree -p atlas-driver | grep nusb` prints nothing (0 lines); `cargo tree -p atlas-jobs | grep nusb` prints nothing (0 lines).
+- **Dropped writing steps end Unknown.** `JobKind::writes(step)` (default `false`) marks a
+  step that may write to a device. A writing step dropped by the job's step limit, or one that
+  panics, ends the job as Unknown and is not tried again. Read-only steps keep the backoff retry.
+  No production kind overrides `writes` yet, so nothing changes for them. Tests:
+  `a_writing_step_dropped_by_the_step_limit_ends_unknown_and_is_not_tried_again` and
+  `a_read_only_step_dropped_by_the_step_limit_is_still_retried`. The install and push kinds
+  (`crates/drivers/board-slots`, `crates/board/files`) also write to boards: they are not
+  marked here, and that is an open question for their owners.
+- **Fastboot and identify are identity-checked.** `Fastboot::open(bus, location, expected, ...)`
+  opens with `open_expected`; a stop is `FastbootError::Stop`. The allwinner and k230
+  `identify` paths open through `open_among` (`atlas-usb`): the device on the port must be
+  one of the driver's ids; otherwise the open is refused and nothing is claimed. Tests:
+  `an_open_on_a_port_with_another_identity_is_refused_and_nothing_is_claimed` (fastboot),
+  `identify_refuses_another_identity_on_the_port_and_sends_nothing` (allwinner and k230).

@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use tokio::time::{Instant, sleep};
 
-use crate::outcome::{Absent, Deaf, Expect, Outcome, Party, Reason, Refused, Stop, TimedOut};
-use crate::{DeviceSummary, OpenOptions, PortPath, UsbBus, UsbError, UsbId, UsbIo};
+use crate::{Absent, Deaf, Expect, Outcome, Party, Reason, Refused, Stop, TimedOut};
+use crate::{DeviceSummary, OpenOptions, PortPath, UsbBus, UsbError, UsbId, UsbIdMatch, UsbIo};
 
 const FIRST_RETRY: Duration = Duration::from_millis(100);
 const MAX_RETRY: Duration = Duration::from_secs(5);
@@ -113,6 +113,33 @@ pub async fn open_expected(
         sleep(backoff.min(deadline - now)).await;
         backoff = (backoff * 2).min(MAX_RETRY);
     }
+}
+
+/// Opens the device on `port` if its identity is one of `ids`. A device on the
+/// port with another identity is refused (the first id is what the refusal names),
+/// and an empty port is Absent. Nothing is opened unless the identity matches.
+pub async fn open_among(
+    bus: &dyn UsbBus,
+    port: &PortPath,
+    ids: &[UsbId],
+    options: &OpenOptions,
+    wait: Duration,
+) -> Outcome<Opened> {
+    let Some(first) = ids.first().copied() else {
+        return Outcome::Refused(Refused {
+            by: Party::Host,
+            reason: Reason::Message("no USB id is expected here".into()),
+        });
+    };
+    let expect = match at_port(bus, port).await {
+        Ok(Some(device)) if ids.iter().any(|id| id.matches(&device)) => UsbId {
+            vendor: device.vendor,
+            product: device.product,
+        },
+        Ok(_) => first,
+        Err(error) => return host_refusal(error),
+    };
+    open_expected(bus, port, Expect::Exactly(expect), options, wait).await
 }
 
 /// Turns a transfer error into the outcome it stands for. `step` says what the

@@ -27,6 +27,7 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
+use atlas_usb::UsbIdMatch;
 use atlas_usb::{DeviceSummary, UsbBus, UsbId};
 
 /// The family every Rockchip boot ROM belongs to. It is the family id

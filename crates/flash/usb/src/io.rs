@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use atlas_flash_outcome::UsbId;
 
 use crate::UsbError;
 use crate::link::LinkOptions;
@@ -176,23 +177,15 @@ impl DeviceSummary {
     }
 }
 
-/// A vendor and product id pair a loader matches on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct UsbId {
-    pub vendor: u16,
-    pub product: u16,
+/// Whether a device has a vendor and product id pair. Implemented for [`UsbId`]
+/// here, because the id type lives in the std-only `atlas-flash-outcome` crate.
+pub trait UsbIdMatch {
+    fn matches(&self, device: &DeviceSummary) -> bool;
 }
 
-impl UsbId {
-    pub fn matches(&self, device: &DeviceSummary) -> bool {
+impl UsbIdMatch for UsbId {
+    fn matches(&self, device: &DeviceSummary) -> bool {
         self.vendor == device.vendor && self.product == device.product
-    }
-}
-
-/// `vendor:product` in lowercase hex, as `lsusb` writes it.
-impl std::fmt::Display for UsbId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:04x}:{:04x}", self.vendor, self.product)
     }
 }
 

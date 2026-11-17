@@ -296,3 +296,21 @@ async fn a_candidate_with_no_port_path_is_refused() {
     assert!(matches!(error, DriverError::Incompatible(_)), "{error:?}");
     assert!(bus.records("1-2").is_empty());
 }
+
+#[tokio::test]
+async fn identify_refuses_another_identity_on_the_port_and_sends_nothing() {
+    let bus = SimBus::new();
+    bus.attach(device("1-2", 0x0a5c, 0x2764));
+    let driver = FelDriver::new(Arc::new(bus.clone()), IDS.to_vec(), None);
+    let error = driver.identify(&candidate("1-2")).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DriverError::Flash(atlas_usb::Outcome::Refused(ref refused))
+                if refused.by == atlas_usb::Party::Host
+        ),
+        "{error:?}"
+    );
+    assert!(bus.claimed("1-2").is_empty(), "nothing was claimed");
+    assert!(bus.records("1-2").is_empty(), "nothing was sent");
+}

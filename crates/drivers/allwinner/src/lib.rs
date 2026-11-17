@@ -27,8 +27,10 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
+use atlas_usb::UsbIdMatch;
 use atlas_usb::{
-    Expect, OpenOptions, Opened, PortPath, UsbBus, UsbError, UsbId, observe_stop, open_expected,
+    Expect, OpenOptions, Opened, PortPath, UsbBus, UsbError, UsbId, observe_stop, open_among,
+    open_expected,
 };
 use std::str::FromStr;
 use std::time::Duration;
@@ -199,11 +201,17 @@ impl Driver for FelDriver {
 
     /// Opens the device and asks its SoC id and mode. Read-only.
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let mut io = self
-            .bus
-            .open(&candidate.address, &OpenOptions::default())
-            .await
-            .map_err(usb_error)?;
+        let port = port_of(&candidate.address)?;
+        let Opened { mut io, .. } = open_among(
+            self.bus.as_ref(),
+            &port,
+            &self.ids,
+            &OpenOptions::default(),
+            Duration::ZERO,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
         let verify = Fel::new(io.as_mut()).verify().await.map_err(usb_error)?;
         if verify.mode != MODE_FEL {
             return Err(DriverError::Incompatible(format!(

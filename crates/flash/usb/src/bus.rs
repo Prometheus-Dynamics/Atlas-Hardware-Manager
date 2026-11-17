@@ -5,6 +5,7 @@ use tokio::time::{Instant, sleep};
 
 use std::str::FromStr;
 
+use crate::UsbIdMatch;
 use crate::{
     DeviceSummary, InterfaceSummary, OpenOptions, PortPath, Timeouts, UsbError, UsbId, UsbIo,
 };

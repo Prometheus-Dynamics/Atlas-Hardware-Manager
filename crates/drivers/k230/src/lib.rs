@@ -25,9 +25,10 @@ use atlas_types::{
 };
 use std::str::FromStr;
 
+use atlas_usb::UsbIdMatch;
 use atlas_usb::{
     DeviceSummary, Expect, OpenOptions, Opened, PortPath, UsbBus, UsbError, UsbId, observe_stop,
-    open_expected,
+    open_among, open_expected,
 };
 
 /// The device family: the vendor's chip family, as `devices/families` names it.
@@ -257,22 +258,17 @@ impl Driver for K230Driver {
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let device = self
-            .matching()
-            .await?
-            .into_iter()
-            .find(|device| device.location == candidate.address)
-            .ok_or_else(|| {
-                DriverError::Unreachable(format!(
-                    "no K230 at {}; it may have been unplugged",
-                    candidate.address
-                ))
-            })?;
-        let mut io = self
-            .bus
-            .open(&candidate.address, &self.options)
-            .await
-            .map_err(unreachable)?;
+        let port = port_of(&candidate.address)?;
+        let Opened { mut io, device } = open_among(
+            self.bus.as_ref(),
+            &port,
+            &self.ids,
+            &self.options,
+            Duration::ZERO,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
         let stage = bootrom::stage(&mut *io).await.map_err(unreachable)?;
         let stage_name = match stage {
             Stage::BootRom => "boot-rom",

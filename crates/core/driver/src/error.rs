@@ -26,7 +26,7 @@ pub enum DriverError {
     /// `may_have_applied` says whether the device may have acted without the
     /// completion being seen.
     #[error("{0}")]
-    Flash(atlas_usb::Stop),
+    Flash(atlas_flash_outcome::Stop),
     #[error("{0}")]
     Other(String),
 }

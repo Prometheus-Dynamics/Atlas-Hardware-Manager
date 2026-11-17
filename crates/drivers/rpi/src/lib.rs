@@ -24,6 +24,7 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
+use atlas_usb::UsbIdMatch;
 use atlas_usb::{DeviceSummary, UsbBus, UsbError, UsbId};
 
 /// The family every boot ROM board belongs to.

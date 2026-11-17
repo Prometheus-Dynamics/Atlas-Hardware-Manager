@@ -25,6 +25,7 @@ async fn open(bus: &SimBus) -> Fastboot {
     Fastboot::open(
         bus,
         LOCATION,
+        ID,
         &OpenOptions::default(),
         Duration::from_secs(1),
     )
@@ -281,7 +282,7 @@ async fn a_transfer_with_no_answer_times_out() {
             bulk: Duration::from_secs(3),
         },
     };
-    let mut fastboot = Fastboot::open(&bus, LOCATION, &options, Duration::from_secs(1))
+    let mut fastboot = Fastboot::open(&bus, LOCATION, ID, &options, Duration::from_secs(1))
         .await
         .unwrap();
     bus.script(LOCATION, [Answer::Timeout]);
@@ -421,4 +422,24 @@ async fn find_matches_only_the_ids_the_caller_gives() {
         product: 0x2,
     };
     assert_eq!(find(&bus, &[other]).await.unwrap(), None);
+}
+
+#[tokio::test]
+async fn an_open_on_a_port_with_another_identity_is_refused_and_nothing_is_claimed() {
+    let bus = SimBus::new();
+    bus.attach(device(LOCATION, ID.product + 1));
+    let error =
+        atlas_fastboot::Fastboot::open(&bus, LOCATION, ID, &OpenOptions::default(), Duration::ZERO)
+            .await
+            .expect_err("refused");
+    assert!(
+        matches!(
+            error,
+            atlas_fastboot::FastbootError::Stop(atlas_usb::Outcome::Refused(ref refused))
+                if refused.by == atlas_usb::Party::Host
+        ),
+        "{error}"
+    );
+    assert!(bus.claimed(LOCATION).is_empty(), "nothing was claimed");
+    assert!(bus.records(LOCATION).is_empty(), "nothing was sent");
 }

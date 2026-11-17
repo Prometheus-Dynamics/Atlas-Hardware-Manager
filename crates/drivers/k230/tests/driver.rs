@@ -249,3 +249,25 @@ async fn a_device_that_is_silent_to_the_stage_query_is_deaf() {
         "{error:?}"
     );
 }
+
+#[tokio::test]
+async fn identify_refuses_another_identity_on_the_port_and_sends_nothing() {
+    let bus = SimBus::new();
+    bus.attach(DeviceSummary::new("1-2", 0x0a5c, 0x2764));
+    let candidate = atlas_types::Candidate {
+        link: LinkId::new("usb-boot:1-2"),
+        family: atlas_types::Family::new(FAMILY),
+        address: "1-2".into(),
+    };
+    let error = driver(&bus).identify(&candidate).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DriverError::Flash(atlas_usb::Outcome::Refused(ref refused))
+                if refused.by == atlas_usb::Party::Host
+        ),
+        "{error:?}"
+    );
+    assert!(bus.claimed("1-2").is_empty(), "nothing was claimed");
+    assert!(bus.records("1-2").is_empty(), "nothing was sent");
+}
