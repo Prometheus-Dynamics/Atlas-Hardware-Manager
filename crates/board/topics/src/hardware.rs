@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use atlas_session::{Handle, Presence, SessionError};
+use atlas_session::{Clock, Handle, Presence, SessionError};
 use atlas_types::{Identity, LinkId};
 
 use crate::describe::Refresh;
@@ -68,6 +68,10 @@ pub struct Hardware {
     handle: Handle,
     link: LinkId,
     grace: Duration,
+    /// The time this reader reads: `origin` plus what `clock` says. A manual clock makes a test's
+    /// grace and staleness a statement about time, not about how fast the machine runs.
+    clock: Clock,
+    origin: Instant,
     state: Mutex<State>,
     /// The refresh in progress, if one was asked for and has not been completed by a read: the
     /// answers it has received (see [`crate::describe`]).
@@ -110,15 +114,25 @@ impl Hardware {
     /// As [`Hardware::new`], with the grace chosen by the caller.
     #[must_use]
     pub fn with_grace(handle: Handle, link: LinkId, grace: Duration) -> Self {
+        Self::with_clock(handle, link, grace, Clock::real())
+    }
+
+    /// As [`Hardware::with_grace`], reading time from `clock`. A test passes a manual clock and
+    /// advances it, so the grace and the staleness do not depend on how fast the test runs.
+    #[must_use]
+    pub fn with_clock(handle: Handle, link: LinkId, grace: Duration, clock: Clock) -> Self {
+        let origin = Instant::now();
         Self {
             handle,
             link,
             grace,
+            origin,
+            clock,
             refresh: Arc::new(Mutex::new(None)),
             refreshes: AtomicU64::new(0),
             state: Mutex::new(State {
                 connection: Connection::Stale {
-                    since: Instant::now(),
+                    since: origin,
                     reason: "not read yet".into(),
                 },
                 last_live: None,
@@ -161,7 +175,7 @@ impl Hardware {
                 read::read(orion, &key, &session, &link, serving.map(|id| (&*cell, id)))
             })
             .await;
-        let now = Instant::now();
+        let now = self.origin + self.clock.now();
         let mut state = lock(&self.state);
         match answer {
             Ok(Ok(read)) => {
