@@ -19,6 +19,9 @@ pub enum RpiBootError {
     Bootconf(String),
     /// The caller cancelled before the boot finished.
     Cancelled,
+    /// The USB link stopped with a typed observation: the port was empty, the
+    /// device was silent, refused, or the wrong device.
+    Stop(atlas_usb::Stop),
 }
 
 impl fmt::Display for RpiBootError {
@@ -38,6 +41,7 @@ impl fmt::Display for RpiBootError {
             Self::Files(message) => f.write_str(message),
             Self::Bootconf(message) => write!(f, "bootconf: {message}"),
             Self::Cancelled => f.write_str("the USB boot was cancelled"),
+            Self::Stop(stop) => write!(f, "{stop}"),
         }
     }
 }

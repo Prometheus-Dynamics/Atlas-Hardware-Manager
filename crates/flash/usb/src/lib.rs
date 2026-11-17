@@ -20,18 +20,24 @@ mod io;
 mod link;
 mod nusb_backend;
 mod record;
+mod select;
 pub mod sim;
 mod traced;
 
+pub use atlas_flash_outcome::{
+    Absent, Deaf, Expect, MAX_TIERS, Outcome, Party, PortPath, PortPathError, Reason, Refused,
+    Stop, TimedOut, UsbId,
+};
 pub use bus::{
     InterfaceMatch, Scan, Skipped, UsbBus, await_device, find_by_interface_string, open_interface,
 };
 pub use error::UsbError;
 pub use gauge::{Gauges, Live};
 pub use hotplug::{HotplugEvent, Watch, spawn_watch, watch_usb};
+pub use io::UsbIdMatch;
 pub use io::{
     BulkRead, BulkWrite, DeviceSummary, EndpointDirection, EndpointKind, EndpointSummary, Halves,
-    InterfaceSummary, OpenOptions, Timeouts, UsbId, UsbIo,
+    InterfaceSummary, OpenOptions, Timeouts, UsbIo,
 };
 pub use link::{
     BlockingReader, BlockingWriter, Link, LinkOptions, LinkRead, LinkReader, LinkWrite, LinkWriter,
@@ -40,4 +46,5 @@ pub use link::{
 };
 pub use nusb_backend::NusbBus;
 pub use record::{Record, Transfer};
+pub use select::{Opened, at_port, observe, observe_stop, open_among, open_expected};
 pub use traced::{Recorder, Sink, Traced};

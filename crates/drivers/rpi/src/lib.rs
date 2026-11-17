@@ -24,6 +24,7 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
+use atlas_usb::UsbIdMatch;
 use atlas_usb::{DeviceSummary, UsbBus, UsbError, UsbId};
 
 /// The family every boot ROM board belongs to.
@@ -133,6 +134,7 @@ impl RpiDriver {
         boot_device(
             self.bus.as_ref(),
             &device.address,
+            rom.usb,
             rom.chip,
             flasher,
             &self.config.settings,
@@ -147,6 +149,15 @@ impl RpiDriver {
 fn driver_error(error: RpiBootError) -> DriverError {
     match error {
         RpiBootError::Cancelled => DriverError::Cancelled,
+        // The link stopped with a typed observation: deaf, absent, refused or timed out.
+        RpiBootError::Stop(stop) => DriverError::Flash(stop),
+        // The boot ROM refused the second stage with its status code.
+        RpiBootError::RomRefused(code) => {
+            DriverError::Flash(atlas_usb::Outcome::Refused(atlas_usb::Refused {
+                by: atlas_usb::Party::Device,
+                reason: atlas_usb::Reason::Code(code as u32),
+            }))
+        }
         RpiBootError::Usb(UsbError::Access { message, fix }) => {
             DriverError::Incompatible(format!("{message} {fix}"))
         }
@@ -231,5 +242,36 @@ impl Driver for RpiDriver {
                 "Put the flasher image's boot files where Atlas can find them.",
             ),
         }]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rom_refusal_is_a_device_refusal_with_its_code() {
+        let error = driver_error(RpiBootError::RomRefused(0x42));
+        assert_eq!(
+            error,
+            DriverError::Flash(atlas_usb::Outcome::Refused(atlas_usb::Refused {
+                by: atlas_usb::Party::Device,
+                reason: atlas_usb::Reason::Code(0x42),
+            }))
+        );
+    }
+
+    #[test]
+    fn a_bus_stop_keeps_its_observed_case() {
+        let port: atlas_usb::PortPath = "1-2".parse().unwrap();
+        let stop = atlas_usb::Outcome::Absent(atlas_usb::Absent {
+            port,
+            looked_for: None,
+            during: "the second stage".into(),
+            waited: std::time::Duration::from_secs(1),
+            may_have_applied: true,
+        });
+        let error = driver_error(RpiBootError::Stop(stop.clone()));
+        assert_eq!(error, DriverError::Flash(stop));
     }
 }

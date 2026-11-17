@@ -22,6 +22,8 @@ pub enum FastbootError {
     ImageTooLarge { size: u64, max: u64 },
     /// `boot` was called before an image was downloaded.
     NotStaged,
+    /// The port was not the device's: absent, refused (another identity), or silent.
+    Stop(atlas_usb::Stop),
 }
 
 impl fmt::Display for FastbootError {
@@ -38,6 +40,7 @@ impl fmt::Display for FastbootError {
                 "the image is {size} bytes, but the device takes at most {max} bytes per download"
             ),
             Self::NotStaged => f.write_str("nothing was downloaded: download an image before boot"),
+            Self::Stop(stop) => write!(f, "{stop}"),
         }
     }
 }

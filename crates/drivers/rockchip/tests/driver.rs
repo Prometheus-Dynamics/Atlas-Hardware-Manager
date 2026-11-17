@@ -125,17 +125,19 @@ async fn the_device_is_still_identified_after_the_usbplug_re_enumerates() {
         LOADER_POLYNOMIALS[0],
     );
     let loader = Loader::parse(&file).unwrap();
-    let mut io = run_usbplug(
+    let mut opened = run_usbplug(
         &sim,
-        LOCATION,
+        &LOCATION.parse().unwrap(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         std::time::Duration::from_secs(10),
     )
     .await
+    .into_result()
     .unwrap();
-    ready(io.as_mut()).await.unwrap();
+    ready(opened.io.as_mut()).await.unwrap();
 
     let identity = driver.identify(&candidate).await.unwrap();
     assert_eq!(identity.state, DeviceState::BootRom);

@@ -27,7 +27,7 @@ use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 
-use crate::call::guarded;
+use crate::call::{CallError, guarded};
 use crate::claims::{DeviceClaim, DeviceHolds};
 use crate::{Backoff, Event, Events};
 
@@ -59,6 +59,14 @@ pub trait JobKind: Send + Sync {
     /// installs, matching a board description). Such a job refuses, at submit, a device whose key
     /// is a node's Orion fingerprint. Default `false`: any device will do.
     fn needs_board_identity(&self) -> bool {
+        false
+    }
+
+    /// Whether a step may write to a device (a flash, a start, a boot). A step that
+    /// writes and is dropped by the step limit, or panics, has an outcome that is
+    /// not known: the job ends as unknown and the step is not tried again. Default
+    /// `false`: a dropped read-only step is retried on backoff, as before.
+    fn writes(&self, _step: &str) -> bool {
         false
     }
 
@@ -612,6 +620,7 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
         };
         let step = job.steps[job.completed].clone();
         let claim = job.claim.clone();
+        let writes = kind.writes(&step);
         inner.status(id, JobStatus::Running).await;
 
         let outcome = tokio::select! {
@@ -631,6 +640,22 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
                 if let Some(job) = inner.set(id, |job| job.completed += 1) {
                     inner.announce(job).await;
                 }
+            }
+            // A writing step dropped by the step limit or a panic: whatever it sent may have
+            // reached the device, so its outcome is not known. It is not tried again.
+            Some(Err(error @ (CallError::TimedOut(_) | CallError::Panicked(_)))) if writes => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Unknown {
+                            reason: format!(
+                                "{error}; the step may have written to the device, so its outcome is unknown"
+                            ),
+                            checking: None,
+                        },
+                    )
+                    .await;
+                return;
             }
             Some(Err(error)) if error.is_unknown() => {
                 inner
