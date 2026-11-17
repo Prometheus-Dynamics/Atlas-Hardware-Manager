@@ -31,7 +31,10 @@
 //! - [`BoardActions::cancel`] asks a run to stop. Asking again after it has ended changes
 //!   nothing, so it may be made again.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -91,6 +94,43 @@ pub struct Progress {
     pub percent: Option<u8>,
     /// What the action is doing now, in its own words.
     pub message: String,
+}
+
+thread_local! {
+    /// The attachments this session's thread keeps between polls, one per run being followed: a run's result
+    /// reaches the attachment that is held, so a follow attaches once and then waits on that attachment. Each
+    /// entry carries the session it was made on; a lost session makes it stale, and `take_held` drops it.
+    static HELD: RefCell<BTreeMap<u64, (u64, Run)>> = RefCell::new(BTreeMap::new());
+}
+
+/// The held attachment for `call`, if it was made on `session`. Taking it removes it from the store.
+fn take_held(call: u64, session: u64) -> Option<Run> {
+    HELD.with(|held| match held.borrow_mut().remove(&call) {
+        Some((kept, run)) if kept == session => Some(run),
+        _ => None,
+    })
+}
+
+/// Keeps `run` as the held attachment for `call` on `session`.
+fn put_held(call: u64, session: u64, run: Run) {
+    HELD.with(|held| {
+        held.borrow_mut().insert(call, (session, run));
+    });
+}
+
+/// Attaches to run `call`: by its handle when the node named one, else by its number.
+fn attach(orion: &orion::Orion, call: u64, known: Option<RunHandle>) -> Result<Run, OrionError> {
+    Ok(match known {
+        Some(handle) => orion.attach_handle(handle)?,
+        None => orion.attach(call)?,
+    })
+}
+
+/// What a stop saw on the attachment that asked: the run's own end, a refusal, or no end within the bound.
+enum Stopped {
+    Ended(Finished),
+    Refused(CoreError, String),
+    Quiet,
 }
 
 /// The board's actions, through one node's session.
@@ -239,6 +279,7 @@ impl BoardActions {
                     name: started.clone(),
                     kind,
                     handle: Arc::new(Mutex::new(None)),
+                    attaches: Arc::new(AtomicU32::new(0)),
                 };
                 // The handle comes with the node's started frame: wait for it, briefly. A refusal or
                 // a silent node leaves it unknown; the follow learns it later, or it stays unknown.
@@ -312,7 +353,8 @@ impl BoardActions {
         // following that number on the new session resumes it; the run is never started again.
         loop {
             let known = issued.handle();
-            let same_session = self.handle.session() == issued.session;
+            let session = self.handle.session();
+            let same_session = session == issued.session;
             // Never by bare number across a session change: the outcome is unknown instead.
             if !may_use_number(known.is_some(), same_session) {
                 return Err(ActionError::Unconfirmed {
@@ -322,17 +364,24 @@ impl BoardActions {
                 });
             }
             let learned = issued.clone();
+            let attaches = issued.attaches.clone();
             let seen = self
                 .handle
                 .with_client(move |orion| {
-                    let mut run = match known {
-                        Some(handle) => orion.attach_handle(handle)?,
-                        None => orion.attach(call)?,
+                    let mut run = match take_held(call, session) {
+                        Some(run) => run,
+                        None => {
+                            attaches.fetch_add(1, AtomicOrdering::SeqCst);
+                            attach(orion, call, known)?
+                        }
                     };
                     learned.learn(&run);
                     match run.wait(POLL) {
                         Ok(update) => {
                             learned.learn(&run);
+                            if !matches!(update, Some(Update::Finished(_))) {
+                                put_held(call, session, run);
+                            }
                             Ok(Seen::of(update))
                         }
                         Err(ClientError::Refused { error, detail }) => {
@@ -430,20 +479,25 @@ impl BoardActions {
         }
     }
 
-    /// Asks detached run `call` to stop. How it ended still comes from [`BoardActions::follow`]:
-    /// a cancel that was sent is not yet a cancel that took effect, so the caller checks.
-    ///
-    /// Retry: asking a run that has ended changes nothing, so a cancel may be sent again.
+    /// Asks detached run `call` to stop, and waits up to `bound` for the run's own end on the attachment that
+    /// asked (the held one when this session follows the run): no second attachment is made to see the end.
+    /// `Ok(Ok(done))` / `Ok(Err(..))` is how the run ended (a cancel that took effect is `Err(Cancelled)`);
+    /// `Ok(Err(Unknown))` is no end within `bound`.
     ///
     /// # Errors
     ///
-    /// [`ActionError::Lost`] when the session did not carry the request.
-    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+    /// [`ActionError::Lost`] when the session did not carry the request, and
+    /// [`ActionError::Unconfirmed`] for a run from an earlier session with no handle (nothing is sent).
+    pub async fn stop(
+        &self,
+        issued: &Issued,
+        bound: Duration,
+    ) -> Result<Result<Done, ActionError>, ActionError> {
         let call = issued.call;
         let known = issued.handle();
-        // A number from an earlier session may name another run on the board: with no handle it is
-        // not sent a cancel, since a cancel to the wrong run stops someone else's work.
-        if !may_use_number(known.is_some(), self.handle.session() == issued.session) {
+        let session = self.handle.session();
+        // A number from an earlier session may name another run on the board: with no handle it is not sent.
+        if !may_use_number(known.is_some(), session == issued.session) {
             return Err(ActionError::Unconfirmed {
                 call,
                 reason: NO_HANDLE_REASON.to_owned(),
@@ -451,37 +505,67 @@ impl BoardActions {
             });
         }
         let learned = issued.clone();
-        let refused: Option<(CoreError, String)> = self
+        let attaches = issued.attaches.clone();
+        let stopped = self
             .handle
             .with_bridge(move |orion| {
-                let mut run = match known {
-                    Some(handle) => orion.attach_handle(handle)?,
-                    None => orion.attach(call)?,
+                let mut run = match take_held(call, session) {
+                    Some(run) => run,
+                    None => {
+                        attaches.fetch_add(1, AtomicOrdering::SeqCst);
+                        attach(orion, call, known)?
+                    }
                 };
                 learned.learn(&run);
-                // A handle the node no longer knows is refused on the attach, which comes back on the
-                // next read: a cancel is sent only when that read does not refuse it.
-                match run.wait(CANCEL_CHECK) {
-                    Ok(_) => {}
-                    Err(ClientError::Refused { error, detail }) => {
-                        return Ok(Some((error, detail)));
-                    }
-                    Err(error) => return Err(OrionError::Client(error)),
-                }
                 run.cancel().map_err(OrionError::Client)?;
-                Ok(None)
+                let deadline = Instant::now() + bound;
+                loop {
+                    match run.wait(POLL) {
+                        Ok(Some(Update::Finished(finished))) => {
+                            return Ok(Stopped::Ended(finished));
+                        }
+                        Ok(_) => {}
+                        Err(ClientError::Refused { error, detail }) => {
+                            return Ok(Stopped::Refused(error, detail));
+                        }
+                        Err(error) => return Err(OrionError::Client(error)),
+                    }
+                    if Instant::now() >= deadline {
+                        return Ok(Stopped::Quiet);
+                    }
+                }
             })
-            .await
-            .map_err(|error| match error {
-                SessionError::Gone(reason) => ActionError::Lost {
+            .await;
+        let stopped = match stopped {
+            Ok(stopped) => stopped,
+            Err(SessionError::Gone(reason)) => {
+                return Err(ActionError::Lost {
                     call,
                     reason: Failure::other(reason),
-                },
-                SessionError::Failed(reason) => ActionError::Lost { call, reason },
-            })?;
-        match refused {
-            None => Ok(()),
-            Some((error, detail)) => Err(cancel_refusal(call, error, detail)),
+                });
+            }
+            Err(SessionError::Failed(reason)) => return Err(ActionError::Lost { call, reason }),
+        };
+        Ok(match stopped {
+            Stopped::Ended(finished) => ended(finished),
+            Stopped::Refused(error, detail) => Err(cancel_refusal(call, error, detail)),
+            Stopped::Quiet => Err(ActionError::Unknown {
+                name: issued.name.clone(),
+                reason: Failure::other("the run did not end within the bound"),
+            }),
+        })
+    }
+
+    /// Asks detached run `call` to stop. Its end comes from [`BoardActions::stop`], which waits for it; this
+    /// returns once the cancel is sent.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::stop`], except that a run that ends (cancelled or otherwise) is not an error here.
+    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+        match self.stop(issued, Duration::ZERO).await? {
+            Ok(_) | Err(ActionError::Cancelled(_) | ActionError::Unknown { .. }) => Ok(()),
+            Err(other) => Err(other),
         }
     }
 
@@ -701,6 +785,9 @@ pub struct Issued {
     name: String,
     kind: RunKind,
     handle: Arc<Mutex<Option<RunHandle>>>,
+    /// How many attachments were made to this run (shared by every clone). A followed run is attached once per
+    /// session, and again once after each session loss.
+    attaches: Arc<AtomicU32>,
 }
 
 impl Issued {
@@ -708,6 +795,12 @@ impl Issued {
     #[must_use]
     pub const fn call(&self) -> u64 {
         self.call
+    }
+
+    /// How many attachments were made to this run so far (see the field).
+    #[must_use]
+    pub fn attaches(&self) -> u32 {
+        self.attaches.load(AtomicOrdering::SeqCst)
     }
 
     /// The run's handle, once the node has named it. `None` until then, and for a node below the
@@ -819,6 +912,7 @@ mod tests {
             name: "install_file".to_owned(),
             kind: RunKind::Generic,
             handle: Arc::new(Mutex::new(None)),
+            attaches: Arc::new(AtomicU32::new(0)),
         }
     }
 

@@ -1056,3 +1056,103 @@ async fn a_run_the_node_ends_at_its_deadline_says_which_action_and_bound_in_plai
         "the plain line names the action and its bound"
     );
 }
+
+#[tokio::test]
+async fn a_followed_run_is_attached_once_while_its_session_lasts_and_the_cancel_uses_that_attachment()
+ {
+    // A follow holds its attachment between polls: while the session lasts, the run is attached once, however
+    // many polls there are. A cancel then uses the held attachment and sees the end on it.
+    let rig = Rig::start("attach-once", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let follower = tokio::spawn({
+        let board = rig.board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        issued.attaches(),
+        1,
+        "a followed run is attached once while its session lasts, not on every poll"
+    );
+    follower.abort();
+    let _ = follower.await;
+    let ended = rig
+        .board
+        .stop(&issued, Duration::from_secs(5))
+        .await
+        .expect("the stop reaches the board");
+    assert!(
+        matches!(ended, Err(ActionError::Cancelled(_))),
+        "the cancel's end is seen on the attachment that asked: {ended:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_lost_session_costs_exactly_one_reattach_when_the_run_is_followed_again() {
+    // Once per session loss: the follow ends with Lost, and following again makes exactly one more attachment.
+    let rig = Rig::start("attach-lost", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let follower = tokio::spawn({
+        let board = rig.board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1000)).await;
+    assert_eq!(issued.attaches(), 1, "the first session attaches once");
+    follower.abort();
+    let _ = follower.await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let followed = tokio::spawn({
+        let board = board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1000)).await;
+    assert_eq!(
+        issued.attaches(),
+        2,
+        "one attach for the first session and exactly one after the loss"
+    );
+    followed.abort();
+    let _ = followed.await;
+    let ended = board
+        .stop(&issued, Duration::from_secs(5))
+        .await
+        .expect("the stop reaches the board");
+    assert!(matches!(ended, Err(ActionError::Cancelled(_))), "{ended:?}");
+}

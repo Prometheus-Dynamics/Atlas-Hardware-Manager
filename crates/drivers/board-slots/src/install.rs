@@ -158,6 +158,8 @@ struct Run {
     /// answers, then `Some(Some(call))` or `Some(None)` when it did not start. A cancel waits on it,
     /// so a run the board started while the cancel came in is still stopped.
     starting: Option<watch::Receiver<Option<Option<Issued>>>>,
+    /// The install is following its run (an attachment is in use): a cancel waits for this to end first.
+    following: bool,
     stage: Option<Stage>,
     /// The typed refusal the install ended with, when the board or the session gave one (kind,
     /// code and text: see [`Failure`]). `None` when the install did not end by a refusal.
@@ -669,7 +671,9 @@ impl InstallKind {
         {
             None
         } else {
+            self.with(&spec.nonce, |run| run.following = true);
             let followed = board.follow(&call, slot_id_answer, on_progress).await;
+            self.with(&spec.nonce, |run| run.following = false);
             if let Err(error) = &followed
                 && no_answer(error)
             {
@@ -1203,6 +1207,17 @@ impl SlotInstalls {
         if !self.jobs.cancel(job) {
             return false;
         }
+        // The install's own follow must end before the cancel's attachment is made: no later attachment after the end.
+        let _ = time::timeout(CANCEL_CONFIRM, async {
+            while self
+                .kind
+                .with_run(&spec.nonce, |run| Some(run.following))
+                .unwrap_or(false)
+            {
+                time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await;
         let call = match self.kind.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => Some(call),
             // A start in flight: wait for the board's answer, so a run it started is stopped too.
@@ -1256,23 +1271,16 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, issued: &Issued) -> Canc
         ));
     };
     let board = BoardActions::new(handle);
-    if let Err(error) = board.cancel(issued).await {
-        return CancelState::NotConfirmed(format!(
+    // One attachment asks the cancel and waits for the run's end on it: no second attachment to see it.
+    match board.stop(issued, CANCEL_CONFIRM).await {
+        Err(error) => CancelState::NotConfirmed(format!(
             "the cancel did not reach the board ({error}); install run {call} may still be going"
-        ));
-    }
-    match time::timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {}))
-        .await
-        .map(|result| result.map(Followed::into_done))
-    {
+        )),
         Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
         Ok(Ok(_)) => {
             CancelState::NotConfirmed("the install finished before the cancel took effect".into())
         }
         Ok(Err(other)) => CancelState::NotConfirmed(other.to_string()),
-        Err(_) => {
-            CancelState::NotConfirmed(format!("the board did not confirm that run {call} stopped"))
-        }
     }
 }
 

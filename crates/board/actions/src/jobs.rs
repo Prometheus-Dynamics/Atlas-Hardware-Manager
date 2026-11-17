@@ -78,6 +78,9 @@ struct Tracked {
     call: Option<Issued>,
     /// The start is being sent, and its answer (the run number) is not known yet.
     starting: bool,
+    /// The step is following the run (an attachment is in use): a cancel waits for this to end first, so no
+    /// later attachment is made after the run's end.
+    following: bool,
     progress: Option<Progress>,
     cancel: Option<CancelState>,
     /// The hold on the board for this run. Taken when the step starts, kept while the step waits
@@ -131,6 +134,12 @@ impl ActionKind {
         self.map()
             .get(nonce)
             .is_some_and(|tracked| tracked.starting)
+    }
+
+    fn is_following(&self, nonce: &str) -> bool {
+        self.map()
+            .get(nonce)
+            .is_some_and(|tracked| tracked.following)
     }
 
     fn progress_of(&self, nonce: &str) -> Option<Progress> {
@@ -224,11 +233,13 @@ impl JobKind for ActionKind {
                 "the hold on the board could not be taken".into(),
             ));
         };
+        self.update(&nonce, |tracked| tracked.following = true);
         let followed = board
             .follow_while_held(&call, any_answer, &hold, |progress| {
                 self.update(&nonce, |tracked| tracked.progress = Some(progress.clone()));
             })
             .await;
+        self.update(&nonce, |tracked| tracked.following = false);
         match followed {
             Ok(Followed::Confirmed(_)) => {
                 self.forget(&spec.nonce);
@@ -374,6 +385,13 @@ impl ActionJobs {
         if !self.jobs.cancel(id) {
             return false;
         }
+        // The step's own follow must end before the cancel's attachment is made: no later attachment after the end.
+        let _ = timeout(CANCEL_CONFIRM, async {
+            while self.kind.is_following(&nonce) {
+                time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
         let state = match call {
             Some(call) => self.stop_on_board(&step.address, &call).await,
             None if settled => CancelState::NoRun,
@@ -400,23 +418,16 @@ impl ActionJobs {
             ));
         };
         let board = BoardActions::new(handle);
-        if let Err(error) = board.cancel(issued).await {
-            return CancelState::NotConfirmed(format!(
+        // One attachment asks the cancel and waits for the run's end on it: no second attachment to see it.
+        match board.stop(issued, CANCEL_CONFIRM).await {
+            Err(error) => CancelState::NotConfirmed(format!(
                 "the cancel did not reach the board ({error}); run {call} may still be going"
-            ));
-        }
-        match timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {})).await {
-            Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
-            Ok(Ok(Followed::Reconnected(_))) => CancelState::NotConfirmed(format!(
-                "the outcome of run {call} is unknown after a reconnect"
             )),
-            Ok(Ok(Followed::Confirmed(_))) => {
+            Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
+            Ok(Ok(_)) => {
                 CancelState::NotConfirmed("the run finished before the cancel took effect".into())
             }
             Ok(Err(other)) => CancelState::NotConfirmed(other.to_string()),
-            Err(_) => CancelState::NotConfirmed(format!(
-                "the board did not confirm that run {call} stopped"
-            )),
         }
     }
 
