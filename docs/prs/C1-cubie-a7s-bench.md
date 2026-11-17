@@ -165,3 +165,5 @@ Rule (Z2's data_size_rule, check-devices.sh; Lemnos enforces it at install.rs:69
 Boot size changed from 79 MiB to 128 MiB: three bay sets (docs/slots.md:1054) of these bays do not fit 79 MiB. The first 79 MiB number was the Raze's, and it is a fact of the Raze's bays, not this board's.
 
 Flags (as on Z2's board): the slot root image has no enforced cap. Whether a pushed bundle is spooled on the data partition is unknown; if it is, it adds a term to the minimum. The SD card's smallest supported size is 8 GB here (7.4 GiB usable); it is not stated in the tree, and the coordinator ruled on it.
+
+Bay sizes: the kernel bay of 32 MiB is a guess for the A733 Image; the first A7S build's Image size checks it. An over-size kernel is refused by name at install (Lemnos install.rs:697-698), not silently broken.
