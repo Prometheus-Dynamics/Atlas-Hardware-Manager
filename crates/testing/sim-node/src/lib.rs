@@ -43,6 +43,7 @@ pub mod model;
 pub mod names;
 #[cfg(target_os = "linux")]
 pub mod node;
+pub mod ports;
 #[cfg(target_os = "linux")]
 pub mod readings;
 pub mod script;

@@ -1345,3 +1345,18 @@ fn a_socket_path_too_long_for_a_unix_socket_is_refused_at_start_naming_it() {
     assert!(error.contains(&long.display().to_string()), "{error}");
     assert!(!long.exists(), "nothing was made");
 }
+
+/// A node that names no port listens outside the OS ephemeral range, so an outgoing connect on the
+/// box cannot autobind the port while the node is stopped and a restart finds it gone (see
+/// `atlas_sim_node::ports`). Before the fix the node took its port from the ephemeral range.
+#[test]
+fn a_node_started_without_a_port_listens_outside_the_ephemeral_range() {
+    let dir = atlas_sim_node::socket::node_dir("sim-port-range").expect("a node directory");
+    let node = SimNode::start_with(&dir, &Kind::default(), None).expect("the node starts");
+    let port = node.network().port();
+    let range = atlas_sim_node::ports::ephemeral_range().unwrap_or((32768, 60999));
+    assert!(
+        port < range.0 || port > range.1,
+        "the node listens on {port}, inside the ephemeral range {range:?}"
+    );
+}
