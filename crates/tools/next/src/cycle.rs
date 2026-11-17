@@ -13,7 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use atlas_actions::{Action, BoardActions, Reported};
+use atlas_actions::BoardActions;
 use atlas_board_slots::trial_updates::{info_action, read as read_trial_updates};
 use atlas_board_slots::{BoardSlots, Ended, Follower, SlotError, TrialStart, TrialUpdates};
 use atlas_session::Handle;

@@ -1,5 +1,5 @@
 # Orion's board image: package orion-bin (binary orion), run as three units from Orion's packaging at
-# 3dde304e396f5769d3aa25884b5a9ff5bd4b9180 (C54; the rev the workspace pins, provisional until the second
+# 8eaf3b84f8690606c5d5261ef6754e6613e542c6 (C54; the rev the workspace pins, provisional until the second
 # pin pair is announced: docs/prs/PINS-2.md). The comm core runs as orion-comm with group orion, never root
 # (orion-comm.service); node logic as orion (orion-node.service); each login is started by the login helper
 # (orion-login.socket and orion-login.service, which runs as root and is the only process that becomes another
@@ -18,7 +18,7 @@ description = "Orion: the orion binary as the board's comm core and node logic (
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
+ref = "8eaf3b84f8690606c5d5261ef6754e6613e542c6"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

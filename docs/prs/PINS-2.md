@@ -76,6 +76,20 @@ Orion 671d29d, next to Orion 3dde304. The coordinator approved building the cont
 Orion's own Lemnos dependency (its `shm-*` crates) moves with Orion's manifest from bded77a0 to b0a75d93.
 Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (the one-copy rule holds).
 
+## The pair (J12): Lemnos e9224a53 + Orion 8eaf3b8
+
+- Pins: `lemnos-slot-store` and the Lemnos components at `e9224a5378f772bab4c4beee3703beee9dd8a166` (e9224a53); Orion at `8eaf3b84f8690606c5d5261ef6754e6613e542c6` (8eaf3b8, J12 = bfff313 + M34/R1a/R2b, tested together). Never paired with any other Lemnos rev.
+- `origin/next` a4516d1b merged in.
+- `cargo update -p` for the Orion packages (43 at 8eaf3b8, one new: `orion-action-list`), `lemnos-slot-store` and the shm crates (`shm-ring`, `shm-ring-doorbell`, `shm-ring-time`, `shm-sample-time`, `shm-fdpass` move from b0a75d93 to e9224a53). Cargo.lock: 77 insertions, 53 deletions.
+- API changes the pair forced (compile level): **none**. `cargo check --workspace --all-targets --locked` passes with the pins alone. One warning, an unused import in `crates/tools/next/src/cycle.rs:16`, from an earlier refactor, is removed.
+- The three handle tests are un-ignored (`crates/board/actions/tests/actions.rs`).
+- **Step 7c**: both `cycle` tests pass with the pair (`a_full_run_passes_every_step_and_writes_the_scorecard`, `without_the_boot_field_the_boot_id_is_recorded_as_not_checked`). The stub now issues handles through the real action list, and the refusal comes back by handle.
+- **Gate (`GATE_EXIT=101`)**: 10 tests fail, in three binaries:
+  - `atlas-actions` (`tests/actions.rs`): `a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel`, `a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it`, `a_handle_from_before_a_node_logic_restart_is_refused_as_restarted`, `a_run_started_on_an_earlier_session_is_not_cancelled_blind`, `a_session_lost_during_a_long_action_is_followed_and_never_started_again`, `the_exact_collision_a_stored_handle_never_returns_the_newer_runs_answer`, `until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer`.
+  - `atlas-board-slots` (`tests/slots.rs`): `cancel_stops_the_install_on_the_board_and_leaves_no_slot`, `a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides`.
+  - `atlas-sim-node` (`tests/sim_node.rs`): `a_detached_install_survives_its_starter_and_can_be_attached_to_again`.
+  - Observed: bare-number and handle attaches of sim-scripted runs return `no such run` (code 8, NotFound) from the real list. Cause not yet diagnosed; it is not the cycle path.
+
 ## Detached-run deadlines, per kind (one table in code: `crates/board/actions/src/bounds.rs`)
 
 A real node refuses a detached run with no deadline (`NoDeadline`), and it ends a run at its deadline as `TimedOut`

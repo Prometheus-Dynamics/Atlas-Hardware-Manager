@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnos-orion, built from Lemnos next f14b833e (BB1b; with Orion 3dde304).
+# One Lemnos cargo package: lemnos-orion, built from Lemnos next e9224a53 (BB1b; with Orion 8eaf3b8).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnos-orion --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos bridge to Orion, lemnos-orion (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f14b833eb2adf911225aa54199f25f93fb4cb89c"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "e9224a5378f772bab4c4beee3703beee9dd8a166"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

@@ -909,7 +909,6 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
 // run here. They are ignored, not deleted, and must be un-ignored before PINS-2 leaves draft.
 
 #[tokio::test]
-#[ignore = "needs Orion's stub to issue run handles (asked 2026-11-16)"]
 async fn the_exact_collision_a_stored_handle_never_returns_the_newer_runs_answer() {
     // Session 1 runs A (number 2) and it answers; the session is lost; session 2 starts B, which reuses
     // number 2 and stalls. Following A's stored handle must return A's own answer or RunGone, never B's.
@@ -961,7 +960,6 @@ async fn the_exact_collision_a_stored_handle_never_returns_the_newer_runs_answer
 }
 
 #[tokio::test]
-#[ignore = "needs Orion's stub to issue run handles (asked 2026-11-16)"]
 async fn a_handle_from_before_a_node_logic_restart_is_refused_as_restarted() {
     // A detached run is stalled; node logic restarts; its handle names a run that no longer exists.
     let rig = Rig::start("handle-restart", &lemnos_kind()).await;
@@ -988,7 +986,6 @@ async fn a_handle_from_before_a_node_logic_restart_is_refused_as_restarted() {
 }
 
 #[tokio::test]
-#[ignore = "needs Orion's stub to issue run handles (asked 2026-11-16)"]
 async fn a_stale_handle_cancel_is_refused_and_the_newer_run_keeps_running() {
     // A is stalled on session 1; the session is lost; B reuses the number on session 2 and stalls.
     // A cancel by A's stale handle must be refused, and B must keep running.
