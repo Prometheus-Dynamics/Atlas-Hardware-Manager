@@ -66,6 +66,14 @@ size = "82837504"
 # p2, the data partition: Linux (0x83), the slots and the slot state. The LAST partition, with no size here: it
 # is the content's size on the image (Lemnos writes it offline), and the board grows it to the disk's end on its
 # first boot (the owner of that step is Lemnos's: dev's data-setup is not carried).
+# First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
+# thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
+# continues ungrown). At the pinned Lemnos 31e0f736 the resize still runs synchronously inside the 2 s call deadline.
+# Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
+# measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes
+# can be much slower, so a synchronous resize can overrun 2 s even on a 64 GB card.
+# Source: Lemnos docs/slots.md in the GROW2 commit (not yet merged; Atlas cites it by rev once it is pinned).
+# The eMMC here is 14,910 MiB (see [disk] above). Stated again in lemnos-board.toml, at the system-slots device.
 [[partitions]]
 name = "data"
 role = "data"
