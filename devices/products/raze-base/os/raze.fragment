@@ -83,15 +83,19 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 #   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
 # Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
 # turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
-# os/post-build.sh removes dbus from the installed tree and fails the build if anything still needs it.
+# os/post-fakeroot.sh (staged, wired at the Gaia pin) removes dbus after makedevs and preset-all, and fails the build if anything still needs it.
 # BR2_PACKAGE_SYSTEMD_RESOLVED is not set
 # BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
 # BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
 # BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
 
-# The post-build script: the dbus removal and its checks (os/post-build.sh, PR B41). Buildroot runs it as
+# The post-build script: the wait-online mask (os/post-build.sh; the dbus removal moved to os/post-fakeroot.sh). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
+# post-build.sh (wired) places the wait-online mask, before preset-all. It does NOT remove D-Bus.
+# STAGED, NOT WIRED (PR RAZE-DBUS-HELPER): os/post-fakeroot.sh removes D-Bus after makedevs and preset-all (the whole list, the
+# helper included, and every check). It is named by BR2_ROOTFS_POST_FAKEROOT_SCRIPT in the commit that pins the Gaia rev whose
+# rootfs is the fakeroot-stage result. Until that pin the image keeps D-Bus (as Gaia's timing copy does).
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/

@@ -1,0 +1,27 @@
+# The raze-base image's preset (PR RAZE-DBUS-HELPER): the units preset-all enables, and nothing else.
+#
+# OWNERSHIP, one owner per unit: a unit a component declares in [[services]] is enabled by Gaia's services layer
+# (gaia.tree.services, Gaia crates/nodes/tree/src/services.rs:25-103: a layer of symlinks in etc/systemd/system/*.wants,
+# merged over the OS root, never written into Buildroot's target). So lemnosd, lemnos-orion, orion-comm, orion-node,
+# lemnos0-address, systemd-networkd and serial-getty@ttyGS0 are NOT listed here: the components own them
+# (components/lemnos/component.toml:74-80, components/orion/component.toml:102-108,
+# components/raze-base-files/component.toml:39-53). The build refuses a unit listed both here and in [[services]].
+#
+# Read by `systemctl preset-all` in the fakeroot stage (package/systemd/systemd.mk:836, fs/common.mk:181). Systemd 258.7 reads
+# the presets of /etc and /usr/lib merged by file name; the FIRST matching line decides (install.c:3484-3520), and a unit no
+# line names is ENABLED (install.c:3504). So the last line disables the rest.
+# INERT TODAY: Gaia takes the root from output/target, where presets never run; it takes effect with Gaia's fixed root.
+
+# -- systemd-networkd's Also= units (systemd-258.7 units/systemd-networkd.service.in:59 and :64). networkd itself is owned by
+#    raze-base-files [[services]]; these are listed so that preset-all enables exactly what networkd's [Install] links.
+enable systemd-networkd.socket            # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:59)
+enable systemd-networkd-varlink.socket    # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:59)
+enable systemd-network-generator.service  # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:64)
+
+# -- the mask's unit: masked by post-build.sh, so NOT counted as enabled (a masked unit's link is refused). Listed so that
+#    preset-all's default (enable) cannot apply to it. Its [Install] Also= from networkd (units/systemd-networkd.service.in:70)
+#    would link it; whether the mask refuses that is NEEDS-THE-BUILD. The built-root rule expects it NOT enabled.
+disable systemd-networkd-wait-online.service
+
+# -- everything else: off (no rule names it, so preset-all's default would enable it).
+disable *
