@@ -30,6 +30,13 @@ dbg_macro = "deny"
 todo = "deny"
 undocumented_unsafe_blocks = "deny"
 
+# Dev and test builds keep file and line tables only (backtraces still name file and line), not full debug info. Measured
+# interleaved on the gate PC, 2026-11-18: cold build 143/100 s -> 70/73 s, target dir 6.0 -> 3.0 GB, test runs unchanged.
+# For a debugger session with local variables, build with CARGO_PROFILE_DEV_DEBUG=true. Debug assertions and overflow
+# checks are unchanged. Workspace opt-level 1 was measured too and gave nothing (the slow tests' work is in dependencies).
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
