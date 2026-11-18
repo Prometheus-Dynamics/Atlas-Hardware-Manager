@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas mockup: Flash a board</title>
+<link rel="stylesheet" href="atlas.css">
+
+</head>
+<body>
+<div class="app">
+<aside class="side"><div class="brand"><b>Atlas</b><span>next mockups</span></div><div class="sec up">Devices</div><a class="nav" href="devices.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z M10 4v3 M14 4v3 M10 17v3 M14 17v3 M4 10h3 M4 14h3 M17 10h3 M17 14h3"/></svg><span class="t">All devices</span></a><a class="nav" href="robot.html" style="--d:1"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14v11H5z M12 4v4 M9 13h.01 M15 13h.01 M9 16h6"/></svg><span class="t">Practice field</span><span class="meta">robot</span></a><a class="nav" href="systemcore.html" style="--d:2"><span class="dot warn"></span><span class="t">sc-practice</span></a><a class="nav" href="board.html" style="--d:3"><span class="dot info"></span><span class="t">cam-left</span></a><a class="nav" href="board.html" style="--d:3"><span class="dot info"></span><span class="t">cam-right</span></a><a class="nav" href="board.html" style="--d:1"><span class="dot ok"></span><span class="t">bench-rock</span></a><a class="nav" href="flash.html" style="--d:1"><span class="dot acc"></span><span class="t">bench-pi</span></a><div class="sec up">Offline</div><a class="nav" href="board.html" style="--d:1"><span class="dot off"></span><span class="t">old-zero</span></a><div class="sec up">Never seen</div><a class="nav" href="devices.html" style="--d:1"><span class="dot ring"></span><span class="t">k230-lab</span></a><div class="sec up">Disks</div><a class="nav" href="flash-disk.html" style="--d:1"><span class="dot info"></span><span class="t">SD card 64 GB</span></a><div class="sec up">Tools</div><a class="nav on" href="flash.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="t">Flash a board</span></a><a class="nav" href="settings.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2 2 M16.4 16.4l2 2 M5.6 18.4l2-2 M16.4 7.6l2-2"/></svg><span class="t">Settings</span></a></aside>
+<div class="main">
+<header class="top"><h1>Flash a board</h1><span class="crumb">Atlas /</span><div class="grow"><span class="chip acc"><span class="dot acc"></span>Rockchip maskrom</span><span class="chip neu">bench-pi</span><span class="chip err">failed at loader</span></div><div class="right"></div></header>
+<div class="body" style="grid-template-columns:260px minmax(0,1fr); grid-template-rows:minmax(0,1fr);">
+
+<section class="panel"><div class="ph"><h2>Steps</h2></div><div class="pb" style="padding:6px 12px"><div class="step done"><div class="mark">&#10003;</div><div style="min-width:0"><div class="st">Pick image</div><div class="sd">heliOS-2026.11.02-rock.img.xz · 412 MB</div></div></div><div class="step done"><div class="mark">&#10003;</div><div style="min-width:0"><div class="st">Board in boot ROM</div><div class="sd">Rockchip maskrom · USB 1-3</div></div></div><div class="step fail"><div class="mark">!</div><div style="min-width:0"><div class="st">Loader sent</div><div class="sd">no answer from the board after 7 tries</div></div></div><div class="step pend"><div class="mark">4</div><div style="min-width:0"><div class="st">Flasher image running</div><div class="sd">not started</div></div></div><div class="step pend"><div class="mark">5</div><div style="min-width:0"><div class="st">Writing as an ordinary update</div><div class="sd">not started</div></div></div><div class="step pend"><div class="mark">6</div><div style="min-width:0"><div class="st">First boot</div><div class="sd">not started</div></div></div></div><div class="subhead"><h2 class="up" style="margin:0;color:var(--fg-muted)">Recent flashes here</h2></div><div style="padding:2px 10px"><div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px"><div><b>bench-pi</b> <span class="faint">Nov 12 16:20</span></div><div><span class="chip ok"><span class="dot ok"></span>done</span></div></div><div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px"><div><b>old-zero</b> <span class="faint">Nov 11 10:05</span></div><div><span class="chip ok"><span class="dot ok"></span>done</span></div></div><div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px"><div><b>bench-pi</b> <span class="faint">Nov 10 14:48</span></div><div><span class="chip err"><span class="dot err"></span>retried</span></div></div></div></section>
+<div style="display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0">
+  <section class="panel">
+    <div class="ph"><h2>Loader failed</h2><span class="grow"></span><span class="chip err"><span class="dot err"></span>Retrying</span></div>
+    <div class="pb" style="display:flex;flex-direction:column;gap:8px">
+      <div class="note err">The board in boot ROM did not answer the loader. Nothing was written. The board is still safe to flash.</div>
+      <dl class="kv"><dt>Attempts</dt><dd>7 so far, never gives up on its own</dd>
+        <dt>Last error</dt><dd>USB transfer timed out after 5 s</dd>
+        <dt>Backoff</dt><dd>5 s, capped at 10 s between tries</dd>
+        <dt>Next try</dt><dd>in 5 s</dd></dl>
+      <div class="bar err" style="height:4px"><i style="width:40%"></i></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap">
+        <button class="btn sm pri"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 11a7 7 0 1 0-2 5 M19 5v6h-6"/></svg>Retry now</button>
+        <button class="btn sm"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z"/></svg>Stop retrying</button>
+        <span class="sp"></span>
+        <button class="btn sm quiet"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h5"/></svg>Make support bundle</button>
+      </div>
+      <div class="faint" style="font-size:11px">Stop retrying is a manual off. Nothing starts again until you press Retry.</div>
+    </div>
+  </section>
+  <section class="panel">
+    <div class="ph"><h2>Log</h2><span class="grow"></span><span class="kicker">this flash only</span></div>
+    <div class="pb lines"><div class="ln"><span class="t">11:20:01</span><span class="lv-err">err</span><span>loader: attempt 7: USB transfer timed out after 5 s</span></div><div class="ln"><span class="t">11:19:56</span><span class="lv-err">err</span><span>loader: attempt 6: USB transfer timed out after 5 s</span></div><div class="ln"><span class="t">11:19:50</span><span class="lv-warn">warn</span><span>loader: attempt 5: no response, next try in 10 s</span></div><div class="ln"><span class="t">11:19:35</span><span class="lv-err">err</span><span>loader: attempt 4: USB transfer timed out after 5 s</span></div><div class="ln"><span class="t">11:19:12</span><span class="lv-warn">warn</span><span>loader: attempt 3: no response, next try in 5 s</span></div><div class="ln"><span class="t">11:18:58</span><span class="lv-info">info</span><span>usb: boot ID 2207:350b seen again on USB 1-3</span></div></div>
+  </section>
+</div>
+
+</div>
+</div>
+</div>
+</body>
+</html>
