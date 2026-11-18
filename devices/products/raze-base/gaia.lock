@@ -103,8 +103,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."raze.linux"]
 kind = "git"
 url = "https://github.com/raspberrypi/linux.git"
-ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
-commit = "53679a5788f7912272b412fd78029bccae6f2b1a"
+ref = "b005af6699cc67413be78028a201e87fe40dcb50"
+commit = "b005af6699cc67413be78028a201e87fe40dcb50"
 
 [source."raze.rpi-firmware"]
 kind = "git"

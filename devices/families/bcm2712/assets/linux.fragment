@@ -1,7 +1,7 @@
 # Every BCM2712 board. The flasher image has no kernel modules (its initramfs carries no
 # /lib/modules, PR B9/B14), so each option its lemnosd or Orion needs is built in (=y), not m.
 # Each line says why it is here; the dependencies each one forces are named beside it, checked
-# against the pinned kernel's Kconfig (raspberrypi/linux 53679a5, Linux 7.2.9) and bcm2712_defconfig.
+# against the pinned kernel's Kconfig (raspberrypi/linux b005af66, Linux 7.3.5) and bcm2712_defconfig.
 
 # -- USB gadget: lemnosd builds one configuration through configfs; Orion's link is FunctionFS --
 # CONFIG_USB_CONFIGFS: the gadget framework's configfs front end. Depends on USB_GADGET (=y in
@@ -33,7 +33,7 @@ CONFIG_MBOX_RP1=y
 
 # -- RP1 chain's top link (PR B16; Lemnos docs/kernel-config.md @818473f6, the reference SoC's MFD_RP1 row, verified) --
 # CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y, and the
-#   resolved Raze config (raspberrypi/linux 53679a5, Linux 7.2.9) keeps it =y. Set here so the chain does not depend
+#   resolved Raze config (raspberrypi/linux b005af66, Linux 7.3.5) keeps it =y. Set here so the chain does not depend
 #   on the defconfig's value alone. (PCI_MSI, which MFD_RP1 also needs: the resolved Raze config already has it =y
 #   without this fragment, so it is not set here.)
 CONFIG_MFD_RP1=y

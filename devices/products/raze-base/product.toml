@@ -73,7 +73,7 @@ recipe = "slot-boot"
 #                  smaller on disk and costs RAM and read time on the board.
 #  fragments       true: mkfs.erofs -Efragments, file tails and small files packed together, the same row. A kernel from 6.1.
 #  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
-#                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
+#                  Kernel check (this PR): the Raze kernel is raspberrypi/linux b005af66 (rpi-7.3.y, Linux 7.3.5, families/bcm2712
 #                  family.toml; NOT 6.12 as the brief said) so both floors are met, and raze.config has CONFIG_EROFS_FS_ZIP_LZMA=y,
 #                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at c0d084fa).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,

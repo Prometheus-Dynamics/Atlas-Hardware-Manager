@@ -1,8 +1,10 @@
 # BCM2712 (Raspberry Pi 5 SoC, CM5 modules): the target and the kernel source
 # every BCM2712 board shares. A board file extends this and keeps only what
 # differs (the Raze: its fragments, device trees, disk and flash methods).
-# Pinned as dev pins it: raspberrypi/linux rpi-7.2.y at 53679a5 (Linux 7.2.9,
-# kernel release 7.2.9-v8, 4 KiB pages; the suffix was "-v8-16k" from the defconfig until PR B25). Untested on board.
+# Pinned: raspberrypi/linux rpi-7.3.y at b005af66 (Linux 7.3.5, kernel release 7.3.5-v8, 4 KiB pages; the suffix was
+# "-v8-16k" from the defconfig until PR B25). Moved from rpi-7.2.y at 53679a5 (Linux 7.2.9) on 2026-11-18: rpi-7.2.y is
+# end-of-life (its head, 2026-11-06, says so) and Lemnos's Rust module is written against 7.3.5 (coordinator's ruling).
+# Untested on board.
 version = 1
 
 [target]
@@ -12,7 +14,7 @@ os = "linux"
 
 [sources.linux]
 git = "https://github.com/raspberrypi/linux.git"
-ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
+ref = "b005af6699cc67413be78028a201e87fe40dcb50"
 
 [kernel]
 source = "linux"
