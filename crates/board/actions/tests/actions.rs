@@ -903,3 +903,256 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
         other => panic!("the lapse is reported as a lapse, not {other:?}"),
     }
 }
+
+// The three handle tests below wait on Orion's stub. The stub at 3dde304 never names a run by a handle
+// (every started frame carries instance 0), so a handle is never known in the sim and these cannot
+// run here. They are ignored, not deleted, and must be un-ignored before PINS-2 leaves draft.
+
+#[tokio::test]
+async fn the_exact_collision_a_stored_handle_never_returns_the_newer_runs_answer() {
+    // Session 1 runs A (number 2) and it answers; the session is lost; session 2 starts B, which reuses
+    // number 2 and stalls. Following A's stored handle must return A's own answer or RunGone, never B's.
+    let rig = Rig::start("handle-collision", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Answer);
+    let a = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("A starts on session 1");
+    until("A to run on session 1", || rig.node.calls_received() >= 2).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let catalog2 = board.catalog().await.expect("catalog on session 2");
+    let self_test2 = named(&catalog2, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let b = board
+        .start(self_test2, &[])
+        .await
+        .expect("B starts on session 2");
+    until("B to stall on session 2", || rig.node.stalled_runs() == 1).await;
+    assert_eq!(
+        a.call(),
+        b.call(),
+        "the two runs carry the same number, which is the hazard"
+    );
+
+    let followed = board.follow(&a, atlas_actions::any_answer, |_| {}).await;
+    match followed {
+        // B never answers (it stalls), so an answer here can only be A's own.
+        Ok(_) => {}
+        Err(ActionError::Unconfirmed { reason, .. }) => {
+            assert_eq!(
+                reason,
+                atlas_actions::RESTARTED_REASON,
+                "A's handle is gone, not B's"
+            );
+        }
+        Err(other) => panic!("A's handle returned {other}"),
+    }
+}
+
+#[tokio::test]
+async fn a_handle_from_before_a_node_logic_restart_is_refused_as_restarted() {
+    // A detached run is stalled; node logic restarts; its handle names a run that no longer exists.
+    let rig = Rig::start("handle-restart", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let a = board.start(self_test, &[]).await.expect("the run starts");
+    until("the run to start and stall", || {
+        rig.node.stalled_runs() == 1
+    })
+    .await;
+
+    rig.node.restart_daemon();
+    let outcome = board.follow(&a, atlas_actions::any_answer, |_| {}).await;
+    match outcome {
+        Err(ActionError::Unconfirmed { reason, .. }) => {
+            assert_eq!(reason, atlas_actions::RESTARTED_REASON);
+        }
+        other => panic!("a handle from before the restart must be RunGone, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_stale_handle_cancel_is_refused_and_the_newer_run_keeps_running() {
+    // A is stalled on session 1; the session is lost; B reuses the number on session 2 and stalls.
+    // A cancel by A's stale handle must be refused, and B must keep running.
+    let rig = Rig::start("handle-cancel", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
+    connected(&handle).await;
+    let a = BoardActions::new(handle)
+        .start(self_test, &[])
+        .await
+        .expect("A starts on session 1");
+    until("A to stall on session 1", || rig.node.stalled_runs() == 1).await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let catalog2 = board.catalog().await.expect("catalog on session 2");
+    let self_test2 = named(&catalog2, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let _b = board
+        .start(self_test2, &[])
+        .await
+        .expect("B starts on session 2");
+    until("B to stall on session 2", || rig.node.stalled_runs() == 2).await;
+
+    let cancelled = board.cancel(&a).await;
+    assert!(
+        cancelled.is_err(),
+        "A's stale handle must not cancel anything: {cancelled:?}"
+    );
+    time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        rig.node.stalled_runs(),
+        2,
+        "B is still running: the stale cancel reached no run"
+    );
+}
+
+#[tokio::test]
+async fn a_run_the_node_ends_at_its_deadline_says_which_action_and_bound_in_plain_words() {
+    // The node ends a run at its deadline: TimedOut with code 110. The user is told which action and the bound
+    // its kind gives, not a generic failure.
+    let rig = Rig::start("deadline-words", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node
+        .script()
+        .push_action(SELF_TEST, Behaviour::TimeOut("the deadline passed".into()));
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    let error = rig
+        .board
+        .follow(&issued, atlas_actions::any_answer, |_| {})
+        .await
+        .expect_err("a run the node ended at its deadline does not succeed");
+    assert_eq!(error.failure().and_then(|f| f.code()), Some(110));
+    assert_eq!(
+        error.to_string(),
+        atlas_actions::bounds::overrun_words(atlas_actions::RunKind::Generic, SELF_TEST),
+        "the plain line names the action and its bound"
+    );
+}
+
+#[tokio::test]
+async fn a_followed_run_is_attached_once_while_its_session_lasts_and_the_cancel_uses_that_attachment()
+ {
+    // A follow holds its attachment between polls: while the session lasts, the run is attached once, however
+    // many polls there are. A cancel then uses the held attachment and sees the end on it.
+    let rig = Rig::start("attach-once", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let follower = tokio::spawn({
+        let board = rig.board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        issued.attaches(),
+        1,
+        "a followed run is attached once while its session lasts, not on every poll"
+    );
+    follower.abort();
+    let _ = follower.await;
+    let ended = rig
+        .board
+        .stop(&issued, Duration::from_secs(5))
+        .await
+        .expect("the stop reaches the board");
+    assert!(
+        matches!(ended, Err(ActionError::Cancelled(_))),
+        "the cancel's end is seen on the attachment that asked: {ended:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_lost_session_costs_exactly_one_reattach_when_the_run_is_followed_again() {
+    // Once per session loss: the follow ends with Lost, and following again makes exactly one more attachment.
+    let rig = Rig::start("attach-lost", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let follower = tokio::spawn({
+        let board = rig.board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1000)).await;
+    assert_eq!(issued.attaches(), 1, "the first session attaches once");
+    follower.abort();
+    let _ = follower.await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let followed = tokio::spawn({
+        let board = board.clone();
+        let issued = issued.clone();
+        async move {
+            board
+                .follow(&issued, atlas_actions::any_answer, |_| {})
+                .await
+        }
+    });
+    time::sleep(Duration::from_millis(1000)).await;
+    assert_eq!(
+        issued.attaches(),
+        2,
+        "one attach for the first session and exactly one after the loss"
+    );
+    followed.abort();
+    let _ = followed.await;
+    let ended = board
+        .stop(&issued, Duration::from_secs(5))
+        .await
+        .expect("the stop reaches the board");
+    assert!(matches!(ended, Err(ActionError::Cancelled(_))), "{ended:?}");
+}

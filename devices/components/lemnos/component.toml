@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "e9224a5378f772bab4c4beee3703beee9dd8a166"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
@@ -51,6 +51,12 @@ mode = "0644"
 [[install]]
 from = { file = "files/lemnos-orion-links.conf" }
 to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
+mode = "0644"
+
+# The bridge's address: this node's local comm core socket (the orion component's). A drop-in, as the links are.
+[[install]]
+from = { file = "files/lemnos-orion-address.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/20-local-socket.conf"
 mode = "0644"
 
 # The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the

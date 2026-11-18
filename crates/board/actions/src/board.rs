@@ -31,15 +31,21 @@
 //! - [`BoardActions::cancel`] asks a run to stop. Asking again after it has ended changes
 //!   nothing, so it may be made again.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
-use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
+use orion::actions::{ActionCall, Finished, Outcome, Run, RunHandle, Target, Update};
+use orion::types::Error as CoreError;
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
 
 use crate::args;
+use crate::bounds::{RunKind, deadline_ms, overrun_words};
 use crate::catalog::{Action, Catalog, Route};
 use crate::error::ActionError;
 
@@ -53,6 +59,12 @@ pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+/// The outcome of a run the board restarted while it ran (Orion's `RunGone`).
+pub const RESTARTED_REASON: &str = "the board restarted while this ran; outcome unknown";
+/// The words for a run number the board does not have (Orion's `NotFound`).
+pub const NO_SUCH_RUN: &str = "no such run";
+/// Why a run started on an earlier session is not followed or cancelled by its number.
+const NO_HANDLE_REASON: &str = "the run was started on an earlier session and the node did not name it by handle, so its number is not used: the outcome is unknown";
 
 /// The prefix a board's reply carries once the caller's lease ended and its holds were released:
 /// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
@@ -84,6 +96,43 @@ pub struct Progress {
     pub message: String,
 }
 
+thread_local! {
+    /// The attachments this session's thread keeps between polls, one per run being followed: a run's result
+    /// reaches the attachment that is held, so a follow attaches once and then waits on that attachment. Each
+    /// entry carries the session it was made on; a lost session makes it stale, and `take_held` drops it.
+    static HELD: RefCell<BTreeMap<u64, (u64, Run)>> = RefCell::new(BTreeMap::new());
+}
+
+/// The held attachment for `call`, if it was made on `session`. Taking it removes it from the store.
+fn take_held(call: u64, session: u64) -> Option<Run> {
+    HELD.with(|held| match held.borrow_mut().remove(&call) {
+        Some((kept, run)) if kept == session => Some(run),
+        _ => None,
+    })
+}
+
+/// Keeps `run` as the held attachment for `call` on `session`.
+fn put_held(call: u64, session: u64, run: Run) {
+    HELD.with(|held| {
+        held.borrow_mut().insert(call, (session, run));
+    });
+}
+
+/// Attaches to run `call`: by its handle when the node named one, else by its number.
+fn attach(orion: &orion::Orion, call: u64, known: Option<RunHandle>) -> Result<Run, OrionError> {
+    Ok(match known {
+        Some(handle) => orion.attach_handle(handle)?,
+        None => orion.attach(call)?,
+    })
+}
+
+/// What a stop saw on the attachment that asked: the run's own end, a refusal, or no end within the bound.
+enum Stopped {
+    Ended(Finished),
+    Refused(CoreError, String),
+    Quiet,
+}
+
 /// The board's actions, through one node's session.
 #[derive(Clone, Debug)]
 pub struct BoardActions {
@@ -92,6 +141,8 @@ pub struct BoardActions {
 
 /// What one poll of a detached run saw.
 enum Seen {
+    /// The node restarted since the run was started: the run is gone, its outcome is unknown.
+    Restarted,
     Quiet,
     Doing(Progress),
     Ended(Finished),
@@ -180,8 +231,24 @@ impl BoardActions {
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// or [`ActionError::StartInDoubt`].
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
+        self.start_as(action, words, RunKind::Generic).await
+    }
+
+    /// Starts `action` as a run of `kind`: its deadline and its expiry words come from that kind (see
+    /// [`crate::bounds`]). An install passes its bundle's size.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::start`].
+    pub async fn start_as(
+        &self,
+        action: &Action,
+        words: &[String],
+        kind: RunKind,
+    ) -> Result<Issued, ActionError> {
         args::check(action, words)?;
-        self.start_encoded(&action.name, args::encode(words)).await
+        self.start_encoded(&action.name, args::encode(words), kind)
+            .await
     }
 
     /// Starts `name` with `encoded` arguments, detached. The arguments must already be checked.
@@ -189,6 +256,7 @@ impl BoardActions {
         &self,
         name: &str,
         encoded: Vec<u8>,
+        kind: RunKind,
     ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
@@ -199,18 +267,31 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
-                let run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
-                    deadline_ms: 0,
-                    detached: true,
-                })?;
-                Ok(Issued {
+                let mut run = orion.run(&detached_call(
+                    &owned,
+                    node_name,
+                    &encoded,
+                    deadline_ms(kind),
+                ))?;
+                let issued = Issued {
                     call: run.call(),
                     session,
                     name: started.clone(),
-                })
+                    kind,
+                    handle: Arc::new(Mutex::new(None)),
+                    attaches: Arc::new(AtomicU32::new(0)),
+                };
+                // The handle comes with the node's started frame: wait for it, briefly. A refusal or
+                // a silent node leaves it unknown; the follow learns it later, or it stays unknown.
+                let until = Instant::now() + START_HANDLE_WAIT;
+                while issued.handle().is_none() && Instant::now() < until {
+                    if run.wait(Duration::from_millis(10)).is_err() {
+                        break;
+                    }
+                    issued.learn(&run);
+                }
+                issued.learn(&run);
+                Ok(issued)
             })
             .await;
         // Retry: never by this crate. A start that was sent and not answered may already be on
@@ -271,14 +352,40 @@ impl BoardActions {
         // Retry: following is a read. A lost session returns `Lost` with the run's number, and
         // following that number on the new session resumes it; the run is never started again.
         loop {
+            let known = issued.handle();
+            let session = self.handle.session();
+            let same_session = session == issued.session;
+            // Never by bare number across a session change: the outcome is unknown instead.
+            if !may_use_number(known.is_some(), same_session) {
+                return Err(ActionError::Unconfirmed {
+                    call,
+                    reason: NO_HANDLE_REASON.to_owned(),
+                    ended: None,
+                });
+            }
+            let learned = issued.clone();
+            let attaches = issued.attaches.clone();
             let seen = self
                 .handle
                 .with_client(move |orion| {
-                    let mut run = orion.attach(call)?;
+                    let mut run = match take_held(call, session) {
+                        Some(run) => run,
+                        None => {
+                            attaches.fetch_add(1, AtomicOrdering::SeqCst);
+                            attach(orion, call, known)?
+                        }
+                    };
+                    learned.learn(&run);
                     match run.wait(POLL) {
-                        Ok(update) => Ok(Seen::of(update)),
+                        Ok(update) => {
+                            learned.learn(&run);
+                            if !matches!(update, Some(Update::Finished(_))) {
+                                put_held(call, session, run);
+                            }
+                            Ok(Seen::of(update))
+                        }
                         Err(ClientError::Refused { error, detail }) => {
-                            Ok(Seen::Refused(Failure::of_core(error, detail)))
+                            Ok(refusal_seen(error, detail))
                         }
                         Err(error) => Err(OrionError::Client(error)),
                     }
@@ -293,6 +400,13 @@ impl BoardActions {
                 });
             }
             match seen {
+                Ok(Seen::Restarted) => {
+                    return Err(ActionError::Unconfirmed {
+                        call,
+                        reason: RESTARTED_REASON.to_owned(),
+                        ended: None,
+                    });
+                }
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
@@ -303,7 +417,15 @@ impl BoardActions {
                             reason: finished.detail,
                         });
                     }
-                    let result = ended(finished);
+                    let result = match finished.outcome {
+                        // The node ended the run at its deadline (110): the words say which kind, and the bound.
+                        Outcome::TimedOut => Err(ActionError::Failed(Failure::new(
+                            FailureKind::Other,
+                            u16::try_from(finished.code).ok(),
+                            overrun_words(issued.kind, &issued.name),
+                        ))),
+                        _ => ended(finished),
+                    };
                     let on_issuing_session = self.handle.session() == issued.session;
                     let done = match (hold, result) {
                         (Some(hold), Err(error)) if hold.lapsed() => {
@@ -357,38 +479,94 @@ impl BoardActions {
         }
     }
 
-    /// Asks detached run `call` to stop. How it ended still comes from [`BoardActions::follow`]:
-    /// a cancel that was sent is not yet a cancel that took effect, so the caller checks.
-    ///
-    /// Retry: asking a run that has ended changes nothing, so a cancel may be sent again.
+    /// Asks detached run `call` to stop, and waits up to `bound` for the run's own end on the attachment that
+    /// asked (the held one when this session follows the run): no second attachment is made to see the end.
+    /// `Ok(Ok(done))` / `Ok(Err(..))` is how the run ended (a cancel that took effect is `Err(Cancelled)`);
+    /// `Ok(Err(Unknown))` is no end within `bound`.
     ///
     /// # Errors
     ///
-    /// [`ActionError::Lost`] when the session did not carry the request.
-    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+    /// [`ActionError::Lost`] when the session did not carry the request, and
+    /// [`ActionError::Unconfirmed`] for a run from an earlier session with no handle (nothing is sent).
+    pub async fn stop(
+        &self,
+        issued: &Issued,
+        bound: Duration,
+    ) -> Result<Result<Done, ActionError>, ActionError> {
         let call = issued.call;
-        // A number issued on an earlier session may now name another run on the board. It is not
-        // sent a cancel, since a cancel to the wrong run stops someone else's work.
-        if self.handle.session() != issued.session {
+        let known = issued.handle();
+        let session = self.handle.session();
+        // A number from an earlier session may name another run on the board: with no handle it is not sent.
+        if !may_use_number(known.is_some(), session == issued.session) {
             return Err(ActionError::Unconfirmed {
                 call,
-                reason: "the run was started on an earlier session, and its number may now belong to another run: not cancelled blind".to_owned(),
+                reason: NO_HANDLE_REASON.to_owned(),
                 ended: None,
             });
         }
-        self.handle
+        let learned = issued.clone();
+        let attaches = issued.attaches.clone();
+        let stopped = self
+            .handle
             .with_bridge(move |orion| {
-                let mut run = orion.attach(call)?;
-                run.cancel().map_err(OrionError::Client)
+                let mut run = match take_held(call, session) {
+                    Some(run) => run,
+                    None => {
+                        attaches.fetch_add(1, AtomicOrdering::SeqCst);
+                        attach(orion, call, known)?
+                    }
+                };
+                learned.learn(&run);
+                run.cancel().map_err(OrionError::Client)?;
+                let deadline = Instant::now() + bound;
+                loop {
+                    match run.wait(POLL) {
+                        Ok(Some(Update::Finished(finished))) => {
+                            return Ok(Stopped::Ended(finished));
+                        }
+                        Ok(_) => {}
+                        Err(ClientError::Refused { error, detail }) => {
+                            return Ok(Stopped::Refused(error, detail));
+                        }
+                        Err(error) => return Err(OrionError::Client(error)),
+                    }
+                    if Instant::now() >= deadline {
+                        return Ok(Stopped::Quiet);
+                    }
+                }
             })
-            .await
-            .map_err(|error| match error {
-                SessionError::Gone(reason) => ActionError::Lost {
+            .await;
+        let stopped = match stopped {
+            Ok(stopped) => stopped,
+            Err(SessionError::Gone(reason)) => {
+                return Err(ActionError::Lost {
                     call,
                     reason: Failure::other(reason),
-                },
-                SessionError::Failed(reason) => ActionError::Lost { call, reason },
-            })
+                });
+            }
+            Err(SessionError::Failed(reason)) => return Err(ActionError::Lost { call, reason }),
+        };
+        Ok(match stopped {
+            Stopped::Ended(finished) => ended(finished),
+            Stopped::Refused(error, detail) => Err(cancel_refusal(call, error, detail)),
+            Stopped::Quiet => Err(ActionError::Unknown {
+                name: issued.name.clone(),
+                reason: Failure::other("the run did not end within the bound"),
+            }),
+        })
+    }
+
+    /// Asks detached run `call` to stop. Its end comes from [`BoardActions::stop`], which waits for it; this
+    /// returns once the cancel is sent.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::stop`], except that a run that ends (cancelled or otherwise) is not an error here.
+    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+        match self.stop(issued, Duration::ZERO).await? {
+            Ok(_) | Err(ActionError::Cancelled(_) | ActionError::Unknown { .. }) => Ok(()),
+            Err(other) => Err(other),
+        }
     }
 
     /// Whether the session is still the one `issued` was started on. A stored run number answers
@@ -532,14 +710,84 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
     }
 }
 
+/// The call that starts `name` detached on `node`, with the deadline its kind gives (`bounds::deadline_ms`). A real
+/// node refuses a detached run with no deadline (`NoDeadline`), so the deadline is never zero. The only place a
+/// detached start is built.
+#[must_use]
+pub fn detached_call<'a>(
+    name: &'a str,
+    node: NodeName,
+    args: &'a [u8],
+    deadline_ms: u64,
+) -> ActionCall<'a> {
+    ActionCall {
+        name,
+        target: Target::Node(node),
+        args,
+        deadline_ms,
+        detached: true,
+    }
+}
+
+/// What a follow's refusal from the node means: a run the node restarted past is gone (its outcome is
+/// unknown), a number the node does not have is no such run, and any other refusal keeps the board's words.
+fn refusal_seen(error: CoreError, detail: String) -> Seen {
+    match error {
+        CoreError::RunGone => Seen::Restarted,
+        CoreError::NotFound => Seen::Refused(Failure::of_core(error, NO_SUCH_RUN.to_owned())),
+        _ => Seen::Refused(Failure::of_core(error, detail)),
+    }
+}
+
+/// What a cancel's refusal from the node means, by the same rule as [`refusal_seen`].
+fn cancel_refusal(call: u64, error: CoreError, detail: String) -> ActionError {
+    match error {
+        CoreError::RunGone => ActionError::Unconfirmed {
+            call,
+            reason: RESTARTED_REASON.to_owned(),
+            ended: None,
+        },
+        CoreError::NotFound => {
+            ActionError::Refused(Failure::of_core(error, NO_SUCH_RUN.to_owned()))
+        }
+        _ => ActionError::Refused(Failure::of_core(error, detail)),
+    }
+}
+
+/// How long a start waits for the node's started frame, which names the run's handle. A node that
+/// does not name it in time leaves the handle unknown, and a later follow or cancel learns it.
+pub const START_HANDLE_WAIT: Duration = Duration::from_millis(200);
+/// How long a cancel waits for the node's answer to naming the run by its handle (a refusal such
+/// as "the node restarted" comes back to that attach, not to the cancel).
+pub const CANCEL_CHECK: Duration = Duration::from_millis(500);
+
+/// Whether a run's number may be used to follow or cancel it. A handle, once the node named it,
+/// names the run whatever the session; a number alone names a run only on the session it was
+/// started on (the node keeps finished answers by number, so a later session's same number may be
+/// another run). This is the one rule every follow and cancel is checked against.
+#[must_use]
+pub const fn may_use_number(handle_known: bool, same_session: bool) -> bool {
+    handle_known || same_session
+}
+
 /// A started run, with the session it was started on. A run number is only known within its
 /// session: on a later session the same number may name another run (the node keeps finished
 /// answers by number), so a later use of it is checked before it is trusted.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// The run's handle (the node names it after its started frame) is kept here too, in memory,
+/// beside the number. Every clone shares the one handle, so a job or an install that keeps the
+/// `Issued` keeps the handle. Nothing is saved to disk: after an Atlas restart the run cannot be
+/// followed again (see docs/prs/PINS-2.md).
+#[derive(Clone, Debug)]
 pub struct Issued {
     call: u64,
     session: u64,
     name: String,
+    kind: RunKind,
+    handle: Arc<Mutex<Option<RunHandle>>>,
+    /// How many attachments were made to this run (shared by every clone). A followed run is attached once per
+    /// session, and again once after each session loss.
+    attaches: Arc<AtomicU32>,
 }
 
 impl Issued {
@@ -547,6 +795,26 @@ impl Issued {
     #[must_use]
     pub const fn call(&self) -> u64 {
         self.call
+    }
+
+    /// How many attachments were made to this run so far (see the field).
+    #[must_use]
+    pub fn attaches(&self) -> u32 {
+        self.attaches.load(AtomicOrdering::SeqCst)
+    }
+
+    /// The run's handle, once the node has named it. `None` until then, and for a node below the
+    /// handle's interface level.
+    #[must_use]
+    pub fn handle(&self) -> Option<RunHandle> {
+        *self.handle.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Keeps the handle the run named, if it has named one yet.
+    fn learn(&self, run: &Run) {
+        if let Some(handle) = run.handle() {
+            *self.handle.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle);
+        }
     }
 
     /// The action the run was started as.
@@ -635,5 +903,139 @@ mod tests {
         assert!(lease_ended("lease-ended: holds released"));
         assert!(lease_ended("lease-ended: holds released; cancelled"));
         assert!(!lease_ended("the board says lease-ended"));
+    }
+
+    fn issued(call: u64, session: u64) -> Issued {
+        Issued {
+            call,
+            session,
+            name: "install_file".to_owned(),
+            kind: RunKind::Generic,
+            handle: Arc::new(Mutex::new(None)),
+            attaches: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    #[test]
+    fn every_detached_start_carries_its_kinds_deadline_and_no_kind_is_unbounded() {
+        // A real node refuses a detached run with no deadline (NoDeadline). Each kind's bound is the one the table
+        // gives, and it is never zero.
+        let node: NodeName = "node.local".parse().expect("a valid node name");
+        // A generic action: the one-hour interim (pending the ruling and Lemnos's M40 stall bound).
+        let generic = detached_call(
+            "system.long",
+            node.clone(),
+            b"args",
+            deadline_ms(RunKind::Generic),
+        );
+        assert!(generic.detached);
+        assert_eq!(
+            generic.deadline_ms, 3_600_000,
+            "the generic interim: one hour"
+        );
+        // An install of the sim's bundle: the floor of five minutes.
+        let small = detached_call(
+            "install_file",
+            node.clone(),
+            b"args",
+            deadline_ms(RunKind::Install { bytes: 28_160 }),
+        );
+        assert_eq!(
+            small.deadline_ms, 300_000,
+            "a small install: the five-minute floor"
+        );
+        // A 1 GiB install: 120 s overhead + 1024 s to write + 256 s to read back = 1400 s.
+        let large = detached_call(
+            "install_file",
+            node,
+            b"args",
+            deadline_ms(RunKind::Install {
+                bytes: 1024 * 1024 * 1024,
+            }),
+        );
+        assert_eq!(
+            large.deadline_ms, 1_400_000,
+            "a 1 GiB install: derived, not a constant"
+        );
+        assert!(small.deadline_ms > 0 && large.deadline_ms > small.deadline_ms);
+    }
+
+    #[test]
+    fn a_number_is_used_only_with_a_handle_or_on_its_own_session() {
+        // The rule every follow and cancel is checked against: a handle names the run whatever the
+        // session; a bare number only on the session it was started on.
+        assert!(
+            !may_use_number(false, false),
+            "no handle, later session: never by number"
+        );
+        assert!(
+            may_use_number(false, true),
+            "no handle, same session: the number"
+        );
+        assert!(
+            may_use_number(true, false),
+            "a handle: names the run on any session"
+        );
+        assert!(may_use_number(true, true));
+    }
+
+    #[test]
+    fn the_handle_is_shared_by_every_clone_of_the_issued_run() {
+        // A job or an install keeps a clone of the Issued run: a handle learned through one is seen through all.
+        let first = issued(7, 1);
+        let kept = first.clone();
+        assert_eq!(kept.handle(), None, "unknown until the node names it");
+        let handle = RunHandle::said(3, 7).expect("a handle the node named");
+        *first.handle.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle);
+        assert_eq!(
+            kept.handle(),
+            Some(handle),
+            "the kept clone has the handle too"
+        );
+        assert_eq!(kept.call(), 7, "the number is kept beside it");
+    }
+
+    #[test]
+    fn a_restarted_run_refusal_is_the_typed_unknown_outcome() {
+        // Orion's RunGone: the node restarted while the run ran. Never a result, never a failure.
+        match refusal_seen(CoreError::RunGone, String::new()) {
+            Seen::Restarted => {}
+            _ => panic!("RunGone must be Restarted"),
+        }
+        match cancel_refusal(7, CoreError::RunGone, String::new()) {
+            ActionError::Unconfirmed {
+                call,
+                reason,
+                ended,
+            } => {
+                assert_eq!(call, 7);
+                assert_eq!(reason, RESTARTED_REASON);
+                assert!(
+                    ended.is_none(),
+                    "an unknown outcome has no run's own refusal"
+                );
+            }
+            other => panic!("a cancel of a restarted run is unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_run_is_no_such_run_with_its_kind_kept() {
+        // Orion's NotFound: the number or handle names no run on the board.
+        match refusal_seen(CoreError::NotFound, "detail".to_owned()) {
+            Seen::Refused(failure) => assert_eq!(failure.text(), NO_SUCH_RUN),
+            _ => panic!("NotFound must be a refusal"),
+        }
+        match cancel_refusal(7, CoreError::NotFound, "detail".to_owned()) {
+            ActionError::Refused(failure) => {
+                assert_eq!(failure.text(), NO_SUCH_RUN);
+                assert_eq!(
+                    failure.kind(),
+                    FailureKind::Refused,
+                    "NotFound stays a refusal, not a denial"
+                );
+            }
+            other => panic!("a cancel of no run is a refusal, got {other:?}"),
+        }
     }
 }

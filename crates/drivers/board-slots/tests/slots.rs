@@ -190,7 +190,7 @@ async fn a_session_lost_during_the_push_resumes_without_a_second_install() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer() {
+async fn a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides() {
     let rig = Rig::start("lost-install").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -208,12 +208,15 @@ async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_t
     })
     .await;
     rig.relay.cut();
-    // The session is lost while the board runs the install: the outcome is unknown, and the board's
-    // list is what decides it. It is not reported as waiting, and not as failed.
-    // The follow produced no answer: the install waits for the board, and follows the run again.
-    stage_is(&rig, job, "the install to wait for the board", |stage| {
-        matches!(stage, Stage::WaitingForBoard { .. })
-    })
+    // The session is lost while the board runs the install. The run's number is not used on a later
+    // session (no handle is known on the stub, which names none), so the outcome is unknown and the
+    // board's list decides it. It is not reported as waiting, and not as failed.
+    stage_is(
+        &rig,
+        job,
+        "the install to be unknown while the list is checked",
+        |stage| matches!(stage, Stage::Unknown { .. }),
+    )
     .await;
     rig.node.hold_installs(false);
     assert_eq!(installed(&rig, job).await, "slot-2");
@@ -563,7 +566,8 @@ async fn the_signature_outcome_of_an_installed_slot_is_not_checked_when_unsigned
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_the_other() {
+async fn an_install_interrupted_by_a_replaced_board_is_unknown_or_failed_and_sends_nothing_to_the_other()
+ {
     let rig = Rig::start("replaced").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -596,21 +600,30 @@ async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_th
             .expect("the replacement node starts on the same port");
     // Keep the relay alive for the whole test.
     let _relay = relay;
-    // The sim's one generous bound: only a stuck install reaches it.
-    let ended = tokio::time::timeout(DEADLINE, async {
-        while !installs.stage(job).is_some_and(|stage| stage.is_final()) {
+    // The replaced board is seen by the install's list read, which may come before or after the
+    // install is shown as unknown. Either is right: unknown while the list is checked, or failed on the
+    // replacement (positive evidence). It is never done, and nothing is sent to the other board.
+    let settled = tokio::time::timeout(DEADLINE, async {
+        while !installs
+            .stage(job)
+            .is_some_and(|stage| matches!(stage, Stage::Unknown { .. } | Stage::Failed { .. }))
+        {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
     .await;
     assert!(
-        ended.is_ok(),
-        "the install did not end: {:?}",
+        settled.is_ok(),
+        "the install is neither unknown nor failed on the replacement: {:?}",
         installs.stage(job)
     );
     match installs.stage(job) {
-        Some(Stage::Failed { reason }) => assert_eq!(reason, atlas_board_slots::install::REPLACED),
-        other => panic!("expected the replaced-board ending, got {other:?}"),
+        Some(Stage::Unknown { .. }) => {}
+        Some(Stage::Failed { reason }) => assert!(
+            reason.contains("replaced"),
+            "the failure names the replacement: {reason}"
+        ),
+        other => panic!("the install must not be done or cancelled here: {other:?}"),
     }
     assert_eq!(
         replacement.runs_started(names::SLOTS_ACCEPT),
@@ -685,4 +698,71 @@ async fn a_follow_answered_at_once_is_checked_against_the_list() {
         "the run was started once and answered at once"
     );
     assert!(list(&rig).await.get("slot-2").is_some());
+}
+
+// The shared reading of BB1c's trial state (crates/drivers/board-slots/src/trial_updates.rs), on the sim board:
+// the stub reports each block value, an unknown value, a board without the key, and a clear board.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn trial_updates_read_each_known_block_as_its_typed_reason() {
+    use atlas_board_slots::{TrialBlock, TrialUpdates};
+    let rig = Rig::start("trial-updates-known").await;
+    let actions = BoardActions::new(rig.handle.clone());
+    for (wire, expected) in [
+        ("no-env-partition", TrialBlock::NoEnvPartition),
+        ("env-unreadable", TrialBlock::EnvUnreadable),
+        ("fat-env-file", TrialBlock::FatEnvFile),
+        (
+            "boot-partition-unreadable",
+            TrialBlock::BootPartitionUnreadable,
+        ),
+        ("loader-not-updated", TrialBlock::LoaderNotUpdated),
+    ] {
+        rig.node.slot_set_trial_block(
+            Some(serde_json::json!(wire)),
+            "the boot loader says so",
+            "detail",
+        );
+        match atlas_board_slots::trial_updates::read(&actions).await {
+            TrialUpdates::Blocked {
+                block,
+                text,
+                detail,
+            } => {
+                assert_eq!(block, expected, "{wire}");
+                assert_eq!(text, "the boot loader says so");
+                assert_eq!(detail, "detail");
+            }
+            other => panic!("{wire} must be a typed block, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn trial_updates_keep_an_unknown_block_as_sent_and_a_clear_or_absent_board_says_so() {
+    use atlas_board_slots::{TrialBlock, TrialUpdates};
+    let rig = Rig::start("trial-updates-unknown").await;
+    let actions = BoardActions::new(rig.handle.clone());
+    rig.node
+        .slot_set_trial_block(Some(serde_json::json!("a-reason-this-build-lacks")), "", "");
+    match atlas_board_slots::trial_updates::read(&actions).await {
+        TrialUpdates::Blocked {
+            block: TrialBlock::Unknown(raw),
+            ..
+        } => {
+            assert_eq!(raw, "a-reason-this-build-lacks");
+        }
+        other => panic!("an unknown block must stay unknown as sent, got {other:?}"),
+    }
+    rig.node.slot_set_trial_block(None, "", "");
+    assert_eq!(
+        atlas_board_slots::trial_updates::read(&actions).await,
+        TrialUpdates::Clear
+    );
+    rig.node.slot_set_trial_updates_key(false);
+    assert_eq!(
+        atlas_board_slots::trial_updates::read(&actions).await,
+        TrialUpdates::NotReported,
+        "a board without BB1c's key says nothing"
+    );
 }

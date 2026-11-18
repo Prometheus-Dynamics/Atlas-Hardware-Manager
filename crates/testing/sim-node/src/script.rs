@@ -17,6 +17,9 @@ pub enum Behaviour {
     Refuse(String),
     /// Runs and fails: the outcome is `Failed` and nothing changes.
     Fail(String),
+    /// Runs and is ended by the node at its deadline: the outcome is `TimedOut` with code 110, as a real node
+    /// reports it (the words are the node's detail).
+    TimeOut(String),
     /// Starts, then never makes progress or finishes until it is cancelled.
     Stall,
     /// The service restarts as this run starts: every running job is lost (`-4`), and this

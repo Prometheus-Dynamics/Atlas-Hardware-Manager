@@ -13,8 +13,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use atlas_actions::{Action, BoardActions, Reported};
-use atlas_board_slots::{BoardSlots, Ended, Follower, SlotError, TrialStart};
+use atlas_actions::BoardActions;
+use atlas_board_slots::trial_updates::{info_action, read as read_trial_updates};
+use atlas_board_slots::{BoardSlots, Ended, Follower, SlotError, TrialStart, TrialUpdates};
 use atlas_session::Handle;
 use atlas_trial::{Running, TrialState};
 use orion::Address;
@@ -22,6 +23,7 @@ use orion::node::Security;
 use serde_json::{Value, json};
 
 use crate::args::CycleArgs;
+use crate::commands::trial_refusal;
 use crate::commands::{self, Refusal};
 use crate::identity;
 use crate::link::{self, Link};
@@ -259,17 +261,6 @@ fn slots_of(link: &Link) -> Result<BoardSlots, Refusal> {
     ))
 }
 
-/// The action that reads Lemnos's `system.slots` `info` (I5k). Read with no arguments.
-fn info_action() -> Action {
-    Action {
-        name: "system.slots.info".to_owned(),
-        label: Reported::NotReported,
-        description: Reported::NotReported,
-        args: Reported::Known(Vec::new()),
-        long_running: Reported::Known(false),
-    }
-}
-
 /// The board's boot id, from `info.last_attempt.boot` (Lemnos I5k: present in every state). This is
 /// the ONLY place the boot id is read. At the pin this build carries (`INFO_IN_PIN` false) nothing
 /// is read and the boot id is not checked. An absent field is also not checked: never a pass.
@@ -304,6 +295,18 @@ async fn boot_id(ctx: &Ctx<'_>) -> BootRead {
             "not checked: the board's info could not be read: {error}"
         )),
     }
+}
+
+/// The board's trial updates, read where the pin carries BB1c's keys (`info_in_pin`). Otherwise nothing is
+/// read and nothing is said. The typed reading is the shared one (`atlas_board_slots::trial_updates`).
+async fn trial_updates(ctx: &Ctx<'_>) -> TrialUpdates {
+    if !ctx.env.info_in_pin {
+        return TrialUpdates::NotReported;
+    }
+    let Ok(link) = ctx.link() else {
+        return TrialUpdates::NotReported;
+    };
+    read_trial_updates(&BoardActions::new(link.handle.clone())).await
 }
 
 /// Shows the boot id, and fails only when it is read both times and did not change.
@@ -512,6 +515,15 @@ async fn step_list_before(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Res
 }
 
 async fn step_install_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result<(), Refusal> {
+    // The cycle installs AND starts a trial: a board that states a trial block refuses before any transfer,
+    // with the typed reason from the one shared reading (`trial_updates::read`, `words()`).
+    let updates = {
+        let link = ctx.link()?;
+        read_trial_updates(&BoardActions::new(link.handle.clone())).await
+    };
+    if let Some(words) = trial_refusal(&updates) {
+        return Err(Refusal::new(1, words));
+    }
     let bundle = ctx.good_bundle.clone();
     ctx.good = install_and_check(r, ctx, &bundle).await?;
     Ok(())
@@ -521,6 +533,9 @@ async fn step_trial_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Resu
     let id = ctx.good.clone();
     let before = boot_id(ctx).await;
     r.say(format!("boot id before the trial: {}", before.words()));
+    if ctx.env.info_in_pin {
+        r.say(trial_updates(ctx).await.words());
+    }
     if let Some(note) = start(ctx, &id, now_ms()).await? {
         r.say(note);
     }

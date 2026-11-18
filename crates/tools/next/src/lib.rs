@@ -50,7 +50,8 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   pin                         trust the board's key for this address
   repin --reflashed           replace the pin after the board was reflashed
   list                        the board's slots
-  install <bundle file>       send a slot bundle and install it; prints the stages
+  install <bundle file>       write a slot bundle to the board; install writes a slot and never starts it:
+                              `trial <slot id>` starts it (on a board that states a trial block, a trial is refused)
   trial <slot id>             start a trial and follow it to its outcome (Ctrl-C stops following)
   confirm <slot id>           make the slot the default
   remove <slot id>            remove a slot (never a starred or the default one)

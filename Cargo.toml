@@ -16,10 +16,10 @@ homepage = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager"
 
 [workspace.dependencies]
 # Locked by commit. Moving a lock is its own PR.
-orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "671d29d626f49e06ab7332417275ef1b0ac31b01", default-features = false }
+orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "8eaf3b84f8690606c5d5261ef6754e6613e542c6", default-features = false }
 # Lemnos's slot-bundle format: the signing record, the signed message, the manifest's bytes and the bundle rules.
 # Its rev is the image's Lemnos pin (devices/); scripts/check-devices.sh holds the two equal. Moving it is its own PR.
-lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "31e0f736a334260a7df2ea86bcfa358e9a640f08", default-features = false }
+lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "e9224a5378f772bab4c4beee3703beee9dd8a166", default-features = false }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

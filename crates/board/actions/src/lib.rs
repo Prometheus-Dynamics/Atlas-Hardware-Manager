@@ -26,10 +26,12 @@ mod catalog;
 mod error;
 mod jobs;
 
+pub mod bounds;
 pub use board::{
-    BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX, POLL,
-    Progress, any_answer, lease_ended,
+    BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX,
+    NO_SUCH_RUN, POLL, Progress, RESTARTED_REASON, any_answer, lease_ended,
 };
+pub use bounds::RunKind;
 pub use catalog::{Action, Arg, ArgKind, Catalog, CatalogError, Reported, Route};
 pub use error::{ActionError, BUSY_CODE};
 pub use jobs::{ActionJobs, CANCEL_CONFIRM, CancelState, KIND};

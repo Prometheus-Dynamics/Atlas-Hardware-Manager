@@ -1,22 +1,24 @@
-# Orion's board image: package orion-bin (binary orion), run as two services from Orion's packaging
-# (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
-# 455a956e13e62c97081d66e0e8f3bf2aced1eac8 (the rev the workspace pins; Cargo.lock is committed there).
+# Orion's board image: package orion-bin (binary orion), run as three units from Orion's packaging at
+# 8eaf3b84f8690606c5d5261ef6754e6613e542c6 (C54; the rev the workspace pins, provisional until the second
+# pin pair is announced: docs/prs/PINS-2.md). The comm core runs as orion-comm with group orion, never root
+# (orion-comm.service); node logic as orion (orion-node.service); each login is started by the login helper
+# (orion-login.socket and orion-login.service, which runs as root and is the only process that becomes another
+# user). Board-neutral.
 #
-# Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
-# 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
-# [sources.tools] below is Gaia's pinned zig 0.15.2, which Gaia puts on PATH after the toolchain. x86_64
-# build hosts only (the zig download is x86_64). The Orion's size-gate wrappers (scripts/zigcc) are its own.
+# Built by Gaia for aarch64 at its pin: bin/orion, static and stripped (profile service). Its cc and env need zig:
+# the [sources.tools] below is Gaia's pinned zig 0.15.2, which Gaia puts on PATH after the toolchain. x86_64 build
+# hosts only (the zig download is x86_64). The Orion's size-gate wrappers (scripts/zigcc) are its own.
 #
-# The units and user are Orion's packaging/systemd files, installed at the paths its packaging README
-# gives, unrewritten; the settings are the board's own (files/orion.conf), and the drop-ins in files/ point
-# the state at /data. The user is made at build time too: the image's root is read-only.
+# The units and users are Orion's packaging files, installed at the paths its packaging README gives, unrewritten
+# except by the drop-ins in files/ (the state on /data, and the comm core's TCP address); the settings are the
+# board's own (files/orion.conf). The users are made at build time too: the image's root is read-only.
 version = 1
 name = "orion"
-description = "Orion: the orion binary as the board's comm core and node logic (orion-bin), its two units, settings, and the orion user"
+description = "Orion: the orion binary as the board's comm core and node logic (orion-bin), its three units, settings, and the orion and orion-comm users"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+ref = "8eaf3b84f8690606c5d5261ef6754e6613e542c6"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
@@ -41,6 +43,8 @@ from = "bin/orion"
 to = "/usr/bin/orion"
 mode = "0755"
 
+# Orion's units, as they are at this rev. Nothing here creates /run/orion or /var/lib/orion: the comm core's unit
+# makes /run/orion itself (RuntimeDirectory=); /var/lib/orion is not used (the state is /data, see the drop-ins).
 [[install]]
 from = { source = "src", path = "packaging/systemd/orion-comm.service" }
 to = "/usr/lib/systemd/system/orion-comm.service"
@@ -51,6 +55,16 @@ from = { source = "src", path = "packaging/systemd/orion-node.service" }
 to = "/usr/lib/systemd/system/orion-node.service"
 mode = "0644"
 
+[[install]]
+from = { source = "src", path = "packaging/systemd/orion-login.socket" }
+to = "/usr/lib/systemd/system/orion-login.socket"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/orion-login.service" }
+to = "/usr/lib/systemd/system/orion-login.service"
+mode = "0644"
+
 # The settings: Orion's example with the board's state on /data (files/orion.conf; the reasons are in that file).
 # Replaces the example install, which keeps the state in /var/lib/orion.
 [[install]]
@@ -58,7 +72,8 @@ from = { file = "files/orion.conf" }
 to = "/etc/orion/orion.conf"
 mode = "0644"
 
-# The two units, with drop-ins on Orion's own (Orion's packaging/README: change a unit with a drop-in).
+# The drop-ins on Orion's own units (Orion's packaging/README: change a unit with a drop-in, not an edited copy).
+# The comm core's state on /data, owned by its own user (see the file).
 [[install]]
 from = { file = "files/orion-comm-state.conf" }
 to = "/etc/systemd/system/orion-comm.service.d/10-board-state.conf"
@@ -86,8 +101,11 @@ from = { source = "src", path = "packaging/systemd/orion.preset" }
 to = "/usr/lib/systemd/system-preset/80-orion.preset"
 mode = "0644"
 
-# The orion user and group, uid and gid 901 (Orion's sysusers file; socket.node_uids = 901 in the
-# settings: keep the two the same). The user also in dialout, for serial links.
+# The accounts: the orion group and its two users, as Orion's sysusers file has them (orion.sysusers): uid and gid
+# 901 for node logic, and 902 for the comm core, which is named as login.comm_user (its default) and is the only
+# user the login helper answers. Both are declared here and nowhere else (a second statement is refused).
+# orion-comm is in dialout for serial links and in orion, the group its socket is for.
+# socket.node_uids = 901 in the settings: keep the two the same.
 [[groups]]
 name = "orion"
 gid = 901
@@ -99,10 +117,22 @@ group = "orion"
 groups = ["dialout"]
 home = "/var/lib/orion"
 
+[[users]]
+name = "orion-comm"
+uid = 902
+group = "orion"
+groups = ["dialout"]
+home = "/var/lib/orion"
+
 [[services]]
 unit = "orion-comm.service"
 enable = true
 
 [[services]]
 unit = "orion-node.service"
+enable = true
+
+# The login helper's socket starts orion-login.service on the first question (the service has no [Install] of its own).
+[[services]]
+unit = "orion-login.socket"
 enable = true

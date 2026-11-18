@@ -470,7 +470,7 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
             name: names::SLOTS_INSTALL_FILE,
             target: atlas_sim_node::node::target(),
             args: args.as_bytes(),
-            deadline_ms: 0,
+            deadline_ms: 86_400_000, // a real node refuses a detached run with no deadline (NoDeadline),
             detached: true,
         })
         .expect("the detached install starts");

@@ -560,6 +560,20 @@ impl SimNode {
         lock(&self.shared.model).slots.healthy = healthy;
     }
 
+    /// Sets the trial block `info` states (BB1c): `block` is the wire value (`None` is a clear board),
+    /// with the sentence and the detail the board sends with it. A non-string value tests an unknown shape.
+    pub fn slot_set_trial_block(&self, block: Option<serde_json::Value>, text: &str, detail: &str) {
+        let mut model = lock(&self.shared.model);
+        model.slots.trial_block = block;
+        model.slots.trial_block_text = text.to_owned();
+        model.slots.trial_block_detail = detail.to_owned();
+    }
+
+    /// Whether `info` carries BB1c's `trial_updates` key at all (`false` is a board before BB1c).
+    pub fn slot_set_trial_updates_key(&self, present: bool) {
+        lock(&self.shared.model).slots.trial_updates_key = present;
+    }
+
     /// Leaves the slot called `id` out of `list` (`None` lists every slot). A board that has lost
     /// a slot it just installed shows this; a test uses it to reach an unexpected state.
     pub fn slot_hide_from_list(&self, id: Option<&str>) {
@@ -1056,6 +1070,9 @@ impl Node {
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
+            Behaviour::TimeOut(reason) => {
+                self.finish_coded(call, Outcome::TimedOut, 110, &[], &reason)
+            }
             Behaviour::Stall => {
                 self.shared.leases.stalled(call);
                 self.shared.stalled.fetch_add(1, Ordering::SeqCst);

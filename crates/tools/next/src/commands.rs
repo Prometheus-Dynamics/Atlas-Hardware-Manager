@@ -6,9 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use atlas_actions::BUSY_CODE;
+use atlas_actions::{BUSY_CODE, BoardActions};
+use atlas_board_slots::trial_updates::read as read_trial_updates;
 use atlas_board_slots::{
-    BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
+    BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart, TrialUpdates,
 };
 use atlas_jobs::{DeviceHolds, Events, JobTiming};
 use atlas_session::Failure;
@@ -327,7 +328,7 @@ async fn board<W: Write>(
         true,
     );
     match verb {
-        Verb::List => list(r, &slots).await,
+        Verb::List => list(r, &slots, &link).await,
         Verb::Confirm(id) => {
             slots.set_default(id, false).await?;
             r.say(format!("{id} is now the default slot"));
@@ -350,9 +351,18 @@ async fn board<W: Write>(
     }
 }
 
-async fn list<W: Write>(r: &mut Report<'_, W>, slots: &BoardSlots) -> Result<(), Refusal> {
+async fn list<W: Write>(
+    r: &mut Report<'_, W>,
+    slots: &BoardSlots,
+    link: &Link,
+) -> Result<(), Refusal> {
     let list = slots.list().await?;
     for line in list_lines(&list) {
+        r.say(line);
+    }
+    // A board that states a trial block says so where the list is read; nothing is shown when no block is stated.
+    let updates = trial_updates_of(link).await;
+    if let Some(line) = trial_block_line(&updates) {
         r.say(line);
     }
     let entries: Vec<_> = list
@@ -375,6 +385,26 @@ async fn list<W: Write>(r: &mut Report<'_, W>, slots: &BoardSlots) -> Result<(),
     r.field("keep", list.keep);
     r.field("slots", entries);
     Ok(())
+}
+
+/// The board's trial updates, read now through the shared reading. A read that fails says nothing.
+async fn trial_updates_of(link: &Link) -> TrialUpdates {
+    read_trial_updates(&BoardActions::new(link.handle.clone())).await
+}
+
+/// The line a user reads when the board states a trial block; `None` when it states none (or cannot say).
+fn trial_block_line(updates: &TrialUpdates) -> Option<String> {
+    updates.blocks_trials().then(|| updates.words())
+}
+
+/// What `install` says on a blocked board: the slot is written, and nothing starts it. `install` alone never
+/// promises a boot; `trial` starts a slot, and a command that means "install and start it" refuses up front.
+pub(crate) const INSTALL_NO_TRIAL: &str = "the slot is installed, but the boot loader will not start it as a trial until the board takes trial updates";
+
+/// The refusal for a trial on a board that states a block: the typed reason, before anything is written.
+/// `None` when the trial may be started.
+pub(crate) fn trial_refusal(updates: &TrialUpdates) -> Option<String> {
+    trial_block_line(updates)
 }
 
 /// The list as lines: a header, a trial line when one is pending, then one line per slot with
@@ -433,6 +463,13 @@ pub(crate) async fn install<W: Write>(
     path: &Path,
     wait: Duration,
 ) -> Result<String, Refusal> {
+    // Lemnos BB1c: `install` writes the bay and promises no boot. A blocked board says so before the
+    // transfer, and again once the slot is installed (the same words, from the one reading).
+    let blocked = trial_block_line(&trial_updates_of(link).await);
+    if let Some(line) = &blocked {
+        r.say(line.clone());
+        r.say(INSTALL_NO_TRIAL);
+    }
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
             1,
@@ -494,6 +531,9 @@ pub(crate) async fn install<W: Write>(
             Some(Stage::Done { slot }) => {
                 r.say(format!("installed as {slot}"));
                 r.field("slot", slot.clone());
+                if blocked.is_some() {
+                    r.say(INSTALL_NO_TRIAL);
+                }
                 return Ok(slot);
             }
             Some(Stage::Failed { reason }) => {
@@ -540,6 +580,10 @@ async fn trial<W: Write>(
     id: &str,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
+    // A board that states a trial block refuses the trial before anything is written, with the typed reason.
+    if let Some(words) = trial_refusal(&trial_updates_of(link).await) {
+        return Err(Refusal::new(1, words));
+    }
     let follower = Follower::open(state).with_recheck(env.recheck);
     let note = follower
         .start_trial(
@@ -739,5 +783,37 @@ mod tests {
             "busy",
         )));
         assert!(!Refusal::from(refused).denied);
+    }
+}
+
+#[cfg(test)]
+mod trial_refusal_tests {
+    use super::*;
+
+    #[test]
+    fn a_blocked_board_refuses_the_trial_with_its_typed_reason_and_a_clear_one_does_not() {
+        let blocked = TrialUpdates::Blocked {
+            block: atlas_board_slots::TrialBlock::LoaderNotUpdated,
+            text: String::new(),
+            detail: String::new(),
+        };
+        assert_eq!(
+            trial_refusal(&blocked).as_deref(),
+            Some("this board cannot take trial updates: loader not updated"),
+            "the refusal names the typed reason, before anything is written"
+        );
+        assert_eq!(trial_refusal(&TrialUpdates::Clear), None);
+        assert_eq!(trial_refusal(&TrialUpdates::NotReported), None);
+    }
+
+    #[test]
+    fn an_unknown_block_is_refused_and_shown_as_sent() {
+        let unknown = TrialUpdates::Blocked {
+            block: atlas_board_slots::TrialBlock::from_wire("new-reason"),
+            text: String::new(),
+            detail: String::new(),
+        };
+        let words = trial_refusal(&unknown).expect("an unknown block still refuses");
+        assert!(words.contains("unknown (as sent: new-reason)"), "{words}");
     }
 }

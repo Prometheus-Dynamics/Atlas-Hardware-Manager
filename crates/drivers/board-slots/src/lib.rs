@@ -28,6 +28,7 @@
 pub mod calls;
 pub mod install;
 pub mod trial;
+pub mod trial_updates;
 
 use atlas_actions::ActionError;
 use atlas_bundle::BundleError;
@@ -38,6 +39,7 @@ use thiserror::Error;
 pub use calls::BoardSlots;
 pub use install::{InstallRequest, SlotInstalls, Source};
 pub use trial::{Ended, FileWatchStore, Follower, TrialStart};
+pub use trial_updates::{TrialBlock, TrialUpdates};
 
 /// Why a slot operation gave no result. The board's own words are inside [`SlotError::Board`]
 /// and print verbatim.

@@ -289,6 +289,134 @@ lemnos_board_rule_self_test() {
   return $rc
 }
 
+# The systemd account rule (PR PINS-2). A product's installed systemd units may name an account (User=, Group=,
+# SocketUser=, SocketGroup=) only when one of the product's components declares it: a [[users]] name, or a [[groups]]
+# name (a user's own group counts as declared by that user). root and numeric ids are not checked. A unit that names
+# an undeclared account is refused: systemd starts no unit as an account it cannot find (217/USER).
+# The units are read from the components' descriptions: `from = { file = F }` beside the component, or
+# `from = { source = S, path = P }` at the commit the product's gaia.lock pins for source <component>.<S>, from a bare
+# clone kept under the unit cache (a first run clones it; a commit not yet in the clone is fetched).
+# Prints one line per problem and returns 1 when there is any; prints nothing for a product that is fine.
+unit_accounts_rule() {  # <devices dir> <product.toml> <unit cache dir>
+  python3 -I -c '
+import os, re, subprocess, sys, tomllib
+dev, product, cache = sys.argv[1], sys.argv[2], sys.argv[3]
+pdir = os.path.dirname(product)
+pname = os.path.basename(pdir)
+env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+problems = []
+
+def git(*args, cwd=None):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=900, env=env)
+
+def read_git(sources, comp, src_name, path):
+    key = comp + "." + src_name
+    src = sources.get(key)
+    if not src or src.get("kind") != "git":
+        raise RuntimeError(f"{path} comes from source {key}, which the lock does not pin as git")
+    url, commit = src["url"], src["commit"]
+    repo = os.path.join(cache, re.sub(r"[^A-Za-z0-9._-]", "_", url.rstrip("/").split("/")[-1]) + ".git")
+    if not os.path.isdir(repo):
+        os.makedirs(cache, exist_ok=True)
+        r = git("clone", "-q", "--bare", "--filter=blob:none", url, repo)
+        if r.returncode:
+            raise RuntimeError(f"cannot clone {url} to read {path}: {r.stderr.strip()}")
+    if git("cat-file", "-e", commit + "^{commit}", cwd=repo).returncode:
+        r = git("fetch", "-q", "--filter=blob:none", "origin", commit, cwd=repo)
+        if r.returncode:
+            raise RuntimeError(f"cannot fetch {commit} from {url} to read {path}: {r.stderr.strip()}")
+    r = git("show", f"{commit}:{path}", cwd=repo)
+    if r.returncode:
+        raise RuntimeError(f"{path} is not in {url} at {commit}")
+    return r.stdout
+
+UNIT = re.compile(r"^/(?:etc/systemd|usr/lib/systemd)/(?:system|user)/(?:([^/]+)\.d/)?([^/]+)$")
+KIND = re.compile(r"\.(service|socket|timer|path|mount|target|slice|automount|swap|scope)$")
+
+def unit_of(to):
+    m = UNIT.match(to)
+    if not m:
+        return None
+    dropin, base = m.group(1), m.group(2)
+    if dropin:
+        return dropin, dropin + " (drop-in " + base + ")"
+    if KIND.search(base):
+        return base, base
+    return None
+
+try:
+    with open(os.path.join(pdir, "gaia.lock"), "rb") as f:
+        sources = tomllib.load(f).get("source", {})
+    with open(product, "rb") as f:
+        comps = tomllib.load(f).get("components", {})
+    users, groups, units = set(), set(), []
+    for cname in sorted(comps):
+        cpath = os.path.normpath(os.path.join(pdir, comps[cname]))
+        with open(cpath, "rb") as f:
+            ct = tomllib.load(f)
+        for u in ct.get("users", []):
+            users.add(u["name"])
+            if "group" in u:
+                groups.add(u["group"])
+        for g in ct.get("groups", []):
+            groups.add(g["name"])
+        for inst in ct.get("install", []):
+            found = unit_of(inst.get("to", ""))
+            src = inst.get("from")
+            if not found or not isinstance(src, dict):
+                continue
+            if "file" in src:
+                with open(os.path.join(os.path.dirname(cpath), src["file"]), encoding="utf-8") as f:
+                    text = f.read()
+            elif "source" in src:
+                text = read_git(sources, cname, src["source"], src["path"])
+            else:
+                continue
+            units.append((found[1], text))
+    for label, text in units:
+        for line in text.splitlines():
+            m = re.match(r"^\s*(User|Group|SocketUser|SocketGroup)\s*=\s*(\S*)\s*$", line)
+            if not m or m.group(2) in ("", "root") or m.group(2).isdigit() or "%" in m.group(2) or "$" in m.group(2):
+                continue
+            key, acct = m.group(1), m.group(2)
+            declared = users if key in ("User", "SocketUser") else groups
+            if acct not in declared:
+                problems.append(f"products/{pname}: {label} names {key}={acct}, which no component of the product declares as an account (a [[users]] or [[groups]] entry in the component that owns the unit)")
+except Exception as error:
+    problems.append(f"products/{pname}: the systemd account check did not run: {error}")
+for p in problems:
+    print("FAIL " + p)
+sys.exit(1 if problems else 0)
+' "$1" "$2" "$3"
+}
+
+# Proves the account rule passes the Raze product as the tree has it, and refuses, on a scratch copy of devices/, the
+# same product once the Orion component stops declaring the comm core's account: the refusal names the unit and the account.
+unit_accounts_self_test() {  # <unit cache dir>
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(unit_accounts_rule "$repo/devices" "$repo/devices/products/raze-base/product.toml" "$1"); then
+    echo "check-devices: self-test: the Raze product no longer passes the systemd account rule: $out" >&2; rc=1
+  fi
+  python3 -I - "$tmp/devices/components/orion/component.toml" <<'PY' || { rm -rf "$tmp"; return 1; }
+import sys
+p = sys.argv[1]
+blocks = open(p, encoding="utf-8").read().split("\n\n")
+kept = [b for b in blocks if not ("[[users]]" in b and 'name = "orion-comm"' in b)]
+assert len(kept) == len(blocks) - 1, "the orion-comm [[users]] block is not in the component"
+open(p, "w", encoding="utf-8").write("\n\n".join(kept))
+PY
+  if out=$(unit_accounts_rule "$tmp/devices" "$tmp/devices/products/raze-base/product.toml" "$1"); then
+    echo "check-devices: self-test: a unit naming an account no component declares was not refused" >&2; rc=1
+  elif [[ $out != *"orion-comm.service names User=orion-comm"* ]]; then
+    echo "check-devices: self-test: the refusal does not name the unit and the account: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the systemd account rule passes Raze and refuses a unit whose account no component declares"
+  return $rc
+}
+
 # The bring-up rule (PR B31). Every bring-up product (its name ends in -bringup) carries the watchdog and LED signs
 # (components/bringup-alive), its own LED and link settings (components/bringup-alive-settings, which install
 # /etc/board-alive.leds and /etc/board-alive.links), and a family whose kernel fragment builds in the watchdog driver
@@ -1981,6 +2109,7 @@ offline_tool=$(command -v false)
 locks=$(mktemp -d)
 plans=$(mktemp -d)
 bench_dir=""
+unit_cache=${ATLAS_UNIT_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/units}
 lock_tries="1 2 3"
 trap 'rm -rf "$locks" "$plans" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"} ${bench_dir:+"$bench_dir"}' EXIT
 
@@ -2064,6 +2193,10 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     if ! lemnos_board_msg=$(lemnos_board_rule "$product"); then
       bad "$product: $lemnos_board_msg"
     fi
+  fi
+  # The systemd account rule (PR PINS-2): a unit names only accounts a component of this product declares.
+  if ! units_msg=$(unit_accounts_rule "$root" "$product" "$unit_cache"); then
+    while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$units_msg"
   fi
   # A product whose components take a named input (`{ input = NAME }`) is planned with the input given;
   # gaia refuses an input that nothing uses, so only those products get it.
@@ -2258,6 +2391,7 @@ if [[ $root_given -eq 0 ]]; then
   lemnos_cargo_pin_self_test "$repo/Cargo.toml" "$root" || die "self-check: the Cargo pin rule no longer refuses a lemnos-slot-store rev other than the products' Lemnos rev"
   lemnos_duplicate_self_test "$repo/Cargo.lock" || die "self-check: the one-copy rule no longer refuses a Lemnos crate at two revs"
   lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
+  unit_accounts_self_test "$unit_cache" || die "self-check: the systemd account rule no longer refuses a unit that names an account no component declares"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
   bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
   firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
