@@ -162,7 +162,10 @@ config = { timeout_s = 15 }
 [[devices]]
 id = "slots"
 driver = "system-slots"
-config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [] }
+# crash_log: the pstore mount the previous boot's crash record is read from (Lemnos IMG-REQ-raze 9; docs/boards.md
+# "system-slots"). The region is the ramoops-pi5 overlay's (boards/raze/boot/raze-device.txt); the kernel builds
+# PSTORE, PSTORE_RAM and PSTORE_CONSOLE in (families/bcm2712/assets/linux.fragment) and systemd mounts /sys/fs/pstore.
+config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [], crash_log = "/sys/fs/pstore" }
 
 # The security switch (Lemnos S2 #255; docs/slots.md "The security switch"; tip docs/boards.md:368-371 and 598-600).
 # OFF by default. record and keys are absolute paths; keys is the trust root the switch checks itself, and no key file

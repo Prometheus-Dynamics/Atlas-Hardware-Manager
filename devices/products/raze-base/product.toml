@@ -34,11 +34,14 @@ lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 rpi-dtmerge = "../../components/rpi-dtmerge/component.toml"
 orion = "../../components/orion/component.toml"
 orion-recovery = "../../components/orion-recovery/component.toml"
+# The way in over SSH (Orion's, on lemnos0) and the bench's root comm core (bench only: a product image leaves it out).
+raze-orion-ssh = "../../components/raze-orion-ssh/component.toml"
+bench-comm-root = "../../components/bench-comm-root/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-boot"
