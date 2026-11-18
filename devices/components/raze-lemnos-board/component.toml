@@ -61,8 +61,8 @@ cmdline-slot = "cmdline-slot.words"
 # image's boot_size. `fit` is run before anything is written and fails when the payload does not fit its bay.
 # Outputs are the image (`boot`) and the fit/args/verify printout (`boot-report`): the five bay sizes are read from it.
 [generate.image]
-fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@"]
-args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--size", "@size@", "--out", "@out@"]
+fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@", "--firmware", "@firmware@"]
+args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--firmware", "@firmware@", "--size", "@size@", "--out", "@out@"]
 verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 
 # The slot bundle: the same tool writes it from the payload, the root image and its verity table (`@rootfs@`,
@@ -70,7 +70,7 @@ verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/
 # as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at Lemnos next fe8beb7c with
 # `lemnos-ctl bundle --help` (docs/prs/L2d.md, "bundle, flag by flag").
 [generate.bundle]
-args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
+args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--firmware", "@firmware@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
 key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
 verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 verify_key_args = ["--pubkey", "@pubkey@"]

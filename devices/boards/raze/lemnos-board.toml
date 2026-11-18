@@ -46,7 +46,13 @@ dma_heaps = ["linux,cma"]
 #                  stream tables and the Lemnos reference's overlays grow it (the reference board's compiled overlay
 #                  was 1,839 bytes at Lemnos's own dtc; a camera product is larger).
 #   cmdline        4,096 (4 KiB). The stored cmdline, 249 bytes (the tool's figure). About 16x over it.
+# config_lines and firmware_overlays: the two firmware lines dev's raze-device.txt gives (Raze #2's p1, read 2026-11-18),
+# which Lemnos's fixed config.txt cannot include as a file: vc4-kms-v3d-pi5 (the display pipeline) and ramoops-pi5 (pstore
+# in RAM, the board's only early-boot log; read through crash_log below). Each overlay named in a line is listed once in
+# firmware_overlays, so its .dtbo goes into every bay set (Gaia's @firmware@: the overlays boards/raze/board.toml builds).
 [boot]
+config_lines = ["dtoverlay=vc4-kms-v3d-pi5", "dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000"]
+firmware_overlays = ["vc4-kms-v3d-pi5", "ramoops-pi5"]
 bay_kernel_bytes = 10485760
 bay_initramfs_bytes = 1048576
 bay_device_tree_bytes = 131072
