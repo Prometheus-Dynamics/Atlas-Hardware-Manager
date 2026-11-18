@@ -1742,13 +1742,23 @@ slot_chain_check() {
       while IFS= read -r f; do bfiles+=("$bdir/$f"); done < <(
         grep -E '^fragments = ' "$b" | grep -ho '"[^"]*\.\(fragment\|config\)"' | tr -d '"')
     done < <(find "$dev/boards" -mindepth 2 -maxdepth 2 -name board.toml 2>/dev/null | sort)
+    # Each fragment is read once into a table of its lines; the checks below look a line up instead of running a grep per
+    # file and symbol (thousands of processes per run, slow under load). A lookup is the old pattern's exact-line match.
+    local -A lines_of=()
+    local ln
+    for f in ${frags[@]+"${frags[@]}"} ${bfiles[@]+"${bfiles[@]}"}; do
+      [[ -f $f && -z ${lines_of[$f]+x} ]] || continue
+      lines_of[$f]=$'\n'
+      while IFS= read -r ln || [[ -n $ln ]]; do lines_of[$f]+="$ln"$'\n'; done <"$f"
+    done
+    has_line() { [[ ${lines_of[$1]-} == *$'\n'"$2"$'\n'* ]]; }  # <file> <exact line>
     # required: each chain symbol that applies to this family must be =y in one of the family's fragments
     for entry in "${SLOT_CHAIN[@]}"; do
       [[ ${entry%%:*} == "*" || ${entry%%:*} == "$fam" ]] || continue
       sym=${entry#*:}
       local found=""
       for f in ${frags[@]+"${frags[@]}"}; do
-        if [[ -f $f ]] && grep -qE "^CONFIG_${sym}=y\$" "$f"; then found=$f; fi
+        if [[ -f $f ]] && has_line "$f" "CONFIG_${sym}=y"; then found=$f; fi
       done
       if [[ -z $found ]]; then
         echo "check-devices: FAIL families/$fam: CONFIG_$sym is not =y in the family's kernel fragments (found: none). The slot's root is opened before any module can load, so a slot of this family does not boot." >&2
@@ -1761,7 +1771,7 @@ slot_chain_check() {
       for entry in "${SLOT_CHAIN[@]}"; do
         [[ ${entry%%:*} == "*" || ${entry%%:*} == "$fam" ]] || continue
         sym=${entry#*:}
-        if grep -qE "^CONFIG_${sym}=m\$|^# CONFIG_${sym} is not set\$" "$f"; then
+        if has_line "$f" "CONFIG_${sym}=m" || has_line "$f" "# CONFIG_${sym} is not set"; then
           val=$(grep -oE "^CONFIG_${sym}=m|^# CONFIG_${sym} is not set" "$f" | head -1)
           echo "check-devices: FAIL ${f#$dev/}: $val, but CONFIG_$sym must be =y on a slot family ($fam): the slot's root is opened before any module can load." >&2
           rc=1
@@ -1772,7 +1782,7 @@ slot_chain_check() {
     # Each stream keeps a dictionary and working memory for the life of the mount, and the kernel's default is
     # one per possible CPU up to 16, so an unstated count follows NR_CPUS. The 64 MB whole-system goal fixes it.
     for f in ${frags[@]+"${frags[@]}"} ${bfiles[@]+"${bfiles[@]}"}; do
-      [[ -f $f ]] && grep -qE '^CONFIG_EROFS_FS_ZIP_LZMA=y$' "$f" || continue
+      [[ -f $f ]] && has_line "$f" "CONFIG_EROFS_FS_ZIP_LZMA=y" || continue
       val=$(grep -E '^CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=' "$f" | head -1)
       if [[ $val != "CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=$LZMA_STREAMS" ]]; then
         echo "check-devices: FAIL ${f#$dev/}: CONFIG_EROFS_FS_ZIP_LZMA=y, but the stream count is ${val:-not stated}; a slot family ($fam) states CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=$LZMA_STREAMS (each stream holds memory for the life of the mount; the kernel default follows NR_CPUS; the system's goal is 64 MB of RAM)." >&2

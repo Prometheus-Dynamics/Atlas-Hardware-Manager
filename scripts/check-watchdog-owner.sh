@@ -226,9 +226,30 @@ wd_lemnos_blocks() {  # <board file>
 # Feeders among a product's input files: "<path relative to devices>:<line>" for each line that writes /dev/watchdog*
 # (a comment does not count). Pairs on stdin.
 wd_input_feeders() {  # <devices dir>
-  local devdir=$1 dest src hit
-  while IFS=$'\t' read -r dest src; do
-    [[ -f $src ]] && grep -qI '' "$src" 2>/dev/null || continue
+  # One grep over every input file, in the pairs' order (a file listed twice is read twice, as before). -I skips a binary
+  # file, as the per-file `grep -qI ''` test did; a file that does not exist is left out. A path holding ':' cannot be
+  # split from grep's "file:line:" output, so such a list takes the file-by-file form.
+  local devdir=$1 dest src files=() f
+  while IFS=$'\t' read -r dest src; do [[ -f $src ]] && files+=("$src"); done
+  [[ ${#files[@]} -gt 0 ]] || return 0
+  for f in "${files[@]}"; do
+    if [[ $f == *:* ]]; then printf '%s\n' "${files[@]}" | wd_input_feeders_each "$devdir"; return 0; fi
+  done
+  { grep -nIH -- '/dev/watchdog' "${files[@]}" 2>/dev/null || true; } | awk -v dev="$devdir/" '
+    match($0, /:[0-9]+:/) {
+      file = substr($0, 1, RSTART - 1); n = substr($0, RSTART + 1, RLENGTH - 2); text = substr($0, RSTART + RLENGTH)
+      if (text ~ /^[[:space:]]*[#;]/) next
+      if (index(file, dev) == 1) file = substr(file, length(dev) + 1)
+      print file ":" n
+    }'
+  return 0
+}
+
+# The file-by-file form of wd_input_feeders, for paths it cannot split (file paths on stdin, one per line).
+wd_input_feeders_each() {  # <devices dir>
+  local devdir=$1 src hit
+  while IFS= read -r src; do
+    grep -qI '' "$src" 2>/dev/null || continue
     { grep -n '/dev/watchdog' "$src" || true; } | grep -vE '^[0-9]+:[[:space:]]*[#;]' | while IFS= read -r hit; do
       printf '%s:%s\n' "${src#"$devdir"/}" "${hit%%:*}"
     done
