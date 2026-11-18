@@ -25,6 +25,8 @@
 #   ATLAS_KERNEL_SKIP=1    locally only: skip the whole check, printing that it was skipped. A source that cannot be
 #                          fetched is a FAIL otherwise, in CI as well: a kernel configuration that cannot be
 #                          resolved is not a pass.
+#   ATLAS_KERNEL_RESULT_CACHE=0  resolve every board, even one whose result is kept for the same inputs (results/ in
+#                          the cache dir, keyed by tree, defconfig, fragment contents, toolchain and this script).
 #   KEEP_KERNEL_SCRATCH=1  keep the scratch O= directories (default: removed).
 #
 # A board whose kernel needs a patch series (a source named "*series*" in its family) is listed as SKIPPED: this
@@ -96,6 +98,15 @@ command -v "${CROSS_PREFIX}gcc" >/dev/null || die "${CROSS_PREFIX}gcc is needed:
 echo "check-kernel-fragments: resolving with ${CROSS_PREFIX}gcc $("${CROSS_PREFIX}gcc" -dumpfullversion 2>/dev/null) (ARCH=arm64 CROSS_COMPILE=$CROSS_PREFIX)" >&2
 export ARCH=arm64 CROSS_COMPILE=$CROSS_PREFIX
 cache=${ATLAS_KERNEL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/kernel}
+# Everything outside the source tree and the board's files that a resolve's result can depend on: this script (the
+# resolve and the line check are in it), the cross and host toolchains (Kconfig asks the compiler what it supports),
+# the host tools that build and run Kconfig, and the environment variables Kbuild reads. Part of every result's key.
+tools_key=$( { sha256sum "$0" | cut -d' ' -f1
+  "${CROSS_PREFIX}gcc" -v 2>&1; "${CROSS_PREFIX}ld" -v 2>&1 || true
+  "${HOSTCC:-gcc}" -v 2>&1 || true; make --version | head -n 1; flex --version; bison --version | head -n 1
+  python3 -I -c 'import sys; print(sys.version)'
+  env | grep -E '^(ARCH|CROSS_COMPILE|LLVM|LLVM_IAS|CC|LD|HOSTCC|HOSTCXX|KCONFIG_[A-Z_]*|KBUILD_[A-Z_]*|SRCARCH)=' | LC_ALL=C sort
+} | sha256sum | cut -c1-32)
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/atlas-kernel-XXXXXX")
 trap '[[ ${KEEP_KERNEL_SCRATCH:-0} == 1 ]] || rm -rf "$scratch"' EXIT
 mkdir -p "$cache"
@@ -242,7 +253,34 @@ bare_marker_check
 
 # Resolves one board's configuration in its own O= directory and checks every fragment line against it. Prints the
 # FAIL lines, then a last line "RESULT <n failed lines> <fragment files>"; a step that cannot run ends with exit 1.
+# A resolve is deterministic: the same source tree, defconfig, fragments, toolchain and script give the same result.
+# So each result is kept, keyed by all of them: the tree by its pin (or its patched tree's key), each fragment by its
+# name AND content, in order, and tools_key above. Any change to any of them misses the key and resolves again; a hit
+# prints exactly what the resolve printed. Results are stored only when the resolve ran to its RESULT line.
+# ATLAS_KERNEL_RESULT_CACHE=0 resolves every board anyway.
 resolve_board() {  # <name> <family> <source tree> <defconfig> <fragment list>
+  local name=$1 res=$3 defconfig=$4 frags=$5 key kept tmp f
+  local -a farr
+  if [[ ${ATLAS_KERNEL_RESULT_CACHE:-1} == 0 ]]; then resolve_board_now "$@"; return; fi
+  IFS=',' read -ra farr <<<"$frags"
+  key=$( { echo "$name|$defconfig"; cat "$res/.pin" "$res/.patched" 2>/dev/null; echo "$tools_key"
+    for f in "${farr[@]}"; do echo "== ${f#$devices/}"; sha256sum < "$f"; done; } | sha256sum | cut -c1-32)
+  kept=$cache/results/$key
+  if [[ -f $kept ]]; then
+    touch "$kept" 2>/dev/null || true
+    echo "check-kernel-fragments: $name: kept result (the same tree, defconfig, fragments, toolchain and script)"
+    cat "$kept"; return 0
+  fi
+  mkdir -p "$cache/results"
+  # A result unused for 30 days goes (each is a few lines; a hit refreshes its time).
+  find "$cache/results" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
+  tmp=$cache/results/.new-$key.$BASHPID
+  resolve_board_now "$@" >"$tmp" || { cat "$tmp"; rm -f "$tmp"; return 1; }
+  cat "$tmp"
+  if [[ $(tail -n 1 "$tmp") == RESULT\ * ]]; then mv -f "$tmp" "$kept"; else rm -f "$tmp"; fi
+}
+
+resolve_board_now() {  # <name> <family> <source tree> <defconfig> <fragment list>
   local name=$1 fam=$2 res=$3 defconfig=$4 frags=$5 o target out board_fail=0 f
   local -a farr
   o=$scratch/$name
@@ -437,7 +475,9 @@ for i in "${!pids[@]}"; do
     fails=$((fails + board_fail))
   else
     fam=${fams[$i]}
-    echo "check-kernel-fragments: ok $name ($fam, $nfrag fragment file(s), every line takes)"
+    kept_note=""
+    grep -q "^check-kernel-fragments: $name: kept result" "$scratch/$name.result" && kept_note=", a kept result"
+    echo "check-kernel-fragments: ok $name ($fam, $nfrag fragment file(s), every line takes$kept_note)"
   fi
   checked=$((checked + 1))
 done
