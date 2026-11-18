@@ -73,6 +73,8 @@ jobs:
       - run: ./scripts/gate.sh
         env:
           ATLAS_SCRATCH_ROOT: ${{ runner.temp }}
+          # A fresh runner builds once: incremental data would only cost time and cache room (gate.sh leaves it to cargo).
+          CARGO_INCREMENTAL: "0"
       - uses: actions/cache/save@v4
         if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
         with:

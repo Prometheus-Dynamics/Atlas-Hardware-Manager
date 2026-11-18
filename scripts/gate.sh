@@ -2,7 +2,9 @@
 # The check every PR into next must pass. CI runs exactly this.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+# Incremental compilation is left to cargo (on for dev and test builds): measured interleaved, 2026-11-18, an edit to
+# atlas-types then clippy + the test build took 22/15/24 s incremental against 31/25/43 s without, for 5.3 GB of target
+# against 3.1 GB. CI builds from scratch and sets CARGO_INCREMENTAL=0 itself (next.yml), where it only costs.
 
 # Every temp file of the gate and of the scripts it runs lands under one scratch root, never /tmp (PR G12). mktemp
 # and ${TMPDIR:-/tmp} both follow TMPDIR, which is set here for every step; the directory is removed on exit.
