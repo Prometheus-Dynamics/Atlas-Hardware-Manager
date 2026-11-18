@@ -2241,48 +2241,81 @@ echo "check-devices: passed ($nf families, $nb boards, $nc components, $np produ
 # The default run also proves the checker still catches a broken file: the good fixtures must
 # pass and the broken one must fail. Not run for --root, which names a tree to check alone.
 if [[ $root_given -eq 0 ]]; then
-  out=$(mktemp)
-  for good in good good-f8 good-rust good-sd-image; do
-    if ! "$self" --root "$fixtures/$good" >"$out" 2>&1; then
-      cat "$out" >&2; die "self-check: the $good fixture no longer passes"
-    fi
-  done
-  rc=0
-  "$self" --root "$fixtures/broken" >"$out" 2>&1 || rc=$?
-  if ! broken_failed_as_it_must "$out" "$rc"; then
-    cat "$out" >&2
-    die "self-check: the broken fixture passed, or failed without naming its bad key, so the checker no longer catches a broken file"
-  fi
-  rm -f "$out"
-  lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
-  lemnos_cargo_pin_self_test "$repo/Cargo.toml" "$root" || die "self-check: the Cargo pin rule no longer refuses a lemnos-slot-store rev other than the products' Lemnos rev"
-  lemnos_duplicate_self_test "$repo/Cargo.lock" || die "self-check: the one-copy rule no longer refuses a Lemnos crate at two revs"
-  lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
-  slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
-  bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
-  firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
-  unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
-  pads_self_test || die "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family"
-  erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
-  data_size_self_test || die "self-check: the data size rule no longer refuses a too-small data partition or a missing keep"
-  rk_env_self_test || die "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX"
-  slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
-  boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
-  wd_self_test "$repo" >/dev/null || die "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs"
+  # Every self-check below is independent: each works on its own scratch copies (mktemp), never on the real tree, and
+  # the fixture runs are separate processes. They run side by side, each with its own output files and its own copy of
+  # the shared scratch files errs and outs (the only globals a self-test writes). Each function is still called as
+  # `fn || ...` (set -e behaves inside it as it did when the list ran in order). All are waited for, then their output
+  # is printed in the list's order and the first failure, in that order, stops the run with its message.
+  st_dir=$(mktemp -d)
+  st_names=() st_pids=() st_msgs=()
+  st() {  # <failure message> <command...>
+    local n=${#st_names[@]} msg=$1
+    shift
+    ( errs=$st_dir/$n.errs; outs=$st_dir/$n.outs; : >"$errs"; : >"$outs"; "$@" || exit $? ) >"$st_dir/$n.out" 2>"$st_dir/$n.err" &
+    st_names+=("$*"); st_pids+=("$!"); st_msgs+=("$msg")
+  }
+  fixture_passes() {  # <fixture>
+    local o
+    o=$(mktemp)
+    "$self" --root "$fixtures/$1" >"$o" 2>&1 || { cat "$o" >&2; rm -f "$o"; return 1; }
+    rm -f "$o"
+  }
+  broken_fixture_fails() {
+    local o rc=0
+    o=$(mktemp)
+    "$self" --root "$fixtures/broken" >"$o" 2>&1 || rc=$?
+    broken_failed_as_it_must "$o" "$rc" || { cat "$o" >&2; rm -f "$o"; return 1; }
+    rm -f "$o"
+  }
+  wd_self_test_quiet() { wd_self_test "$repo" >/dev/null; }
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
-  fake=$(mktemp -d)
-  vout=$(mktemp)
-  other=1111111111111111111111111111111111111111
-  printf '#!/bin/sh\necho "gaia 2.0.6-dev (%s)"\n' "$other" > "$fake/gaia-other"
-  printf '#!/bin/sh\necho "gaia 2.0.6-dev"\n' > "$fake/gaia-none"
-  chmod +x "$fake/gaia-other" "$fake/gaia-none"
-  for fb in gaia-other gaia-none; do
-    rc=0
-    GAIA_BIN="$fake/$fb" "$self" --root "$fixtures/good" >"$vout" 2>&1 || rc=$?
-    if [[ $rc -eq 0 ]] || ! grep -q "devices/gaia.lock" "$vout" || ! grep -q "$gaia_commit" "$vout"; then
-      cat "$vout" >&2; rm -rf "$fake" "$vout"; die "self-check: a $fb binary was not refused naming the pinned commit"
-    fi
+  version_gate_self_test() {
+    local fake vout other fb rc
+    fake=$(mktemp -d)
+    vout=$(mktemp)
+    other=1111111111111111111111111111111111111111
+    printf '#!/bin/sh\necho "gaia 2.0.6-dev (%s)"\n' "$other" > "$fake/gaia-other"
+    printf '#!/bin/sh\necho "gaia 2.0.6-dev"\n' > "$fake/gaia-none"
+    chmod +x "$fake/gaia-other" "$fake/gaia-none"
+    for fb in gaia-other gaia-none; do
+      rc=0
+      GAIA_BIN="$fake/$fb" "$self" --root "$fixtures/good" >"$vout" 2>&1 || rc=$?
+      if [[ $rc -eq 0 ]] || ! grep -q "devices/gaia.lock" "$vout" || ! grep -q "$gaia_commit" "$vout"; then
+        cat "$vout" >&2; rm -rf "$fake" "$vout"; echo "check-devices: self-check: a $fb binary was not refused naming the pinned commit" >&2; return 1
+      fi
+    done
+    rm -rf "$fake" "$vout"
+  }
+  for good in good good-f8 good-rust good-sd-image; do
+    st "self-check: the $good fixture no longer passes" fixture_passes "$good"
   done
-  rm -rf "$fake" "$vout"
+  st "self-check: the broken fixture passed, or failed without naming its bad key, so the checker no longer catches a broken file" broken_fixture_fails
+  st "self-check: the Lemnos one-rev rule no longer refuses two revs in one product" lemnos_rule_self_test
+  st "self-check: the Cargo pin rule no longer refuses a lemnos-slot-store rev other than the products' Lemnos rev" lemnos_cargo_pin_self_test "$repo/Cargo.toml" "$root"
+  st "self-check: the one-copy rule no longer refuses a Lemnos crate at two revs" lemnos_duplicate_self_test "$repo/Cargo.lock"
+  st "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file" lemnos_board_rule_self_test
+  st "self-check: the slot root chain check no longer refuses a module or a missing =y" slot_chain_self_test
+  st "self-check: the bring-up rule no longer refuses a bring-up product without its signs" bringup_rule_self_test
+  st "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware" firmware_rule_self_test
+  st "self-check: the in-no-product note lists a product's board, or misses a board nothing names" unnamed_self_test
+  st "self-check: the pad rule no longer refuses a derived, unsourced, unstated or missing table, or an unstated family" pads_self_test
+  st "self-check: the erofs rule no longer reads each product's plan" erofs_rule_self_test
+  st "self-check: the data size rule no longer refuses a too-small data partition or a missing keep" data_size_self_test
+  st "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX" rk_env_self_test
+  st "self-check: the slot id rule no longer refuses an id that is not the version's" slot_id_rule_self_test
+  st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
+  st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
+  st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
+  st_rcs=()
+  for i in "${!st_pids[@]}"; do
+    rc=0; wait "${st_pids[$i]}" || rc=$?
+    st_rcs+=("$rc")
+  done
+  for i in "${!st_pids[@]}"; do
+    cat "$st_dir/$i.out"
+    cat "$st_dir/$i.err" >&2
+    [[ ${st_rcs[$i]} -eq 0 ]] || die "${st_msgs[$i]}"
+  done
+  rm -rf "$st_dir"
   echo "check-devices: self-check passed (good fixtures pass, broken fixture fails, a wrong or unknown gaia commit is refused)"
 fi
