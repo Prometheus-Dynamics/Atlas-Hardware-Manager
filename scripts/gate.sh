@@ -84,6 +84,11 @@ devices_then_config_only() {
     step "config-only build (every product)" scripts/check-config-only.sh
   fi
 }
+# A fresh worktree's empty target starts from a seed (scripts/cargo-seed.sh; only with ATLAS_CARGO_SEED_DIR set).
+scripts/cargo-seed.sh restore
+# The target records its worktree, so scripts/prune-targets.sh can tell whose cache it is.
+mkdir -p "${CARGO_TARGET_DIR:-target}" && pwd > "${CARGO_TARGET_DIR:-target}/.atlas-worktree"
+
 bg "device descriptions, then config-only" devices_then_config_only
 # Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
 # cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
@@ -204,4 +209,6 @@ if compgen -G "crates/*/*/src" > /dev/null; then
   step "no shell-outs to ssh for board jobs" no_match -rn -E "Command::new\(\"(ssh|scp|sftp)\"\)" -- "crates/*/*/src" "apps/*/src-tauri/src"
 fi
 
+# A green gate's target becomes the seed for its key when there is none yet (only with ATLAS_CARGO_SEED_DIR set).
+scripts/cargo-seed.sh save
 echo "gate passed"
