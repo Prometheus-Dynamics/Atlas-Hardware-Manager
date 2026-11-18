@@ -1,0 +1,31 @@
+# DEV ONLY: the K230D bring-up product for bpi-canmv-k230d-zero (BusyBox init). It is the one place a dev-only
+# script is allowed in next (the S41usb0 gadget script, the bench key). Lemnos and Orion are NOT here.
+#
+# PENDING, outside the device check: this file is under devices/pending/, which the check does not read.
+# Two Gaia gaps stop it planning: (1) the boot partition holds Image and the dtb, a partition built from
+# the kernel, which sd-image cannot take (only the rootfs and data are its own); (2) the SPL, U-Boot and env
+# raw areas need their files from the SDK boot chain (a subdir of k230-sdk, outside needs). The base product
+# is the same board without the dev-only parts.
+version = 1
+name = "k230d-zero-bringup"
+description = "BPI-CanMV-K230D-Zero bring-up: BusyBox, SD boot, NCM over USB-C, SSH with the bench key (dev only)."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
+
+[components]
+dev-bench-ssh-key = "../components/dev-bench-ssh-key/component.toml"
+dev-usb0-gadget = "../components/dev-usb0-gadget/component.toml"
+
+[[images]]
+name = "k230d-zero-bringup"
+board = "../../../boards/bpi-canmv-k230d-zero/board.toml"
+components = ["dev-bench-ssh-key", "dev-usb0-gadget"]
+# The base OS fragment, then the bring-up's own (dropbear).
+os = { provider = "buildroot", source = "buildroot", fragments = ["../../../products/bpi-canmv-k230d-zero-base/os.fragment", "os.fragment"] }
+recipe = "sd-image"
+
+[images.settings]
+# Names the disk (sd-image requires it; the GUIDs come from it).
+id = "k230d-zero-bringup"

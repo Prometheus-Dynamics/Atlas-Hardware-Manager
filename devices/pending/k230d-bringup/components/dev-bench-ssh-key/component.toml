@@ -1,0 +1,15 @@
+# PENDING Gaia local input. DEV ONLY; used only by the K230D bring-up products (devices/pending/k230d-bringup).
+# The bench SSH PUBLIC key is a BUILD INPUT: a named local file from outside the repository (Gaia's local
+# input, `--input name=path`, not in 4abf626 yet). Commit no key, and never a private key.
+# Why it exists: dropbear refuses blank passwords, so a bring-up board needs a key to log in. It goes when
+# Orion serves SSH on the board.
+version = 1
+name = "dev-bench-ssh-key"
+description = "DEV ONLY: the bench SSH public key as root's authorized_keys (K230D bring-up only)."
+
+# The name below becomes the named local input (pending Gaia's rev). BusyBox boards: dropbear's own init
+# script (S50dropbear, installed by the dropbear package) starts it at boot; no unit is installed here.
+[[install]]
+from = { file = "authorized_keys" }
+to = "/root/.ssh/authorized_keys"
+mode = "0600"

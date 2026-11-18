@@ -1,0 +1,9 @@
+# DEV ONLY (CanMV K230D AI-CAM bring-up) on top of the AI-CAM's base OS fragment. Every line says why it is here.
+# BusyBox init stays (the tiny boards stay on BusyBox; no systemd here).
+
+# SSH with the bench key: the only way in until Orion serves SSH on the board. dropbear's own init script
+# (S50dropbear) starts it; the key comes from dev-bench-ssh-key.
+BR2_PACKAGE_DROPBEAR=y
+
+# Not here: systemd (not this board's init), and Lemnos or Orion (not on the bring-up image: the bring-up
+# proves the loader, kernel and device tree first).

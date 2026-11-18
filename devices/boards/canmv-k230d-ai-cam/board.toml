@@ -1,0 +1,51 @@
+# CanMV K230D AI-CAM (Junroc, Kendryte K230D, riscv64, 128 MB LPDDR4 in the package) on the K230 family.
+# microSD holds the boot and the data; no eMMC; no SPI-NAND by default. Hardware: a GC2093 camera (MIPI
+# CSI RX1, 4 lanes, I2C4, reset GPIO20, MCLK1 on IO13), a Realtek RTL8189FTV Wi-Fi on SDIO0 (no Ethernet),
+# a 480x800 ST7701 MIPI DSI panel. The USB-C port (USB0, OTG) is device mode for the bring-up's gadget.
+# The lens is a variant (see the note below). Untested on board (G7).
+version = 1
+extends = "../../families/k230/family.toml"
+name = "canmv-k230d-ai-cam"
+description = "CanMV K230D AI-CAM (K230D, 128 MB, microSD, GC2093 camera, Wi-Fi)"
+
+[target]
+cpu = "xuantie-c908"
+
+# The kernel: mainline Linux 7.3.3 (the standing goal: latest 7.x). Source: the stable tree tag v7.3.3,
+# the same ref as Gaia's rk35xx family example. Status: BUILT, NOT BOOTED: Gaia's log says "Kernel:
+# arch/riscv/boot/Image is ready" (/mnt/ssd-samsung/gaia/boards/k230d-ai-cam/build.log, 2026-11-08); no image
+# file was kept there (REPORT-mainline.md lists the image's sha256 d112bd47... as built, not booted).
+# The kernel tarball used by that build (linux-7.3.3.tar.xz) had no recorded digest.
+[sources.linux]
+git = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "v7.3.3"
+
+[kernel]
+source = "linux"
+fragments = ["kernel/base.fragment"]
+device_tree_dir = "dts"
+
+# The device tree (dts/k230d-ai-cam.dts): written from the SDK's k230.dtsi addresses and the bindings,
+# because mainline's k230.dtsi stops at the UARTs (REPORT-mainline.md). UNVERIFIED on a board: the SD node
+# (mmc_sd1, alias mmc0) and the USB node (dwc2, device mode) are ours. Its bootargs root=/dev/mmcblk0p2 is
+# why the slot device is mmcblk0p2 (not an inference: the alias makes the TF slot mmcblk0).
+#
+# Mainline blocks (REPORT-mainline.md, K230D table): no board dts in mainline (ours); the boot chain is the
+# SDK's U-Boot (mainline U-Boot has no K230 SPL or MMC driver); the PMIC is not found; MIPI CSI, the ISP, the
+# NPU, the GPU (VGLite) and the video codec have no mainline driver (SDK code only). The bring-up needs none of
+# them.
+#
+# Burner defconfig: open. Canaan's SDK names k230d_canmv_junroc_ai_cam_defconfig for its RTOS and Linux builds
+# only; the pinned SDK (k230_sdk 7e302f7) has no junroc defconfig. Its loader is loader.bin or loader_mmc*.bin.
+#
+# Lens variants (for B10's app data, devices/boards/canmv-k230d-ai-cam/app/app.json, not written here):
+#   lens-72 (72 degrees), lens-140 (140 degrees). Both UNCONFIRMED: no vendor source for 72; the 140 one
+#   rests on one reseller listing. REPORT-mainline.md: the 140 build differs only in /etc/camera-lens.
+#   One board description covers both lenses; the hardware here does not differ between them.
+#
+# Power: USB-C 5 V 2 A is the K230D Zero's rating (dev's record); this board's supply is not sourced. No firmware
+# power cap: the user dropped it on 2026-10-30.
+#
+# Open (dev's todo): which USB-C is the power input and which is UART0 (presumed through a CH342K); the burner's
+# load address (0x80360000 vs 0x80300000, as for the Zero); the Wi-Fi driver and firmware (RTL8189FTV) before the
+# board has any network; no LEDs, fan or header pins are sourced.

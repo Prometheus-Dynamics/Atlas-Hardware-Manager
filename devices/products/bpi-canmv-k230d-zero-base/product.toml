@@ -1,0 +1,26 @@
+# The BPI-CanMV-K230D-Zero's base OS image: root slots on microSD, no components yet. Untested on
+# board (G7). Written in Gaia 70a5133's F8 form; validates and plans at that pin.
+version = 1
+name = "bpi-canmv-k230d-zero-base"
+description = "BPI-CanMV-K230D-Zero: base OS image"
+
+# Buildroot 2024.02.1, the upstream release. NOT what the Gaia build used: that was the SDK's Buildroot tree
+# (`make sync` in k230_sdk: 2024.02.1 with the SDK's overlay on top; Gaia 3d1f249). The overlay is the SDK's
+# buildroot-ext (k230_sdk 7e302f7, src/little/buildroot-ext): a subdir need (outside needs). Confirm the tag.
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
+
+[[images]]
+name = "bpi-canmv-k230d-zero-base"
+board = "../../boards/bpi-canmv-k230d-zero/board.toml"
+recipe = "slot"
+# The OS is the Buildroot tree above, with no fragments yet: the SDK's Buildroot config (its
+# buildroot-ext configs/k230d_canmv_defconfig, pinned in k230-sdk) is not a file this product can
+# name at this pin. Open.
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+
+# The slot's device: rootfs-a, the image's second partition (mmcblk0p2, from Gaia 3d1f249's
+# K230D Zero notes).
+[images.settings]
+device = "/dev/mmcblk0p2"

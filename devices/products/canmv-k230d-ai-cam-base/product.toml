@@ -1,0 +1,22 @@
+# The CanMV K230D AI-CAM's base OS image: root slots on microSD, no components yet. Untested on
+# board (G7). Written in Gaia 70a5133's F8 form; validates and plans at that pin.
+version = 1
+name = "canmv-k230d-ai-cam-base"
+description = "CanMV K230D AI-CAM: base OS image"
+
+# Buildroot 2024.02.1, the upstream release. NOT what a Gaia build used: that was the SDK's Buildroot tree
+# with the SDK's overlay (buildroot-ext in k230_sdk 7e302f7; a subdir need). Confirm the tag before G7.
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
+
+[[images]]
+name = "canmv-k230d-ai-cam-base"
+board = "../../boards/canmv-k230d-ai-cam/board.toml"
+recipe = "slot"
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+
+# The slot's device: the TF slot is mmc0 (alias mmc0 = mmc_sd1 in the AI-CAM dts) and its rootfs-a is
+# partition 2: /dev/mmcblk0p2, the bootargs of that dts. Untested on board (G7).
+[images.settings]
+device = "/dev/mmcblk0p2"

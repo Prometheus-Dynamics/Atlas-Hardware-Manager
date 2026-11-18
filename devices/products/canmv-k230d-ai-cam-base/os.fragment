@@ -1,0 +1,16 @@
+# Buildroot fragment for the AI-CAM's base OS (Gaia's os.fragment, `@here@` is this file's directory).
+# Each line says why it is here (standing rule). What is NOT here, and why, is at the end.
+
+# The K230D's core: RISC-V with the compressed and vector extensions (the SDK's K230D settings).
+BR2_riscv=y
+BR2_RISCV_ISA_RVC=y
+BR2_RISCV_ISA_RVV=y
+BR2_TARGET_GENERIC_HOSTNAME="k230d-ai-cam"
+BR2_TARGET_GENERIC_ISSUE="Welcome to the CanMV K230D AI-CAM"
+
+# NOT here, each with its gap:
+# - the toolchain: a download source the fragment cannot name yet (outside needs);
+# - U-Boot and OpenSBI: the SDK's boot chain, from a subdir of k230-sdk (outside needs: `subdir`);
+# - the kernel: from the board (mainline 7.3.3, v7.3.3);
+# - the SDK's Buildroot external tree (the same subdir need). VGLite is not carried (its SDK kernel
+#   device /dev/vg_lite does not exist in mainline; the AI-CAM's own post-build sets it off too).

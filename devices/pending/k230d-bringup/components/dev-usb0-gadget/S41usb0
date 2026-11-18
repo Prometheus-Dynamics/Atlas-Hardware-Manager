@@ -1,0 +1,40 @@
+#!/bin/sh
+# DEV ONLY (K230D bring-up). BusyBox init runs this at boot (rcS runs the S* scripts in order).
+# An NCM function on the USB-C port, bound through configfs; then usb0 at 10.55.0.1/24 and udhcpd for
+# the host. Why each step: the gadget is the board's only network (no Ethernet on either K230D board);
+# the vendor ids are dev-only, not a product's (0x1d6b:0x0104, Linux Foundation's test pair).
+G=/sys/kernel/config/usb_gadget/atlas-dev
+
+case "$1" in
+start)
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+	mkdir -p "$G" || exit 1
+	echo 0x1d6b > "$G/idVendor"
+	echo 0x0104 > "$G/idProduct"
+	mkdir -p "$G/strings/0x409"
+	echo atlas-dev > "$G/strings/0x409/serialnumber"
+	echo "Atlas dev" > "$G/strings/0x409/manufacturer"
+	echo "K230D bring-up" > "$G/strings/0x409/product"
+	mkdir -p "$G/configs/c.1/strings/0x409"
+	echo "NCM" > "$G/configs/c.1/strings/0x409/configuration"
+	mkdir -p "$G/functions/ncm.usb0"
+	ln -sf "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	# Bind to the first UDC (the dwc2 controller). Fails quietly if the port is in host mode.
+	ls /sys/class/udc 2>/dev/null | head -n 1 > "$G/UDC"
+	# The interface appears once the gadget binds; wait up to 10 s for it.
+	i=0
+	while [ ! -d /sys/class/net/usb0 ] && [ $i -lt 10 ]; do sleep 1; i=$((i + 1)); done
+	ifconfig usb0 10.55.0.1 netmask 255.255.255.0 up
+	udhcpd /etc/udhcpd.usb0.conf
+	;;
+stop)
+	kill "$(cat /var/run/udhcpd.pid 2>/dev/null)" 2>/dev/null
+	echo "" > "$G/UDC" 2>/dev/null
+	rm -f "$G/configs/c.1/ncm.usb0"
+	;;
+*)
+	echo "usage: $0 {start|stop}" >&2
+	exit 1
+	;;
+esac
+exit 0

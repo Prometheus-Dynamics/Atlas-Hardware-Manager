@@ -1,0 +1,11 @@
+# Kernel config fragment for the Zero's base OS (Gaia's [kernel] fragments), on ruyisdk's k230_defconfig.
+# Every line says why it is here (standing rule).
+
+# CMA at 16 MiB, not the defconfig's 50% of RAM: this is a 128 MB board, and half of it would sit in the
+# CMA area. Reason: RAM. Dev's Gaia fragment (linux.fragment, 3d1f249) had the same size.
+# CONFIG_CMA_SIZE_PERCENTAGE is not set
+CONFIG_CMA_SIZE_SEL_MBYTES=y
+CONFIG_CMA_SIZE_MBYTES=16
+
+# Not carried from dev: CONFIG_DMABUF_HEAPS (VGLite and Styx's soft ISP, neither on `next`), and
+# CONFIG_USB_ETH / CONFIG_USB_ETH_RNDIS (dev's g_ether gadget; `next` gadgets are NCM, decision 5).
