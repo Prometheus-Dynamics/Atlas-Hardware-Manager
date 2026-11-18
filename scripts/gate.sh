@@ -101,8 +101,8 @@ if compgen -G "crates/*/*/Cargo.toml" > /dev/null || compgen -G "apps/*/src-taur
   step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
   # cargo-nextest runs every test as its own process, all binaries at once (cargo test runs one binary at a time):
   # the same cases (it skips the #[ignore]d ones as cargo test does), but not doctests, which run after it. Tests that
-  # share something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock). Where
-  # nextest is not installed (CI), cargo test runs the same cases.
+  # share something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock). CI installs
+  # nextest (next.yml); where it is not installed, cargo test runs the same cases.
   if cargo nextest --version >/dev/null 2>&1; then
     step tests cargo nextest run --locked --workspace --no-fail-fast
     step doctests cargo test --locked --workspace --doc

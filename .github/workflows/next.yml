@@ -37,6 +37,11 @@ jobs:
       # rust-toolchain.toml selects the toolchain and its components.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # The gate runs the tests under cargo-nextest when it is installed (else cargo test). The action is pinned to the
+      # commit of its v2.90.5 tag, and nextest to an exact version.
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: nextest@0.9.148
       # scripts/check-devices.sh builds Gaia at the commit devices/gaia.lock names
       # and keeps it here; the key moves only when the lock does.
       - uses: actions/cache@v4
