@@ -36,7 +36,12 @@ jobs:
       - uses: actions/checkout@v5
       # rust-toolchain.toml selects the toolchain and its components.
       - uses: dtolnay/rust-toolchain@stable
+      # The key adds the root Cargo.toml: its [profile.*] sections change every dependency's build, and rust-cache's
+      # own key does not cover them. Without it a stale cache matched in full (and a full match is never saved again):
+      # every run restored it and still compiled all 202 dependencies (counted in the logs of five runs, 2026-11-18).
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       # The gate runs the tests under cargo-nextest when it is installed (else cargo test). The action is pinned to the
       # commit of its v2.90.5 tag, and nextest to an exact version.
       - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
@@ -162,7 +167,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+      # Keyed on the root Cargo.toml too, as in the gate job (its profiles change every dependency's build).
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
