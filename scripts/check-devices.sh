@@ -52,6 +52,68 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# ---- the kept result -------------------------------------------------------------------------------------------------
+# The default run (devices/, the check and its self-check) is deterministic in its inputs, so a run that passed is kept,
+# keyed by every one of them, and a later run with the same key prints what it printed and passes without running.
+# The inputs were read off a traced run (every file opened, stat'ed or executed, the children included):
+#   - this repository's devices/ (every file, by path and content), the four scripts the check is made of, the
+#     Cargo.toml and Cargo.lock (the Lemnos pin rules) and the rust-toolchain files;
+#   - the gaia binary (by content) and the recipes of its checkout (by path and content);
+#   - every host program the check or gaia runs or looks for, each by its resolved path and content, or as absent
+#     (veritysetup's absence changes a note), python's version, and the Rust toolchain gaia asks for from devices/;
+#   - the environment variables the check reads.
+# A change to any of them misses the key and runs the check. A run with GAIA_BIN, ATLAS_BUILT_TREES or
+# ATLAS_BUILT_BOOTLOADERS set (another binary or built trees to read) is never kept or answered from a kept result, nor
+# is --root, --self-test or --write-locks. ATLAS_DEVICES_RESULT_CACHE=0 runs the check anyway. A kept run prints its
+# output as one stream (stdout); the exit status is the check's own.
+devices_result_key() {
+  local lock commit gaia_bin t path
+  lock=$repo/devices/gaia.lock
+  commit=$(sed -n 's/^commit = "\(.*\)"$/\1/p' "$lock" 2>/dev/null) || return 1
+  gaia_bin=${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/$commit/bin/gaia
+  [[ -x $gaia_bin && -d ${gaia_bin%/bin/gaia}/src/recipes ]] || return 1
+  {
+    echo "devices-result v1"
+    (cd "$repo" && find devices -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
+    (cd "$repo" && sha256sum scripts/check-devices.sh scripts/check-watchdog-owner.sh scripts/version-rule.sh \
+      scripts/pc-key-strip.sh Cargo.toml Cargo.lock)
+    (cd "$repo" && for f in rust-toolchain rust-toolchain.toml; do [[ -f $f ]] && sha256sum "$f"; done; true)
+    sha256sum "$gaia_bin"
+    (cd "${gaia_bin%/bin/gaia}/src" && find recipes -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
+    for t in bash awk grep sed find sort realpath dirname basename head tail tr cut rm mktemp cat cp mkdir ls wc cmp \
+      chmod mv xargs env ssh-keygen python3 git curl bwrap veritysetup mkfs.erofs mke2fs debugfs make patch taskset \
+      tar xz zstd gzip cpio fakeroot mtools mcopy sgdisk gdisk mkfs.vfat dtc; do
+      if path=$(type -P "$t"); then echo "$t $path $(sha256sum < "$path")"; else echo "$t absent"; fi
+    done
+    python3 -VV
+    (cd "$repo/devices" && rustc -vV 2>&1 || echo "rustc absent")
+    getconf GNU_LIBC_VERSION 2>/dev/null || true
+    env | grep -E '^(ATLAS_[A-Z_]*|GAIA_[A-Z_]*|CHECK_[A-Z_]*|LC_[A-Z]*|LANG|RUSTUP_TOOLCHAIN|TZ)=' | LC_ALL=C sort
+  } | sha256sum | cut -c1-32
+}
+if [[ $mode == check && $root_given -eq 0 && $write_locks -eq 0 && ${ATLAS_DEVICES_RESULT_CACHE:-1} != 0 \
+      && -z ${ATLAS_DEVICES_INNER:-} && -z ${GAIA_BIN:-} && -z ${ATLAS_BUILT_TREES:-} && -z ${ATLAS_BUILT_BOOTLOADERS:-} ]]; then
+  results=${XDG_CACHE_HOME:-$HOME/.cache}/atlas/devices-results
+  if key=$(devices_result_key) && [[ -n $key ]]; then
+    if [[ -f $results/$key ]]; then
+      touch "$results/$key" 2>/dev/null || true
+      cat "$results/$key"
+      echo "check-devices: a kept result: this run's inputs (devices/, the check's scripts, gaia and its recipes, the host tools, the environment) are those of a run that passed"
+      exit 0
+    fi
+    mkdir -p "$results"
+    find "$results" -maxdepth 1 -type f -mtime +30 -delete 2>/dev/null || true
+    tmp_result=$results/.new-$key.$$
+    set +e
+    ATLAS_DEVICES_INNER=1 "$self" 2>&1 | tee "$tmp_result"
+    rc=${PIPESTATUS[0]}
+    set -e
+    # Kept only when it passed and its inputs did not move while it ran.
+    if [[ $rc -eq 0 && $(devices_result_key) == "$key" ]]; then mv -f "$tmp_result" "$results/$key"; else rm -f "$tmp_result"; fi
+    exit "$rc"
+  fi
+fi
+
 # The broken fixture must fail, given its run's exit status ($2) and output ($1). Under gaia
 # validate the output must also name the broken key, so the check shows it caught the bad file.
 broken_failed_as_it_must() {
