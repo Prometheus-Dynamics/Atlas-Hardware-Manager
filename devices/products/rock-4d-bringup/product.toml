@@ -1,9 +1,9 @@
-# ROCK 4D bring-up: rock-4d-base plus the DEV-ONLY way in (the bench SSH public key). DEV ONLY: the one
-# place a dev-only unit is allowed; the base product stays clean. No Lemnos and no Orion: they are not on a
+# ROCK 4D bring-up: the ROCK 4D's whole product (rock-4d-base was deleted in PR WDOG-OWNER; its OS lines are
+# in os.fragment here), with the DEV-ONLY way in (the bench SSH public key). DEV ONLY: the one place a dev-only unit is allowed. No Lemnos and no Orion: they are not on a
 # bring-up board. The board's tree enables no device-mode port (usb_drd0_dwc3 and usb_drd1_dwc3 are
 # dr_mode = host), so there is no USB network: the first proof is Ethernet, DHCP on eth0 through
 # systemd-networkd (from the base). The bench public key is the named input `bench-key` (see the
-# zero-3e-bringup product). Untested on board: nothing here has booted; the user flashes the card.
+# bring-up product of ZERO 3E was deleted in Z2.) Untested on board: nothing here has booted; the user flashes the card.
 # DO NOT CONNECT ANY OF THIS BOARD'S USB PORTS TO A PC. This image enables no USB device port and has no
 # gadget, so every USB port on the board is a HOST port that supplies 5 V. Two supplies on one cable can
 # damage the PC's port or the board. Reach the board over Ethernet only. (Condition set by the
@@ -29,11 +29,11 @@ dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
 name = "rock-4d-bringup"
 board = "../../boards/radxa-rock-4d/board.toml"
 components = ["radxa-rock-4d-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "bringup-alive", "bringup-alive-settings", "bringup-network"]
-# The base OS fragment, then the bring-up's own (dropbear, the serial getty).
-os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/rock-4d-base/os.fragment", "os.fragment"] }
+# The OS fragment: the ROCK 4D's base lines and the bring-up's own (dropbear, the serial getty), both in os.fragment.
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "sd-image"
 budget = "1G"
 
 [images.settings]
-# Names the disk (required by sd-image; see rock-4d-base).
+# Names the disk (required by sd-image).
 id = "rock-4d-bringup"

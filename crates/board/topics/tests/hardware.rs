@@ -4,7 +4,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -32,8 +32,8 @@ impl Pause for NoPause {
     }
 }
 
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("topics-{name}"))
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
@@ -353,6 +353,15 @@ async fn a_description_is_asked_once_and_again_only_when_its_generation_moves() 
     connected(&handle).await;
     let hardware = Hardware::new(handle, link());
     read_until(&hardware, "every reading", all_read).await;
+    // The connect-time ask is counted once its answer is in (the description is described): the
+    // reading does not wait for the description, so counting before this would race the ask.
+    read_until(&hardware, "the descriptions of both devices", |snapshot| {
+        ["lemnos.vane0", "lemnos.gauge1"].iter().all(|name| {
+            device(snapshot, name)
+                .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
+        })
+    })
+    .await;
     let asked = |name: &str| node.runs_started(&format!("{name}.call"));
     assert_eq!(asked("lemnos.vane0"), 1, "asked once at connect");
     assert_eq!(asked("lemnos.gauge1"), 1);
@@ -438,13 +447,23 @@ async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_
         item(vane, "angle").value.is_some(),
         "the topics still show the reading"
     );
-    // The first ask may come before this connection has the generation topic's first sample. A
-    // refusal then holds no generation, and the sample arriving is a change: one more ask, and then
-    // nothing, however many reads follow.
+    // The first ask and the generation topic's first sample race: a sample that arrives after the
+    // ask is a change, so one more ask follows it; a sample that arrives first needs none. Both
+    // orders are the rule, so the count is one or two, and what the test holds to is that nothing
+    // asks again on a timer. The sample is awaited first, so the count is taken after it.
+    read_until(
+        &hardware,
+        "the vane's first generation sample",
+        |snapshot| {
+            device(snapshot, "lemnos.vane0")
+                .is_some_and(|device| device.generation == Reported::Value(1))
+        },
+    )
+    .await;
     let mut asked = node.runs_started("lemnos.vane0.call");
     assert!(
         (1..=2).contains(&asked),
-        "asked once, and once more when its generation arrives: {asked}"
+        "asked once, and once more if its generation arrived after the ask: {asked}"
     );
     for _ in 0..5 {
         let _ = hardware.snapshot().await;
@@ -476,6 +495,75 @@ async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_
         asked + 1,
         "one ask on the refresh"
     );
+}
+
+/// A session that fails in the middle of a refresh, and comes back on a new connection: the answers
+/// the refresh has already received still answer it. The devices that answered before the failure
+/// are not asked again; the device whose ask was lost is asked again; the device after it is asked
+/// once. The refresh's own count is kept: one ask per device.
+#[tokio::test]
+async fn a_refresh_whose_session_fails_asks_again_only_the_devices_that_have_not_answered() {
+    let dir = scratch("refresh");
+    let node = start(&dir, None);
+    node.refuse_describe(true);
+    let sessions = Sessions::with_call_wait(Arc::new(NoPause), Duration::from_secs(5));
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+    let hardware = Hardware::new(handle, link());
+    read_until(&hardware, "the devices shown, none described", |snapshot| {
+        all_read(snapshot)
+            && snapshot
+                .devices
+                .iter()
+                .all(|device| matches!(device.description, DescriptionState::NotAvailable(_)))
+    })
+    .await;
+    // Every generation known: each device's sample has come, and with it the one ask it is owed.
+    read_until(&hardware, "every generation known", |snapshot| {
+        snapshot
+            .devices
+            .iter()
+            .all(|device| matches!(device.generation, Reported::Value(_)))
+    })
+    .await;
+    for _ in 0..5 {
+        let _ = hardware.snapshot().await;
+    }
+    let asked = |device: &str| node.runs_started(&format!("lemnos.{device}.call"));
+    let (bare, gauge, vane) = (asked("bare0"), asked("gauge1"), asked("vane0"));
+
+    // The session ends on off0's ask, after bare0 and gauge1 have answered this refresh.
+    node.drop_session_at_describe("off0");
+    node.refuse_describe(false);
+    hardware.refresh_descriptions();
+    read_until(
+        &hardware,
+        "the vane described after the failed refresh",
+        |snapshot| {
+            device(snapshot, "lemnos.vane0")
+                .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
+        },
+    )
+    .await;
+    assert_eq!(
+        asked("bare0"),
+        bare + 1,
+        "bare0 answered before the session failed: not asked again"
+    );
+    assert_eq!(
+        asked("gauge1"),
+        gauge + 1,
+        "gauge1 answered before the session failed: not asked again"
+    );
+    assert_eq!(asked("vane0"), vane + 1, "one ask on the refresh");
+    for _ in 0..5 {
+        let _ = hardware.snapshot().await;
+    }
+    assert_eq!(asked("bare0"), bare + 1, "no ask on a timer");
+    assert_eq!(asked("gauge1"), gauge + 1, "no ask on a timer");
+    assert_eq!(asked("vane0"), vane + 1, "no ask on a timer");
 }
 
 /// An off device comes back to running: its generation moves, and it is described again.
@@ -628,6 +716,8 @@ async fn a_republish_that_withdraws_the_devices_is_held_not_faulted_and_not_remo
     );
 }
 
+/// A device the node stops listing is held for the grace, then removed. The grace is on a manual
+/// clock: the test advances it past the grace, so the removal does not wait on the machine.
 #[tokio::test]
 async fn a_device_withdrawn_for_longer_than_the_grace_is_removed() {
     let dir = scratch("grace");
@@ -637,10 +727,26 @@ async fn a_device_withdrawn_for_longer_than_the_grace_is_removed() {
         .handle(&address(node.network().port()))
         .expect("the node is on");
     connected(&handle).await;
-    let hardware = Hardware::with_grace(handle, link(), Duration::from_millis(300));
+    let grace = Duration::from_millis(300);
+    let clock = atlas_session::Clock::manual();
+    let hardware = Hardware::with_clock(handle, link(), grace, clock.clone());
     read_until(&hardware, "every reading", all_read).await;
 
     node.hold_devices(true);
+    // Held, not removed, while the clock is within the grace. Every device must be unlisted before
+    // the clock moves: the node withdraws them on its own tick, so a device still listed then would
+    // take the advance as its last sighting.
+    let held = read_until(
+        &hardware,
+        "every device held within the grace",
+        |snapshot| {
+            !snapshot.devices.is_empty() && snapshot.devices.iter().all(|device| !device.listed)
+        },
+    )
+    .await;
+    assert_eq!(held.devices.len(), 5, "held within the grace, none removed");
+
+    clock.advance(grace + Duration::from_millis(1));
     read_until(
         &hardware,
         "the devices removed after the grace",

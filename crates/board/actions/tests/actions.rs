@@ -6,18 +6,18 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use atlas_actions::{
-    Action, ActionError, ActionJobs, ArgKind, BoardActions, CancelState, Catalog, Progress,
-    Reported, Route,
+    Action, ActionError, ActionJobs, ArgKind, BoardActions, CancelState, Catalog,
+    LEASE_ENDED_PREFIX, Progress, Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Clock, FailureKind, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -29,11 +29,6 @@ use tokio::time;
 
 const FAMILY: &str = "test-family";
 const SERIAL: &str = "0123abcd";
-/// The reason the simulated node gives for a run its service restart ended.
-/// The bridge's words for a run whose caller's lease ran out (Lemnos bded77a0 calls.rs:318).
-const LEASE_RAN_OUT: &str = "its lease ran out; the job ended with its connection";
-
-const RESTARTED: &str = "-4: the service restarted before this finished";
 
 /// A pause that does not wait: the failure rule is tested on the session's side. It only yields,
 /// so the monitor thread does not spin while the node is gone.
@@ -46,10 +41,9 @@ impl Pause for NoPause {
     }
 }
 
-/// A scratch directory under the system temp dir, kept short: the node's Unix socket must fit
-/// `SUN_LEN`, and a long build path (CI's workspace) would not.
-fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("atl-c3-{}-{name}", std::process::id()))
+/// A node's directory, short whatever the name: its Unix socket must fit `SUN_LEN`.
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 fn lemnos_kind() -> Kind {
@@ -121,11 +115,14 @@ struct Rig {
     sessions: Arc<Sessions>,
     address: Address,
     board: BoardActions,
+    /// The node's directory: kept as long as the rig, removed after the node.
+    _dir: atlas_sim_node::socket::NodeDir,
 }
 
 impl Rig {
     async fn start(name: &str, kind: &Kind) -> Self {
-        let node = start(&scratch(name).join("node"), kind);
+        let dir = scratch(name);
+        let node = start(&dir.join("node"), kind);
         let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
         let address = address(&node);
         let handle = sessions.handle(&address).expect("the node is on");
@@ -135,6 +132,7 @@ impl Rig {
             sessions,
             address,
             board: BoardActions::new(handle),
+            _dir: dir,
         }
     }
 
@@ -146,11 +144,16 @@ impl Rig {
     }
 }
 
-async fn jobs(name: &str, sessions: Arc<Sessions>) -> ActionJobs {
-    let dir = scratch(name).join("jobs");
-    let _ = std::fs::remove_dir_all(&dir);
-    ActionJobs::open(
-        dir.join("jobs.json"),
+/// The job store for `name`, in a directory the caller keeps for as long as the store is used.
+async fn jobs(
+    name: &str,
+    sessions: Arc<Sessions>,
+) -> (ActionJobs, atlas_sim_node::socket::NodeDir) {
+    let dir = scratch(name);
+    let jobs_dir = dir.join("jobs");
+    let _ = std::fs::remove_dir_all(&jobs_dir);
+    let jobs = ActionJobs::open(
+        jobs_dir.join("jobs.json"),
         sessions,
         Events::new(64),
         JobTiming {
@@ -163,7 +166,8 @@ async fn jobs(name: &str, sessions: Arc<Sessions>) -> ActionJobs {
         DeviceHolds::new(),
     )
     .await
-    .expect("the job list opens")
+    .expect("the job list opens");
+    (jobs, dir)
 }
 
 fn status(jobs: &ActionJobs, id: JobId) -> JobStatus {
@@ -231,7 +235,7 @@ async fn the_catalog_gives_what_the_board_gives_and_marks_the_rest_not_reported(
 async fn every_listed_action_runs_on_the_simulated_node() {
     let rig = Rig::start("every", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("every", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("every", rig.sessions.clone()).await;
 
     for action in catalog.actions() {
         let argv = sample_words(action);
@@ -290,7 +294,7 @@ async fn an_action_the_code_has_never_heard_of_runs_from_its_description() {
 async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() {
     let rig = Rig::start("refusal", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("refusal", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("refusal", rig.sessions.clone()).await;
 
     let reason = "no dry runs while the board is in maintenance";
     rig.node
@@ -329,7 +333,7 @@ async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() 
 async fn bad_arguments_are_refused_before_anything_is_sent() {
     let rig = Rig::start("badargs", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("badargs", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("badargs", rig.sessions.clone()).await;
     let dry = named(&catalog, DRY_RUN);
 
     // A queued refusal stands in front of the next real send. If a bad call reached the node it
@@ -362,7 +366,7 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
 async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
     let rig = Rig::start("cancel", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("cancel", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("cancel", rig.sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
@@ -401,7 +405,7 @@ async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
 async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again() {
     let rig = Rig::start("lost", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("lost", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("lost", rig.sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     // Two stalls queued: a second start would take the second one, so the count shows it.
@@ -432,13 +436,14 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
         .expect("the node is on again");
     connected(&handle).await;
 
-    // The run ends (the service restarts): the followed run's own result reaches the job.
+    // The run ends (the service restarts). The run was started on an earlier session, so its end is
+    // not trusted as this job's outcome: the job ends as unknown, never as done or failed.
     rig.node.restart_daemon();
     wait_status(
         &jobs,
         id,
-        "the followed run's result",
-        |status| matches!(status, JobStatus::Failed { reason } if reason == RESTARTED),
+        "the job's outcome to be unknown after the reconnect",
+        |status| matches!(status, JobStatus::Unknown { reason, checking: None } if reason.contains("reconnect")),
     )
     .await;
     assert_eq!(
@@ -449,9 +454,167 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
 }
 
 #[tokio::test]
+async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
+    // The run's number is from the session it was started on. After the session goes and comes
+    // back, that number may belong to another run on the board, so the cancel is not sent.
+    let rig = Rig::start("cancel-guard", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    // Two stalls: the first run, and the one started on the later session.
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
+    connected(&handle).await;
+    let issued = BoardActions::new(handle)
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to start and stall", || {
+        rig.node.stalled_runs() == 1
+    })
+    .await;
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on again");
+    connected(&handle).await;
+
+    let refused = BoardActions::new(handle.clone()).cancel(&issued).await;
+    assert!(
+        matches!(refused, Err(ActionError::Unconfirmed { .. })),
+        "a cancel by a number from an earlier session is refused: {refused:?}"
+    );
+
+    // A run started on this session is cancelled: its own follow reports the cancel.
+    let fresh = BoardActions::new(handle.clone())
+        .start(named(&catalog, SELF_TEST), &[])
+        .await
+        .expect("a run starts on this session");
+    until("the second run to stall", || rig.node.stalled_runs() == 2).await;
+    BoardActions::new(handle.clone())
+        .cancel(&fresh)
+        .await
+        .expect("a run started on this session is cancelled");
+    let ended = BoardActions::new(handle)
+        .follow(&fresh, atlas_actions::any_answer, |_| {})
+        .await;
+    assert!(
+        matches!(ended, Err(ActionError::Cancelled(_))),
+        "the run ends cancelled: {ended:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
+    // The cancel is sent on the session the run was started on. The session then goes and comes
+    // back before the run's end is read: the end the node gives for that number is not trusted as
+    // this run's cancel, so the follow reports the outcome as unknown, never as Cancelled.
+    let rig = Rig::start("cancel-confirm", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let issued = board.start(self_test, &[]).await.expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    board
+        .cancel(&issued)
+        .await
+        .expect("the cancel is sent on the session it started on");
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on again");
+    connected(&handle).await;
+
+    let read = BoardActions::new(handle)
+        .follow(&issued, atlas_actions::any_answer, |_| {})
+        .await;
+    assert!(
+        matches!(read, Err(ActionError::Unconfirmed { .. })),
+        "a cancel read on a later session is unknown, not confirmed: {read:?}"
+    );
+}
+
+/// CHARACTERIZATION, not a guarantee. It asserts the known-bad outcome of today's Orion pin, so the
+/// hazard stays visible in the suite. Session 1 starts run A and nobody follows it; session 2
+/// starts run B with the same run number and stalls it. Following B should wait for B. Orion's stub
+/// router matches an attach on the caller's number alone, so it answers with A's result at once.
+/// No Atlas guard can see this for a generic job: the answer carries no run identity, and the
+/// session is the one B started on.
+///
+/// This test FLIPS when the Orion pin moves to a13d4030 (C53b: run handles, a bare attach refused
+/// when ambiguous). Then the follow waits for B, and this assertion must be changed to match.
+#[tokio::test]
+async fn until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer() {
+    let rig = Rig::start("attach-characterize", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Answer);
+    let a = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("A starts on session 1");
+    until("A to run on session 1", || rig.node.calls_received() >= 2).await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let a_call = a.call();
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let catalog2 = board.catalog().await.expect("catalog on session 2");
+    let self_test2 = named(&catalog2, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let b = board
+        .start(self_test2, &[])
+        .await
+        .expect("B starts on session 2");
+    until("B to stall on session 2", || rig.node.stalled_runs() == 1).await;
+    assert_eq!(
+        a_call,
+        b.call(),
+        "the two runs carry the same number, which is the hazard"
+    );
+
+    let followed = tokio::spawn({
+        let board = board.clone();
+        async move {
+            board
+                .follow(&b, atlas_actions::any_answer, |_| {})
+                .await
+                .map(|followed| followed.into_done().output)
+        }
+    });
+    until("the follow of B to answer (known-bad today)", || {
+        followed.is_finished()
+    })
+    .await;
+    let answer = followed.await.expect("the follow task ends");
+    assert_eq!(
+        answer.expect("today the answer is A's result, and it comes back at once"),
+        b"passed".to_vec(),
+        "the known-bad outcome: B's follow returned run A's answer"
+    );
+}
+
+#[tokio::test]
 async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     // A call's wait of one second: the blocked monitor makes the start's answer late.
-    let node = start(&scratch("inflight").join("node"), &lemnos_kind());
+    let inflight_dir = scratch("inflight");
+    let node = start(&inflight_dir.join("node"), &lemnos_kind());
     let sessions = Arc::new(Sessions::with_call_wait(
         Arc::new(NoPause),
         Duration::from_secs(1),
@@ -537,7 +700,8 @@ async fn a_short_action_that_runs_past_its_wait_is_asked_to_stop() {
 
 #[tokio::test]
 async fn a_start_with_no_connection_sends_nothing() {
-    let node = start(&scratch("noconn").join("node"), &lemnos_kind());
+    let noconn_dir = scratch("noconn");
+    let node = start(&noconn_dir.join("node"), &lemnos_kind());
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
     let handle = sessions.handle(&address(&node)).expect("the node is on");
     connected(&handle).await;
@@ -558,7 +722,8 @@ async fn a_start_with_no_connection_sends_nothing() {
 
 #[tokio::test]
 async fn a_plain_orion_node_lists_no_actions_and_says_why() {
-    let node = start(&scratch("plain").join("node"), &Kind::Plain);
+    let plain_dir = scratch("plain");
+    let node = start(&plain_dir.join("node"), &Kind::Plain);
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
     let handle = sessions.handle(&address(&node)).expect("the node is on");
     connected(&handle).await;
@@ -584,9 +749,12 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     let mut seen: Vec<Progress> = Vec::new();
     let done = rig
         .board
-        .follow(call, |progress| seen.push(progress.clone()))
+        .follow(&call, atlas_actions::any_answer, |progress| {
+            seen.push(progress.clone());
+        })
         .await
-        .expect("the run ends");
+        .expect("the run ends")
+        .into_done();
     assert_eq!(done.output, b"dry run label: 100 steps");
     assert!(!seen.is_empty(), "the board reported progress");
     assert!(
@@ -597,11 +765,13 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     assert!(seen.iter().any(|progress| progress.percent.is_some()));
 }
 
-/// A long action whose session goes silent while its hold exists, and then the board drops the run
-/// with its lease: each outcome has its own message, and neither is the board's last word alone.
+/// A long action whose session goes silent while its hold exists: the job reports the lapse, and the
+/// board keeps the run, since a caller with a run in flight is never dropped by the lease (Lemnos
+/// M39).
 #[tokio::test]
-async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_then_as_the_drop() {
-    let node = start(&scratch("lapse").join("node"), &lemnos_kind());
+async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_lapse() {
+    let lapse_dir = scratch("lapse");
+    let node = start(&lapse_dir.join("node"), &lemnos_kind());
     // The session's lease is on a manual clock: the lapse is an advance of that clock, not a wait. The
     // renew is far away, so nothing renews the lease but the job's own requests.
     let clock = Clock::manual();
@@ -621,7 +791,7 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
         .catalog()
         .await
         .expect("the board lists its actions");
-    let jobs = jobs("lapse", sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("lapse", sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     node.script().push_action(SELF_TEST, Behaviour::Stall);
@@ -638,25 +808,29 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
     })
     .await;
 
-    // The board's lease runs out: it drops the caller's run, and the run ends with its words.
+    // The board's lease runs out, but the caller has a run in flight: the lease is not dropped, and
+    // the run survives the caller's silence.
     node.lease_advance(61);
-    wait_status(
-        &jobs,
-        id,
-        "the run the board dropped",
-        |status| matches!(status, JobStatus::Failed { reason } if reason == LEASE_RAN_OUT),
-    )
-    .await;
-    assert!(node.lease_drops() >= 1, "the board dropped the caller");
+    time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        node.lease_drops(),
+        0,
+        "a caller with a run in flight is not dropped"
+    );
+    assert_eq!(
+        node.stalled_runs(),
+        1,
+        "the run survives the caller's silence"
+    );
 }
 
 #[tokio::test]
-async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_words() {
-    let rig = Rig::start("lease-ran-out", &lemnos_kind()).await;
+async fn the_run_survives_the_callers_silence() {
+    let rig = Rig::start("lease-survives", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let self_test = named(&catalog, SELF_TEST);
 
-    // The run stalls on the board, and the caller asks for nothing more: its lease runs out.
+    // The run stalls on the board, and the caller asks for nothing more: its lease is not dropped.
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
     let call = rig
         .board
@@ -665,18 +839,67 @@ async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_w
         .expect("the run is started");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
     let board = rig.board.clone();
-    let following = tokio::spawn(async move { board.follow(call, |_| {}).await });
+    let follow_call = call.clone();
+    let following = tokio::spawn(async move {
+        board
+            .follow(&follow_call, atlas_actions::any_answer, |_| {})
+            .await
+            .map(atlas_actions::Followed::into_done)
+    });
 
-    // The board drops the silent caller's run; the run ends Failed with the bridge's words.
     rig.node.lease_advance(61);
+    time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(rig.node.lease_drops(), 0, "the board kept the caller");
+    assert_eq!(rig.node.stalled_runs(), 1, "the run is still on the board");
+
+    // The caller then cancels it, and the run ends as asked.
+    rig.board.cancel(&call).await.expect("the cancel is sent");
     let ended = following.await.expect("the follow finishes");
-    assert_eq!(rig.node.lease_drops(), 1, "the board dropped the caller");
-    let error = ended.expect_err("a run whose lease ran out does not succeed");
-    assert!(matches!(error, ActionError::Failed(_)), "{error:?}");
-    assert_eq!(error.board_reason(), Some(LEASE_RAN_OUT));
-    let failure = error.failure().expect("the failure is typed");
-    assert_eq!(failure.kind(), FailureKind::Other, "{failure:?}");
-    assert_eq!(failure.code(), None, "no code is sent for it yet");
-    assert!(!failure.is_denied(), "not Denied: {failure:?}");
-    assert_eq!(failure.text(), LEASE_RAN_OUT);
+    let error = ended.expect_err("a cancelled run does not succeed");
+    assert!(matches!(error, ActionError::Cancelled(_)), "{error:?}");
+}
+
+#[tokio::test]
+async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_were_released() {
+    let rig = Rig::start("lease-note", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+
+    // The caller is idle past its lease: nothing of its is in flight, so the board releases its holds.
+    rig.node.lease_advance(61);
+    until("the board to drop the idle caller", || {
+        rig.node.lease_drops() == 1
+    })
+    .await;
+
+    // Its next run's reply begins with the note, and Atlas reads the note as a lapsed hold.
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let call = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run is started");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let board = rig.board.clone();
+    let follow_call = call.clone();
+    let following = tokio::spawn(async move {
+        board
+            .follow(&follow_call, atlas_actions::any_answer, |_| {})
+            .await
+            .map(atlas_actions::Followed::into_done)
+    });
+    rig.board.cancel(&call).await.expect("the cancel is sent");
+    let error = following
+        .await
+        .expect("the follow finishes")
+        .expect_err("a cancelled run does not succeed");
+    match error {
+        ActionError::HoldLapsed { reason, .. } => {
+            assert!(
+                reason.starts_with(LEASE_ENDED_PREFIX),
+                "the note leads the reply: {reason}"
+            );
+        }
+        other => panic!("the lapse is reported as a lapse, not {other:?}"),
+    }
 }

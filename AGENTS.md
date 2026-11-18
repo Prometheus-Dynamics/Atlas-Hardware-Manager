@@ -28,6 +28,22 @@ reference, and nothing here changes it. Read [`docs/design.md`](docs/design.md) 
 - A PR merges when `scripts/gate.sh` passes and its own CI checks exit 0. Paste the proof named in
   the brief into the PR text.
 
+## Workers and the landing gate
+
+- The landing gate is the proof. The lander runs `scripts/gate.sh` on the merged result; a worker
+  does not run the full gate before pushing. A worker runs `scripts/check-scoped.sh`, the
+  fail-before proof for its change, and fmt and clippy on what it touched. Nothing lands on a red
+  gate.
+- Repeat runs are set by risk and stated in the PR text. Many runs only for a change to timing or
+  concurrency. Three runs for a join of branches that each passed, and for ordinary changes.
+- A red landing gate is read and given a named cause. Never rerun it in hope.
+- Concurrent heavy jobs are capped to the cores they are given.
+- A worker starts warm: it reuses a kept worktree and its build directory once the previous item
+  has landed, or it starts from the cargo seed (`scripts/cargo-seed.sh`).
+- A brief names the exact base commit and the files in scope, and is small enough to finish in one
+  context. Long work hands off through a written state file.
+- Board runners run one per board, in parallel with software work.
+
 ## Rules
 
 - One way to a board: Orion. No SSH commands, console commands, HTTP gateways or protocols of

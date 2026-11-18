@@ -24,8 +24,9 @@ use crate::hotplug::HotplugEvent;
 use crate::link::LinkOptions;
 use crate::{
     BulkRead, BulkWrite, DeviceSummary, EndpointKind, EndpointSummary, InterfaceSummary,
-    OpenOptions, Timeouts, UsbError, UsbIo,
+    OpenOptions, PortPath, Timeouts, UsbError, UsbId, UsbIo,
 };
+use std::str::FromStr;
 
 /// The USB bus of this machine.
 #[derive(Clone, Debug)]
@@ -196,6 +197,15 @@ impl UsbBus for NusbBus {
         location: &str,
         options: &OpenOptions,
     ) -> Result<Box<dyn UsbIo>, UsbError> {
+        self.open_at(location, None, options).await
+    }
+
+    async fn open_at(
+        &self,
+        location: &str,
+        expected: Option<UsbId>,
+        options: &OpenOptions,
+    ) -> Result<Box<dyn UsbIo>, UsbError> {
         let info = list()
             .await?
             .into_iter()
@@ -205,6 +215,25 @@ impl UsbBus for NusbBus {
             .open()
             .await
             .map_err(|error| access_error(&error, location))?;
+        // The ids come from the open device, before anything is claimed: a
+        // device at the port that is not the expected one is refused here.
+        if let Some(expected) = expected {
+            let descriptor = device.device_descriptor();
+            let found = UsbId {
+                vendor: descriptor.vendor_id(),
+                product: descriptor.product_id(),
+            };
+            if found != expected {
+                return Err(match PortPath::from_str(location) {
+                    Ok(location) => UsbError::WrongIdentity {
+                        location,
+                        expected,
+                        found,
+                    },
+                    Err(error) => UsbError::Other(error.to_string()),
+                });
+            }
+        }
         let config = device
             .active_configuration()
             .map_err(|error| UsbError::Other(error.to_string()))?;

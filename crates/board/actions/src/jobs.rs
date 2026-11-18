@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{self, timeout};
 
 use crate::args;
-use crate::board::{BoardActions, Progress};
+use crate::board::{BoardActions, Followed, Issued, Progress, any_answer};
 use crate::catalog::Action;
 use crate::error::ActionError;
 
@@ -74,7 +74,7 @@ struct Step {
 /// What the job kind keeps for a step that has not finished.
 #[derive(Debug, Default)]
 struct Tracked {
-    call: Option<u64>,
+    call: Option<Issued>,
     /// The start is being sent, and its answer (the run number) is not known yet.
     starting: bool,
     progress: Option<Progress>,
@@ -120,8 +120,10 @@ impl ActionKind {
         self.map().remove(nonce);
     }
 
-    fn call_of(&self, nonce: &str) -> Option<u64> {
-        self.map().get(nonce).and_then(|tracked| tracked.call)
+    fn call_of(&self, nonce: &str) -> Option<Issued> {
+        self.map()
+            .get(nonce)
+            .and_then(|tracked| tracked.call.clone())
     }
 
     fn is_starting(&self, nonce: &str) -> bool {
@@ -160,6 +162,11 @@ impl JobKind for ActionKind {
         let address = Address::from_str(&spec.address).map_err(|error| {
             DriverError::Unsupported(format!("a saved action has no node address: {error}"))
         })?;
+        atlas_session::check_address(&address).map_err(|error| {
+            DriverError::Unsupported(format!(
+                "a saved action has no usable node address: {error}"
+            ))
+        })?;
         let Some(handle) = self.sessions.handle(&address) else {
             return Err(DriverError::Unreachable(format!(
                 "{address} is turned off, so {} is not being followed",
@@ -179,7 +186,10 @@ impl JobKind for ActionKind {
             .and_then(|tracked| tracked.hold.clone());
         let board = BoardActions::new(handle);
 
-        let known = self.map().get(&spec.nonce).and_then(|tracked| tracked.call);
+        let known = self
+            .map()
+            .get(&spec.nonce)
+            .and_then(|tracked| tracked.call.clone());
         let call = match known {
             // A run that is already on the board is followed, never started again.
             Some(call) => call,
@@ -191,7 +201,7 @@ impl JobKind for ActionKind {
                 self.update(&spec.nonce, |tracked| tracked.starting = false);
                 match started {
                     Ok(call) => {
-                        self.update(&spec.nonce, |tracked| tracked.call = Some(call));
+                        self.update(&spec.nonce, |tracked| tracked.call = Some(call.clone()));
                         call
                     }
                     // Nothing was sent: a retry is safe.
@@ -214,14 +224,24 @@ impl JobKind for ActionKind {
             ));
         };
         let followed = board
-            .follow_while_held(call, &hold, |progress| {
+            .follow_while_held(&call, any_answer, &hold, |progress| {
                 self.update(&nonce, |tracked| tracked.progress = Some(progress.clone()));
             })
             .await;
         match followed {
-            Ok(_) => {
+            Ok(Followed::Confirmed(_)) => {
                 self.forget(&spec.nonce);
                 Ok(())
+            }
+            // The run was started on an earlier session, and its end is the node's answer for a
+            // number that may have been used again. It is not trusted: the job ends as unknown,
+            // never as done.
+            Ok(Followed::Reconnected(_)) => {
+                self.forget(&spec.nonce);
+                Err(DriverError::Unknown(format!(
+                    "the outcome of {} is unknown after a reconnect: the run was started on an earlier session",
+                    spec.name
+                )))
             }
             // The run is still on the board: the next attempt follows it.
             Err(error @ ActionError::Lost { .. }) => {
@@ -237,6 +257,11 @@ impl JobKind for ActionKind {
                     }
                 });
                 Err(DriverError::Unreachable(error.to_string()))
+            }
+            // The run's end was read on a later session and is not trusted: the outcome is unknown.
+            Err(error @ ActionError::Unconfirmed { .. }) => {
+                self.forget(&spec.nonce);
+                Err(DriverError::Unknown(error.to_string()))
             }
             // The board's own answer: the job ends with its words.
             Err(error) => {
@@ -349,7 +374,7 @@ impl ActionJobs {
             return false;
         }
         let state = match call {
-            Some(call) => self.stop_on_board(&step.address, call).await,
+            Some(call) => self.stop_on_board(&step.address, &call).await,
             None if settled => CancelState::NoRun,
             None => CancelState::NotConfirmed(
                 "the start did not answer in time, so the run may still start on the board".into(),
@@ -360,24 +385,31 @@ impl ActionJobs {
         true
     }
 
-    async fn stop_on_board(&self, address: &str, call: u64) -> CancelState {
+    async fn stop_on_board(&self, address: &str, issued: &Issued) -> CancelState {
+        let call = issued.call();
         let Ok(address) = Address::from_str(address) else {
             return CancelState::NotConfirmed(format!("{address} is not an address"));
         };
+        if let Err(error) = atlas_session::check_address(&address) {
+            return CancelState::NotConfirmed(error.to_string());
+        }
         let Some(handle) = self.kind.sessions.handle(&address) else {
             return CancelState::NotConfirmed(format!(
                 "{address} is turned off; run {call} may still be going"
             ));
         };
         let board = BoardActions::new(handle);
-        if let Err(error) = board.cancel(call).await {
+        if let Err(error) = board.cancel(issued).await {
             return CancelState::NotConfirmed(format!(
                 "the cancel did not reach the board ({error}); run {call} may still be going"
             ));
         }
-        match timeout(CANCEL_CONFIRM, board.follow(call, |_| {})).await {
+        match timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {})).await {
             Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
-            Ok(Ok(_)) => {
+            Ok(Ok(Followed::Reconnected(_))) => CancelState::NotConfirmed(format!(
+                "the outcome of run {call} is unknown after a reconnect"
+            )),
+            Ok(Ok(Followed::Confirmed(_))) => {
                 CancelState::NotConfirmed("the run finished before the cancel took effect".into())
             }
             Ok(Err(other)) => CancelState::NotConfirmed(other.to_string()),

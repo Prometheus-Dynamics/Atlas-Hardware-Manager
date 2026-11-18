@@ -32,7 +32,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -40,6 +40,8 @@ use std::time::{Duration, Instant};
 use orion::node::Node;
 use orion::types::NodeName;
 use orion::{Address, ClientError, Identity, Options, Orion};
+
+use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
@@ -336,6 +338,9 @@ pub struct Monitor {
     thread: Option<JoinHandle<()>>,
 }
 
+/// The sessions connected in this process, numbered as they connect (see [`Handle::session`]).
+static SESSIONS: AtomicU64 = AtomicU64::new(0);
+
 /// What the rest of Atlas holds of a monitor: the node's address and presence, and the way to
 /// run calls on its live session. Cheap to clone.
 #[derive(Clone, Debug)]
@@ -345,6 +350,9 @@ pub struct Handle {
     calls: mpsc::Sender<Box<dyn Job>>,
     call_wait: Duration,
     lease: Arc<LeaseShared>,
+    /// Counts the sessions this monitor has connected: each connect that finds the node takes the
+    /// next number (see [`Handle::session`]).
+    serial: Arc<AtomicU64>,
 }
 
 impl Handle {
@@ -366,6 +374,18 @@ impl Handle {
     /// A receiver of presence changes, for code that waits on them.
     pub fn watch(&self) -> watch::Receiver<Presence> {
         self.presence.clone()
+    }
+
+    /// The number of the session this monitor is on: it counts the connects that found the node, so
+    /// it changes each time the session is lost and found again. A run number the node gave is only
+    /// known within the session it was issued in; a caller that records the session with a call
+    /// compares it when the call's answer is used (see `Issued` in the board actions).
+    pub fn session(&self) -> u64 {
+        if matches!(*self.presence.borrow(), Presence::Found(_)) {
+            self.serial.load(Ordering::SeqCst)
+        } else {
+            0
+        }
     }
 
     /// The key of the node this session is connected to now, if it is connected. A caller that
@@ -586,6 +606,8 @@ impl Monitor {
         let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
         let shared = Arc::new(LeaseShared::new());
+        let serial = Arc::new(AtomicU64::new(0));
+        let thread_serial = Arc::clone(&serial);
         let (thread_address, thread_stop) = (address.clone(), stop.clone());
         let thread_shared = Arc::clone(&shared);
         let thread = thread::Builder::new()
@@ -611,6 +633,7 @@ impl Monitor {
                     node: None,
                     device: None,
                     last_listed: None,
+                    serial: thread_serial,
                 };
                 keeper.run();
             })
@@ -622,6 +645,7 @@ impl Monitor {
                 calls,
                 call_wait,
                 lease: shared,
+                serial,
             },
             orders,
             stop,
@@ -688,6 +712,8 @@ struct Keeper {
     lapse_marked: bool,
     /// The node this session is connected to, while it is Found.
     node: Option<Node>,
+    /// The number of the session, counted by each connect that finds the node (see [`Handle::session`]).
+    serial: Arc<AtomicU64>,
     /// The device whose bridge renews the lease, once listed (see `bridge_device`).
     device: Option<String>,
     /// When the node's devices were last listed, when none was found.
@@ -699,6 +725,14 @@ impl Keeper {
         let mut backoff = Backoff::default();
         while !self.stopped() {
             self.take_orders();
+            // A socket path that cannot be bound or connected to does not get better by trying again:
+            // say so once and stop, rather than back off forever as for a lost board.
+            if let Err(error) = check_address(&self.address) {
+                let reason = error.to_string();
+                self.sender.send_replace(Presence::Lost(reason.clone()));
+                self.refuse_waiting(&reason);
+                break;
+            }
             match self.connect() {
                 Ok(orion) => match orion.node() {
                     Ok(node) if self.accepts(&node) => {
@@ -712,6 +746,10 @@ impl Keeper {
                         self.device = None;
                         self.last_listed = None;
                         self.lapse_on_connect(&orion);
+                        // Unique across every monitor in the process: a monitor turned off and on
+                        // starts again from nothing, and its numbers must not match an old one's.
+                        let session = SESSIONS.fetch_add(1, Ordering::SeqCst) + 1;
+                        self.serial.store(session, Ordering::SeqCst);
                         self.sender.send_replace(Presence::Found(node));
                         let ended = self.serve(&orion);
                         self.node = None;

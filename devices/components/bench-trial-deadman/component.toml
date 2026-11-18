@@ -1,0 +1,27 @@
+# BENCH ONLY (coordinator's ruling 2026-11-18, route A): the trial dead-man. A new slot is booted once beside dev slot
+# 993 (`reboot "0 tryboot"`); a plain restart reads 993's config.txt and default.txt and so returns the board to 993.
+# Lemnos's own restarts cover a slot that fails or a lemnosd that never gets ready, but not a slot that is up and
+# healthy with no login through the gadget or Orion, nor a pid 1 that wedges while lemnosd keeps feeding the hardware
+# watchdog (Lemnos's trace, IMG-A1-steps-review.md). This is that cover: a plain process, started at boot only when
+# /data/board/trial-deadman exists (created from 993 just before the tryboot), that sleeps N seconds (the marker's
+# number, else 600), removes the marker and restarts the board with the reboot syscall itself (systemctl reboot
+# --force --force: sync, then reboot(2), no request to pid 1). It does not depend on lemnosd, Orion or the network.
+# The runner stops it (`systemctl stop bench-trial-deadman`) after a real login; no Restart=, so it stays stopped.
+# A product image leaves it out. Untested on board; rehearsed in an emulated boot before any board.
+version = 1
+name = "bench-trial-deadman"
+description = "BENCH ONLY: when /data/board/trial-deadman exists at boot, a plain restart after N seconds unless the runner stops it."
+
+[[install]]
+from = { file = "files/bench-trial-deadman" }
+to = "/usr/libexec/bench-trial-deadman"
+mode = "0755"
+
+[[install]]
+from = { file = "files/bench-trial-deadman.service" }
+to = "/etc/systemd/system/bench-trial-deadman.service"
+mode = "0644"
+
+[[services]]
+unit = "bench-trial-deadman.service"
+enable = true

@@ -61,6 +61,11 @@ for product in $(find "$repo/devices/products" -mindepth 2 -maxdepth 2 -name pro
   pdir=$(dirname "$product"); pname=$(basename "$pdir")
   input_args=()
   if grep -rqs 'input = "bench-key"' "$pdir"; then input_args=(--input "bench-key=$pub"); fi
+  # pc-key (the zero-3e-bench product): the throwaway key, comment removed by pc-key-strip.sh as build-product does.
+  if grep -rqs 'input = "pc-key"' "$pdir"; then
+    "$repo/scripts/pc-key-strip.sh" "$pub" "$scratch/pc-key.pub"
+    input_args+=(--input "pc-key=$scratch/pc-key.pub")
+  fi
   # A slot-boot image takes its version and slot as --settings, from the rule's TEST value (not a release).
   setting_args=()
   mapfile -t slot_args < <(slot_settings_args "$product" "$CHECK_VERSION")

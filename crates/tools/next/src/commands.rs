@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use atlas_actions::BUSY_CODE;
 use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
@@ -39,6 +40,8 @@ pub struct Refusal {
     pub code: i32,
     pub words: String,
     pub denied: bool,
+    /// The board refused it as busy: its run ended Rejected with BUSY (typed from the status code).
+    pub busy: bool,
 }
 
 impl Refusal {
@@ -47,6 +50,7 @@ impl Refusal {
             code,
             words: words.into(),
             denied: false,
+            busy: false,
         }
     }
 }
@@ -54,10 +58,12 @@ impl Refusal {
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
         let denied = error.failure().is_some_and(Failure::is_denied);
+        let busy = matches!(&error, SlotError::Board(board) if board.is_busy());
         Self {
             code: 1,
             words: error.to_string(),
             denied,
+            busy,
         }
     }
 }
@@ -334,7 +340,9 @@ async fn board<W: Write>(
             r.field("removed", id.clone());
             Ok(())
         }
-        Verb::Install(path) => install(r, state, &link, &info, path).await.map(drop),
+        Verb::Install(path) => install(r, state, &link, &info, path, env.wait)
+            .await
+            .map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
         Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
             Err(Refusal::new(2, "not a board command"))
@@ -412,12 +420,18 @@ pub(crate) fn list_lines(list: &SlotList) -> Vec<String> {
 
 /// Installs the bundle at `path` on the board and returns the id it was installed as. Shared with
 /// `cycle`, which needs the id.
+/// The exit status of an install whose outcome is still unknown after a reconnect at the wait's
+/// bound: not a failure, and not a success. The job stays unknown; running it again is the user's
+/// choice.
+pub const UNKNOWN_EXIT: i32 = 4;
+
 pub(crate) async fn install<W: Write>(
     r: &mut Report<'_, W>,
     state: &Path,
     link: &Link,
     info: &BoardInfo,
     path: &Path,
+    wait: Duration,
 ) -> Result<String, Refusal> {
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
@@ -465,6 +479,8 @@ pub(crate) async fn install<W: Write>(
         )
         .await?;
     let mut last = None;
+    // When the install was first seen unknown. Bounded by the wait, like every wait of the tool.
+    let mut unknown_since: Option<std::time::Instant> = None;
     loop {
         let stage = installs.stage(job);
         if stage != last {
@@ -480,9 +496,34 @@ pub(crate) async fn install<W: Write>(
                 r.field("slot", slot.clone());
                 return Ok(slot);
             }
-            Some(Stage::Failed { reason }) => return Err(Refusal::new(1, reason)),
+            Some(Stage::Failed { reason }) => {
+                // The run's typed failure keeps the board's status code: BUSY is read from it.
+                let busy = installs
+                    .failure(job)
+                    .is_some_and(|failure| failure.code() == Some(BUSY_CODE));
+                return Err(Refusal {
+                    busy,
+                    ..Refusal::new(1, reason)
+                });
+            }
             Some(Stage::Cancelled) => return Err(Refusal::new(1, "the install was cancelled")),
-            _ => tokio::time::sleep(POLL).await,
+            Some(Stage::Unknown { reason, checking }) => {
+                let since = *unknown_since.get_or_insert_with(std::time::Instant::now);
+                if since.elapsed() >= wait {
+                    return Err(Refusal::new(
+                        UNKNOWN_EXIT,
+                        format!(
+                            "the install's outcome is unknown after a reconnect: {reason}. \
+                             Checked: {checking}. The job stays unknown; running it again is your choice."
+                        ),
+                    ));
+                }
+                tokio::time::sleep(POLL).await;
+            }
+            _ => {
+                unknown_since = None;
+                tokio::time::sleep(POLL).await;
+            }
         }
     }
 }

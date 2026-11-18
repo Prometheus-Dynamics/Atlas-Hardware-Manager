@@ -13,6 +13,11 @@
 //! - Dictionary: at most [`DICT_CEILING`] (8 MiB) per block. A board may lower its
 //!   own limit; [`dictionary_within`] compares the value, the comparison is the
 //!   caller's.
+//! - Blocks: the image stream may have many blocks, up to [`MAX_BLOCKS`] (8192). Gaia
+//!   writes 64 MiB blocks (`xz -6 --check=crc64 --block-size=64MiB -T<N>`), so an image
+//!   of `size` bytes has `ceil(size / 64 MiB)` blocks, and 8192 blocks is reached at
+//!   512 GiB. A change to either number, here or in Gaia's writer, must be noticed:
+//!   the `gaia_block_count_arithmetic_matches_the_block_limit` test checks it.
 //! - Decoder memory: the dictionary plus [`DECODER_OVERHEAD`] (256 KiB). The
 //!   decoder is liblzma, with that bound as its memory limit.
 //! - Filters: LZMA2 only. Checks: none, CRC-32, CRC-64, SHA-256 (all four).
@@ -45,7 +50,8 @@ const HEADER: u64 = 12;
 const FOOTER: u64 = 12;
 /// The largest index read: 1 MiB, about 100k blocks.
 const MAX_INDEX: u64 = 1 << 20;
-const MAX_BLOCKS: u64 = 8192;
+/// The most blocks an image stream may have: 8192 (512 GiB at Gaia's 64 MiB blocks).
+pub const MAX_BLOCKS: u64 = 8192;
 /// The filter id of LZMA2, the only filter read.
 const LZMA2: u64 = 0x21;
 /// The read buffer for the decode.
@@ -86,6 +92,8 @@ pub struct Layout {
     pub dictionary: u64,
     /// The image's decoded size per its index (the file's length for a plain image).
     pub uncompressed: u64,
+    /// The number of blocks in the image stream (0 for a plain file).
+    pub blocks: u64,
     /// True for a file that is not xz: the image is the file, as it is.
     pub plain: bool,
 }
@@ -98,6 +106,7 @@ impl Layout {
             record: None,
             dictionary: 0,
             uncompressed: len,
+            blocks: 0,
             plain: true,
         }
     }
@@ -430,6 +439,7 @@ pub fn scan<R: Read + Seek>(input: &mut R) -> Result<Layout, XzError> {
             }),
             dictionary,
             uncompressed: image.uncompressed,
+            blocks: image.blocks.len() as u64,
             plain: false,
         });
     }
@@ -444,6 +454,7 @@ pub fn scan<R: Read + Seek>(input: &mut R) -> Result<Layout, XzError> {
         record: None,
         dictionary,
         uncompressed: last.uncompressed,
+        blocks: last.blocks.len() as u64,
         plain: false,
     })
 }
@@ -523,5 +534,20 @@ impl Write for Capped {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The decoder's memory limit is the dictionary (at least the ceiling) plus the
+    /// fixed overhead, as the contract points state.
+    #[test]
+    fn the_memory_limit_is_the_dictionary_plus_the_stated_overhead() {
+        assert_eq!(memlimit(8 << 20), (8 << 20) + (256 << 10));
+        assert_eq!(memlimit(8 << 20), DICT_CEILING + DECODER_OVERHEAD);
+        assert_eq!(memlimit(1 << 20), DICT_CEILING + DECODER_OVERHEAD);
+        assert_eq!(DECODER_OVERHEAD, 256 << 10);
     }
 }

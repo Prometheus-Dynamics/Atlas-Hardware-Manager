@@ -11,7 +11,7 @@
 mod common;
 
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -51,8 +51,8 @@ struct Rig {
     _scratch: tempfile::TempDir,
 }
 
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("files-{name}"))
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 async fn rig(name: &str, bytes_per_sec: u64) -> Rig {
@@ -335,7 +335,8 @@ async fn a_cancelled_push_stops_and_the_board_gets_no_more_of_the_file() {
 async fn a_changed_source_is_refused_and_nothing_more_is_sent() {
     let rig = rig("changed", 8 * 1024 * 1024).await;
     let size = 4 * 1024 * 1024;
-    let path = scratch("changed-source.bin");
+    let source_dir = scratch("changed-source");
+    let path = source_dir.join("source.bin");
     write_file(&path, 0x11, size);
     let destination = "images/changed.img";
     let push = submit(
@@ -733,10 +734,15 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     relay.pass_up_to(u64::MAX);
     let back =
         SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
-    progress_where(&push, "the push says the file starts over", |p| {
-        matches!(p.stage, Stage::Resending { .. })
+    // The restart is a durable fact of the push, not a stage that can pass unseen: it stays set to
+    // the end, so the wait cannot miss it however the host is scheduled.
+    let restarted = progress_where(&push, "the push says the file starts over", |p| {
+        p.restart.is_some()
     })
     .await;
+    let restart = restarted.restart.expect("the restart is recorded");
+    assert_eq!(restart.count, 1, "{restart:?}");
+    assert!(restart.reason.contains("from its start"), "{restart:?}");
     job_where(&jobs, push.job(), "the push commits", |status| {
         *status == JobStatus::Done
     })

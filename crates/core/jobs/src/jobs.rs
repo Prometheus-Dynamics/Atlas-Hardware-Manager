@@ -27,7 +27,7 @@ use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::task::JoinHandle;
 use tokio::time;
 
-use crate::call::guarded;
+use crate::call::{CallError, guarded};
 use crate::claims::{DeviceClaim, DeviceHolds};
 use crate::{Backoff, Event, Events};
 
@@ -62,6 +62,14 @@ pub trait JobKind: Send + Sync {
         false
     }
 
+    /// Whether a step may write to a device (a flash, a start, a boot). A step that
+    /// writes and is dropped by the step limit, or panics, has an outcome that is
+    /// not known: the job ends as unknown and the step is not tried again. Default
+    /// `false`: a dropped read-only step is retried on backoff, as before.
+    fn writes(&self, _step: &str) -> bool {
+        false
+    }
+
     /// Runs one step against the devices the job claimed. It is dropped at any
     /// await point when the job is cancelled, so it must be cancel-safe.
     async fn run_step(&self, claim: &DeviceClaim, step: &str) -> Result<(), DriverError>;
@@ -83,6 +91,13 @@ pub enum JobStatus {
     Paused,
     /// Every step finished.
     Done,
+    /// The outcome of a step is not known. With `checking` set, the step is still checking it and
+    /// the job is not finished: the step resolves it to Done or Failed. With `checking` unset the
+    /// outcome is terminal until the user asks for the work again; nothing is tried by the job.
+    Unknown {
+        reason: String,
+        checking: Option<String>,
+    },
     /// A step got a settled answer (refused or unsupported). The job ends with that reason.
     Failed {
         reason: String,
@@ -99,7 +114,11 @@ impl JobStatus {
     fn is_finished(&self) -> bool {
         matches!(
             self,
-            Self::Done | Self::Cancelled | Self::Failed { .. } | Self::Interrupted { .. }
+            Self::Done
+                | Self::Cancelled
+                | Self::Failed { .. }
+                | Self::Interrupted { .. }
+                | Self::Unknown { checking: None, .. }
         )
     }
 }
@@ -369,6 +388,22 @@ impl Jobs {
     }
 
     /// Adds a job and starts it. It is saved before this returns.
+    /// A step reports, while it is still checking, that its outcome is not known yet: the job shows
+    /// `Unknown` with the reason and what is being checked, and stays running. The step then
+    /// resolves it (returns Ok, or a settled error). Persisted with the job, like every status.
+    /// Returns false when the job is no longer known.
+    pub async fn report_unknown(&self, id: JobId, reason: String, checking: String) -> bool {
+        self.inner
+            .status(
+                id,
+                JobStatus::Unknown {
+                    reason,
+                    checking: Some(checking),
+                },
+            )
+            .await
+    }
+
     pub async fn submit(
         &self,
         kind: &str,
@@ -585,6 +620,7 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
         };
         let step = job.steps[job.completed].clone();
         let claim = job.claim.clone();
+        let writes = kind.writes(&step);
         inner.status(id, JobStatus::Running).await;
 
         let outcome = tokio::select! {
@@ -604,6 +640,34 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
                 if let Some(job) = inner.set(id, |job| job.completed += 1) {
                     inner.announce(job).await;
                 }
+            }
+            // A writing step dropped by the step limit or a panic: whatever it sent may have
+            // reached the device, so its outcome is not known. It is not tried again.
+            Some(Err(error @ (CallError::TimedOut(_) | CallError::Panicked(_)))) if writes => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Unknown {
+                            reason: format!(
+                                "{error}; the step may have written to the device, so its outcome is unknown"
+                            ),
+                            checking: None,
+                        },
+                    )
+                    .await;
+                return;
+            }
+            Some(Err(error)) if error.is_unknown() => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Unknown {
+                            reason: error.to_string(),
+                            checking: None,
+                        },
+                    )
+                    .await;
+                return;
             }
             Some(Err(error)) if error.is_settled() => {
                 inner

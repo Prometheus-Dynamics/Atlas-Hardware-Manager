@@ -1,4 +1,4 @@
-# DEV ONLY, bring-up products only (zero-3e-bringup, rock-5c-bringup, rock-4d-bringup). Two things every
+# DEV ONLY, bring-up products only (rock-5c-bringup, rock-4d-bringup). Two things every
 # bring-up product needs so that its SSH host key survives a reflash or a slot change:
 #   - the data partition mounted at /data (nothing in the bring-up root mounts it; the root is read-only);
 #   - dropbear's host key kept on /data, not in RAM (Buildroot's dropbear.service keeps it under /etc/dropbear,

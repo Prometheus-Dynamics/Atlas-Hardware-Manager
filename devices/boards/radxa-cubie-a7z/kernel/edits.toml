@@ -1,0 +1,11 @@
+# Recorded edits for the Cubie A7Z (A7A or A7Z, one of two) on the Radxa vendor device trees (radxa/allwinner-device 7b63c9ec,
+# configs/cubie_a7z/). NO EDITS: these files need none. Read facts:
+#   - no vcc-p*-supply property in linux-6.6/board.dts (grep: 0), so no bank mode is ever written by the pin driver
+#     (pinctrl-sunxi.c sunxi_pmx_request: no supply, the dummy regulator reads 0 V and writes nothing);
+#   - no regulator with min equal to max in linux-6.6/board.dts or uboot-board.dts (all PMIC rails are ranges; the
+#     bootloader file names the regulators with no values), so neither the bootloader nor the kernel fixes a rail.
+# Hashes of the files read: linux-6.6/board.dts sha256 26088e86faf0ecb71e57abac9a1ed7a7582c8b9ba9e05861c7275678da1d34f5; uboot-board.dts sha256 2be621eb0c0fdf89fd8608348e948bf2c58fc3e3775551926ffe563a59aef083.
+# The series (DockSeed A7S) is NOT applied to this board. Its dts is pr/A7AZ (#134), which was not read here: this file
+# holds for the Radxa files only, and the #134 dts must be checked against the facts file (kernel/post-patch-facts.txt).
+# Note: vqmmc33sw = dc1sw2 and vqmmc18sw = cldo5 (linux-6.6/board.dts lines 920-923 / 953-956): the SD slot's IO voltage is
+# switched by the SD driver; PF (the switched bank) keeps the range statement in pads.toml.

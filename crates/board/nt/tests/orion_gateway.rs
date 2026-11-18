@@ -23,13 +23,10 @@ const DEADLINE: Duration = Duration::from_secs(60);
 
 static RUNS: AtomicU32 = AtomicU32::new(0);
 
-/// A port that was free a moment ago. The gateway binds it next, and a restart rebinds it.
+/// The gateway's port, which a restart rebinds: outside the OS ephemeral range (an outgoing connect
+/// cannot autobind it while the board is down) and reserved from other test processes.
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("a free port")
-        .local_addr()
-        .expect("its address")
-        .port()
+    atlas_sim_node::ports::node_port()
 }
 
 /// A comm core with the NT4 gateway, in a thread of its own, until stopped.
@@ -37,15 +34,15 @@ struct Board {
     socket: PathBuf,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
-    dir: PathBuf,
+    dir: atlas_types::socket::NodeDir,
 }
 
 impl Board {
     fn start(port: u16) -> Self {
         let run = RUNS.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir().join(format!("atlas-nt-gw-{}-{run}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("dir");
+        // A comm core's socket is `<dir>/orion.sock`: a short directory whatever the name.
+        let dir = atlas_types::socket::node_dir(&format!("atlas-nt-gw-{run}"))
+            .unwrap_or_else(|error| panic!("the comm core's directory: {error}"));
         let text = format!(
             "node.name = board\n\
              socket = {0}/orion.sock\n\

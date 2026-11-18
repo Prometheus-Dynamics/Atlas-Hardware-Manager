@@ -34,7 +34,7 @@
 use std::io::ErrorKind;
 use std::time::Duration;
 
-use atlas_session::{Failure, Handle, Hold, Presence, SessionError};
+use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
@@ -53,6 +53,17 @@ pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+
+/// The prefix a board's reply carries once the caller's lease ended and its holds were released:
+/// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
+/// match, kept until Lemnos sends the typed reply field (M40); then that field replaces it.
+pub const LEASE_ENDED_PREFIX: &str = "lease-ended:";
+
+/// Whether a reply's detail says the board released the caller's holds when its lease ended.
+#[must_use]
+pub fn lease_ended(detail: &str) -> bool {
+    detail.starts_with(LEASE_ENDED_PREFIX)
+}
 
 /// A run that ended successfully.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -168,7 +179,7 @@ impl BoardActions {
     ///
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// or [`ActionError::StartInDoubt`].
-    pub async fn start(&self, action: &Action, words: &[String]) -> Result<u64, ActionError> {
+    pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
         args::check(action, words)?;
         self.start_encoded(&action.name, args::encode(words)).await
     }
@@ -178,9 +189,13 @@ impl BoardActions {
         &self,
         name: &str,
         encoded: Vec<u8>,
-    ) -> Result<u64, ActionError> {
+    ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
+        let started = name.to_owned();
+        // Read before the start is sent: a session that changes meanwhile makes the run look
+        // older than it is, so a later use treats it as another session's (the safe side).
+        let session = self.handle.session();
         let sent = self
             .handle
             .with_bridge(move |orion| {
@@ -191,7 +206,11 @@ impl BoardActions {
                     deadline_ms: 0,
                     detached: true,
                 })?;
-                Ok(run.call())
+                Ok(Issued {
+                    call: run.call(),
+                    session,
+                    name: started.clone(),
+                })
             })
             .await;
         // Retry: never by this crate. A start that was sent and not answered may already be on
@@ -215,10 +234,11 @@ impl BoardActions {
     /// board's reason when the run ended that way, or [`ActionError::Lost`].
     pub async fn follow(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
-        self.follow_inner(call, None, on_progress).await
+    ) -> Result<Followed, ActionError> {
+        self.follow_inner(issued, contract, None, on_progress).await
     }
 
     /// As [`BoardActions::follow`], for a run whose hold the caller keeps. When the session lapsed
@@ -231,19 +251,23 @@ impl BoardActions {
     /// As [`BoardActions::follow`], and [`ActionError::HoldLapsed`].
     pub async fn follow_while_held(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         hold: &Hold,
         on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
-        self.follow_inner(call, Some(hold), on_progress).await
+    ) -> Result<Followed, ActionError> {
+        self.follow_inner(issued, contract, Some(hold), on_progress)
+            .await
     }
 
     async fn follow_inner(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         hold: Option<&Hold>,
         mut on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
+    ) -> Result<Followed, ActionError> {
+        let call = issued.call;
         // Retry: following is a read. A lost session returns `Lost` with the run's number, and
         // following that number on the new session resumes it; the run is never started again.
         loop {
@@ -272,14 +296,52 @@ impl BoardActions {
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
-                    let result = ended(finished);
-                    return match (hold, result) {
-                        (Some(hold), Err(error)) if hold.lapsed() => Err(ActionError::HoldLapsed {
+                    // The board says the caller's lease ended before this reply: its holds are gone.
+                    if lease_ended(&finished.detail) {
+                        return Err(ActionError::HoldLapsed {
                             call,
-                            reason: error.to_string(),
-                        }),
-                        (_, result) => result,
+                            reason: finished.detail,
+                        });
+                    }
+                    let result = ended(finished);
+                    let on_issuing_session = self.handle.session() == issued.session;
+                    let done = match (hold, result) {
+                        (Some(hold), Err(error)) if hold.lapsed() => {
+                            return Err(ActionError::HoldLapsed {
+                                call,
+                                reason: error.to_string(),
+                            });
+                        }
+                        // An end read on a later session is not trusted, failure or cancel alike:
+                        // a cancel confirmed from another session's answer is not a confirmed cancel.
+                        (_, Err(error)) if !on_issuing_session => {
+                            let reason = format!(
+                                "the run ended as `{error}`, which the node said on a later session"
+                            );
+                            let ended =
+                                matches!(error, ActionError::Refused(_) | ActionError::Failed(_))
+                                    .then(|| Box::new(error));
+                            return Err(ActionError::Unconfirmed {
+                                call,
+                                reason,
+                                ended,
+                            });
+                        }
+                        (_, result) => result?,
                     };
+                    // The answer is checked against what was started, before anything reads it.
+                    if let Err(got) = contract(&done.output) {
+                        return Err(ActionError::WrongAnswer {
+                            call,
+                            started: issued.name.clone(),
+                            got,
+                        });
+                    }
+                    return Ok(if self.handle.session() == issued.session {
+                        Followed::Confirmed(done)
+                    } else {
+                        Followed::Reconnected(done)
+                    });
                 }
                 Ok(Seen::Refused(reason)) => return Err(ActionError::Refused(reason)),
                 Err(SessionError::Gone(reason)) => {
@@ -303,7 +365,17 @@ impl BoardActions {
     /// # Errors
     ///
     /// [`ActionError::Lost`] when the session did not carry the request.
-    pub async fn cancel(&self, call: u64) -> Result<(), ActionError> {
+    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+        let call = issued.call;
+        // A number issued on an earlier session may now name another run on the board. It is not
+        // sent a cancel, since a cancel to the wrong run stops someone else's work.
+        if self.handle.session() != issued.session {
+            return Err(ActionError::Unconfirmed {
+                call,
+                reason: "the run was started on an earlier session, and its number may now belong to another run: not cancelled blind".to_owned(),
+                ended: None,
+            });
+        }
         self.handle
             .with_bridge(move |orion| {
                 let mut run = orion.attach(call)?;
@@ -317,6 +389,13 @@ impl BoardActions {
                 },
                 SessionError::Failed(reason) => ActionError::Lost { call, reason },
             })
+    }
+
+    /// Whether the session is still the one `issued` was started on. A stored run number answers
+    /// for its own session only; a caller that uses an answer checks this first.
+    #[must_use]
+    pub fn same_session(&self, issued: &Issued) -> bool {
+        self.handle.session() == issued.session
     }
 
     /// The node's name, from its hello document, as the board's target.
@@ -408,8 +487,11 @@ impl Seen {
     }
 }
 
-/// How a run that ended is answered: the board's words for anything that did not succeed.
+/// How a run that ended is answered: the board's words for anything that did not succeed. The
+/// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
+/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
 fn ended(finished: Finished) -> Result<Done, ActionError> {
+    let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
     let detail = finished.detail;
     let reason = |default: &str| {
         if detail.trim().is_empty() {
@@ -424,16 +506,134 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
             output: finished.output,
             detail,
         }),
-        Outcome::Rejected => Err(ActionError::Refused(
-            reason("the board refused it, without a reason").into(),
-        )),
+        // Lemnos M39: a refusal without running is Rejected with the status's code.
+        Outcome::Rejected => Err(ActionError::Refused(match code {
+            Some(code) => Failure::new(
+                FailureKind::Refused,
+                Some(code),
+                reason("the board refused it, without a reason"),
+            ),
+            None => reason("the board refused it, without a reason").into(),
+        })),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
-        Outcome::Failed => Err(ActionError::Failed(reason("the action failed").into())),
-        Outcome::TimedOut => Err(ActionError::Failed(
-            reason("the action ran out of time").into(),
-        )),
+        Outcome::Failed => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action failed"),
+        ))),
+        Outcome::TimedOut => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action ran out of time"),
+        ))),
         Outcome::Unknown(code) => Err(ActionError::Failed(
             reason(&format!("the board ended the action with outcome {code}")).into(),
         )),
+    }
+}
+
+/// A started run, with the session it was started on. A run number is only known within its
+/// session: on a later session the same number may name another run (the node keeps finished
+/// answers by number), so a later use of it is checked before it is trusted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Issued {
+    call: u64,
+    session: u64,
+    name: String,
+}
+
+impl Issued {
+    /// The run's number on the board, within its session.
+    #[must_use]
+    pub const fn call(&self) -> u64 {
+        self.call
+    }
+
+    /// The action the run was started as.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// What a followed run's answer must look like: `Err` says why it is not what was started. A
+/// caller states the kind it started (for example a slot id for an install); a list answer for an
+/// install is refused by it, never read as a slot.
+pub type Contract = fn(&[u8]) -> Result<(), String>;
+
+/// Accepts any answer. Used only where the answer's kind cannot be checked yet, and said so at the
+/// call site.
+pub fn any_answer(_output: &[u8]) -> Result<(), String> {
+    Ok(())
+}
+
+/// A followed run's end. `Confirmed`: the run was started on this session, and its answer is the
+/// run's own. `Reconnected`: the run was started on an earlier session; its answer is the one the
+/// node gave for that number, which may not be this run's, so the caller confirms it by an
+/// independent read before it relies on it.
+#[derive(Debug)]
+pub enum Followed {
+    /// The run was started on the session it ended on.
+    Confirmed(Done),
+    /// The run was started on an earlier session: confirm before using.
+    Reconnected(Done),
+}
+
+impl Followed {
+    /// The run's answer, without the session check. For a caller whose check is not written yet:
+    /// each such call site says so where it is.
+    #[must_use]
+    pub fn into_done(self) -> Done {
+        match self {
+            Self::Confirmed(done) | Self::Reconnected(done) => done,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finished(outcome: Outcome, code: u32, detail: &str) -> Finished {
+        Finished {
+            outcome,
+            output: Vec::new(),
+            detail: detail.to_owned(),
+            code,
+        }
+    }
+
+    #[test]
+    fn a_rejected_run_keeps_its_code_and_busy_is_read_from_it() {
+        let busy = ended(finished(Outcome::Rejected, 16, "an install is running")).unwrap_err();
+        assert!(busy.is_busy(), "{busy:?}");
+        assert_eq!(busy.board_reason(), Some("an install is running"));
+        // The words alone never make it busy.
+        let words = ended(finished(
+            Outcome::Rejected,
+            0,
+            "busy: an install is running",
+        ))
+        .unwrap_err();
+        assert!(!words.is_busy(), "{words:?}");
+        let missing = ended(finished(Outcome::Rejected, 2, "there is no pushed file")).unwrap_err();
+        assert!(!missing.is_busy());
+        assert_eq!(missing.failure().and_then(Failure::code), Some(2));
+    }
+
+    #[test]
+    fn a_failed_or_cancelled_run_keeps_its_code_when_it_has_one() {
+        let failed = ended(finished(Outcome::Failed, 0, "")).unwrap_err();
+        assert_eq!(failed.failure().and_then(Failure::code), None);
+        let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
+        assert_eq!(timed.failure().and_then(Failure::code), Some(110));
+        assert!(!timed.is_busy());
+    }
+
+    #[test]
+    fn the_lease_note_is_read_by_its_prefix() {
+        assert!(lease_ended("lease-ended: holds released"));
+        assert!(lease_ended("lease-ended: holds released; cancelled"));
+        assert!(!lease_ended("the board says lease-ended"));
     }
 }

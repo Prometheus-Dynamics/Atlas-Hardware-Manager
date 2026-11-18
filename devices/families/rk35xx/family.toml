@@ -70,7 +70,7 @@ offset = "16M"
 size = "128K"
 
 # Bring-up form (Gaia's sd-image, F7, at 10beed8): the rootfs partition holds
-# /boot/extlinux/extlinux.conf (radxa-zero-3e-extlinux) for U-Boot's distro
+# /boot/extlinux/extlinux.conf (the radxa-zero-3e-extlinux component, deleted in Z2 with zero-3e-base) for U-Boot's distro
 # boot; data holds the slot file. Moves to the slot boot form when Gaia's real
 # boot recipe exists.
 # rootfs and data are not declared here: sd-image makes them itself (the build

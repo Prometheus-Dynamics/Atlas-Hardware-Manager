@@ -9,9 +9,10 @@
 # Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
 # (orion-bin); the Raze's board file and the base files.
 #
-# THE PINS: Gaia is pinned at c0d084fa (devices/gaia.lock: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
+# THE PINS: Gaia is pinned at a6299c62 (devices/gaia.lock; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-disk` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
-# Lemnos next fe8beb7c (M36f): the rev for this image, declared by the coordinator 2026-11-14. It has `lemnos-ctl data-partition`.
+# Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d): the rev for this image, declared by the coordinator 2026-11-16.
+# It contains M36f (fe8beb7c), so it has `lemnos-ctl data-partition`.
 version = 1
 name = "raze-base"
 description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-disk"
@@ -28,15 +29,21 @@ lemnos-orion = "../../components/lemnos-orion/component.toml"
 lemnos-slot-init = "../../components/lemnos-slot-init/component.toml"
 raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
 raze-base-files = "../../components/raze-base-files/component.toml"
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 # rpi-dtmerge: a host tool for boot-partition --verify (M38); not built until a run names it (its component.toml).
 rpi-dtmerge = "../../components/rpi-dtmerge/component.toml"
 orion = "../../components/orion/component.toml"
 orion-recovery = "../../components/orion-recovery/component.toml"
+# The way in over SSH (Orion's, on lemnos0) and the bench's root comm core (bench only: a product image leaves it out).
+raze-orion-ssh = "../../components/raze-orion-ssh/component.toml"
+bench-comm-root = "../../components/bench-comm-root/component.toml"
+# Bench only: the trial dead-man, so a new slot booted beside dev 993 with no login comes back to 993 (route A).
+bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "orion"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"
@@ -81,7 +88,7 @@ recipe = "slot-disk"
 #                  decompressed (zmap.c:754), so 1 MiB is exactly at the physical limit, inside it. Fragments add no separate limit.
 #  fragments       true: mkfs.erofs -Efragments, file tails and small files packed together, the same row. A kernel from 6.1.
 #  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
-#                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
+#                  Kernel check (this PR): the Raze kernel is raspberrypi/linux b005af66 (rpi-7.3.y, Linux 7.3.5, families/bcm2712
 #                  family.toml; NOT 6.12 as the brief said) so both floors are met, and raze.config has CONFIG_EROFS_FS_ZIP_LZMA=y,
 #                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at c0d084fa).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,

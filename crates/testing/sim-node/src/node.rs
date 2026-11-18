@@ -20,7 +20,7 @@
 //! Other runs are applied to the [`Model`] when they finish, never before, so a run that is
 //! refused, fails or is cancelled before it finishes changes nothing.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
@@ -229,6 +229,9 @@ struct Shared {
     /// node logic publishes the change. Only a node with Lemnos publishes them.
     hello: Arc<Mutex<Hello>>,
     script: Arc<Mutex<Script>>,
+    /// The device whose next `describe` ends the session instead of answering it (see
+    /// [`SimNode::drop_session_at_describe`]). Cleared once it has fired.
+    drop_session_at_describe: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
     /// Set while Lemnos is stopped on a node that has it: the node stays up and its Lemnos calls
@@ -260,6 +263,8 @@ pub struct SimNode {
     shared: Shared,
     node: Option<JoinHandle<()>>,
     proxy: Option<JoinHandle<()>>,
+    /// The directory given by [`SimNode::start_owned`], removed after the node stops (declared last).
+    owned: Option<atlas_types::socket::NodeDir>,
 }
 
 impl SimNode {
@@ -273,13 +278,15 @@ impl SimNode {
     }
 
     /// Starts a simulated Orion node in `dir`, which is created if it is missing. Its socket lives
-    /// there, so the path must stay short enough for a Unix socket. `kind` says whether it runs
+    /// there, so the path must stay short enough for a Unix socket: make `dir` with
+    /// [`atlas_types::socket::node_dir`], which is short whatever the name. `kind` says whether it runs
     /// Lemnos ([`Kind::WithLemnos`], publishing that hello) or is plain Orion ([`Kind::Plain`]).
     /// It listens on `port` (any free port when `None`).
     ///
     /// # Errors
     ///
-    /// If the directory cannot be made, the port cannot be taken, or the node logic cannot
+    /// If the socket path in `dir` is too long for a Unix socket (named in the error, nothing is
+    /// bound), the directory cannot be made, the port cannot be taken, or the node logic cannot
     /// connect to the comm core or declare its facts.
     pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         Self::start_inner(dir, kind, port, Security::Off)
@@ -296,6 +303,22 @@ impl SimNode {
     /// As [`SimNode::start_with`].
     pub fn start_secured(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         Self::start_inner(dir, kind, port, Security::On)
+    }
+
+    /// As [`SimNode::start_with`], for a directory made by [`atlas_types::socket::node_dir`]: the
+    /// directory is removed when the node drops, panics included.
+    ///
+    /// # Errors
+    ///
+    /// As [`SimNode::start_with`].
+    pub fn start_owned(
+        dir: atlas_types::socket::NodeDir,
+        kind: &Kind,
+        port: Option<u16>,
+    ) -> Result<Self, String> {
+        let mut node = Self::start_inner(&dir, kind, port, Security::Off)?;
+        node.owned = Some(dir);
+        Ok(node)
     }
 
     /// The trust list's state for `key`: `None` when the board holds no record of it.
@@ -343,7 +366,14 @@ impl SimNode {
         port: Option<u16>,
         security: Security,
     ) -> Result<Self, String> {
+        // The stub panics inside its own thread when the socket path is too long: refuse here, typed,
+        // before anything is made or bound.
+        atlas_types::socket::check_socket_path(&dir.join(atlas_types::socket::NODE_SOCKET))
+            .map_err(|error| error.to_string())?;
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
+        // A node that names no port gets one outside the ephemeral range, so a restart on the same
+        // port cannot lose it to an outgoing connect (see `crate::ports`).
+        let port = Some(port.unwrap_or_else(crate::ports::node_port));
         let board = Arc::new(Board::start_with(
             dir,
             Options {
@@ -364,6 +394,7 @@ impl SimNode {
             model: Arc::new(Mutex::new(Model::new())),
             hello: Arc::new(Mutex::new(hello)),
             script: Arc::new(Mutex::new(Script::new())),
+            drop_session_at_describe: Arc::new(Mutex::new(None)),
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
             lemnos_down: Arc::new(AtomicBool::new(false)),
@@ -400,6 +431,7 @@ impl SimNode {
             shared,
             node: Some(node),
             proxy: Some(proxy),
+            owned: None,
         })
     }
 
@@ -470,6 +502,13 @@ impl SimNode {
     /// resource. The node applies it on its next tick.
     pub fn change_device(&self, device: &str, change: readings::Change) {
         self.shared.devices.change(device, change);
+    }
+
+    /// Ends the node's session when the next `describe` of device `device` (its id, as in
+    /// `lemnos.<device>`) arrives: that call is not answered, and the node is published again on
+    /// a new session. Used once. A client that was waiting for the answer sees its connection end.
+    pub fn drop_session_at_describe(&self, device: &str) {
+        *lock(&self.shared.drop_session_at_describe) = Some(device.to_owned());
     }
 
     /// Refuses `describe` on every device (`true`), as a board does whose Lemnos has no describe
@@ -680,6 +719,8 @@ struct Run {
 #[derive(Debug)]
 struct Install {
     call: u64,
+    /// The caller that started it: its lease is kept while the install runs.
+    caller: String,
     name: String,
     size: u64,
     done: u64,
@@ -706,6 +747,8 @@ struct Node {
     /// The devices a Lemnos node describes, on a node with Lemnos only.
     devices: Option<readings::Devices>,
     active: Vec<Run>,
+    /// The calls whose reply carries the lease note (their caller's lease ended before them).
+    noted: BTreeSet<u64>,
     install: Option<Install>,
     started: Instant,
 }
@@ -856,6 +899,7 @@ impl Node {
             reopen: false,
             devices,
             active: Vec::new(),
+            noted: BTreeSet::new(),
             install: None,
             started: Instant::now(),
         })
@@ -907,29 +951,47 @@ impl Node {
     }
 
     fn finish(&mut self, call: u64, outcome: Outcome, output: &[u8], detail: &str) {
-        let _ = self.registration.finish(call, outcome, output, detail);
+        self.finish_coded(call, outcome, 0, output, detail);
+    }
+
+    /// Ends a run with its status `code` (zero for none). The reply's detail carries the lease note
+    /// once, when the caller's lease ended before it (see [`lease::with_note`]).
+    fn finish_coded(
+        &mut self,
+        call: u64,
+        outcome: Outcome,
+        code: u32,
+        output: &[u8],
+        detail: &str,
+    ) {
+        let detail = if self.noted.remove(&call) {
+            lease::with_note(detail)
+        } else {
+            detail.to_owned()
+        };
+        let _ = self
+            .registration
+            .finish_with_code(call, outcome, code, output, &detail);
     }
 
     fn finish_status(&mut self, call: u64, status: &Status) {
-        self.finish(call, outcome_for(status.code), &[], &status.to_string());
+        let (outcome, code) = ending_for(status.code);
+        self.finish_coded(call, outcome, code, &[], &status.to_string());
     }
 
-    /// Ends the runs the lease has dropped: a caller's running runs, or one stalled run.
+    /// Applies the lease's decisions: a silent caller with nothing in flight loses its lease (its
+    /// holds are released, and its next reply says so); a caller with a run in flight keeps it. A
+    /// stalled run past the stall time is dropped with its words.
     fn apply_lease_drops(&mut self) {
+        let mut busy: BTreeSet<String> = self.active.iter().map(|run| run.caller.clone()).collect();
+        if let Some(install) = &self.install {
+            busy.insert(install.caller.clone());
+        }
+        self.shared.leases.expire(&busy);
         for drop in self.shared.leases.take() {
             match drop {
-                lease::Drop::Caller(caller) => {
-                    let ended: Vec<u64> = self
-                        .active
-                        .iter()
-                        .filter(|run| run.caller == caller)
-                        .map(|run| run.call)
-                        .collect();
-                    self.active.retain(|run| run.caller != caller);
-                    for call in ended {
-                        self.finish(call, Outcome::Failed, &[], lease::CALLER_WORDS);
-                    }
-                }
+                // Nothing of the caller's is in flight (see `expire`): nothing is ended here.
+                lease::Drop::Caller(_) => {}
                 lease::Drop::Run(call) => {
                     if let Some(at) = self.active.iter().position(|run| run.call == call) {
                         self.active.remove(at);
@@ -942,6 +1004,9 @@ impl Node {
 
     fn start(&mut self, call: u64, name: &str, args: Vec<u8>, caller: &str) {
         *lock(&self.shared.runs).entry(name.to_string()).or_default() += 1;
+        if self.shared.leases.take_note(caller) {
+            self.noted.insert(call);
+        }
         if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
             // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
             self.finish_status(
@@ -956,6 +1021,21 @@ impl Node {
             return;
         }
         if is_device_call(name) && args == b"describe" {
+            // The session ends with this call unanswered: the node is published again on a new
+            // session, as a node that reconnects is (the old connection is closed by the drop).
+            let dropped = {
+                let mut armed = lock(&self.shared.drop_session_at_describe);
+                if armed.as_deref() == Some(device_id(name)) {
+                    *armed = None;
+                    true
+                } else {
+                    false
+                }
+            };
+            if dropped {
+                self.reopen = true;
+                return;
+            }
             // `.call describe`: the device's description as `describe 1` text (Lemnos I6h, e5c0ff0e).
             // It changes nothing, so the session's lease renewal is the same call.
             let answer = match self.devices.as_ref() {
@@ -995,7 +1075,7 @@ impl Node {
             }
             Behaviour::Answer if name == names::SLOTS_ACCEPT => self.accept(call, &args),
             Behaviour::Answer if name == names::SLOTS_INSTALL_FILE => {
-                self.install_start(call, &args);
+                self.install_start(call, caller, &args);
             }
             Behaviour::Answer => {
                 let total = crate::actions::ticks(name, &args).unwrap_or_else(|| ticks_for(name));
@@ -1047,7 +1127,7 @@ impl Node {
 
     /// `system.slots.install-file <name> <pin> <keep_old>`: starts the long job that installs
     /// the bundle pushed as `INCOMING/<name>`.
-    fn install_start(&mut self, call: u64, args: &[u8]) {
+    fn install_start(&mut self, call: u64, caller: &str, args: &[u8]) {
         if self.install.is_some() {
             self.finish_status(call, &Status::new(code::BUSY, "an install is running"));
             return;
@@ -1093,6 +1173,7 @@ impl Node {
         match checked {
             Ok(()) => {
                 self.install = Some(Install {
+                    caller: caller.to_owned(),
                     call,
                     name,
                     size,
@@ -1354,13 +1435,25 @@ fn ticks_for(name: &str) -> u32 {
     }
 }
 
-/// The outcome a Lemnos status gives a run.
-fn outcome_for(code_value: i32) -> Outcome {
+/// The ending a Lemnos status gives a run, with the status's code (Lemnos M39, calls.rs
+/// `ending_of_status`): Cancelled with 125; the refused statuses are Rejected with their code;
+/// every other status ran and failed, and is Failed with code zero.
+fn ending_for(code_value: i32) -> (Outcome, u32) {
+    const REFUSED: [i32; 8] = [
+        code::NOT_PERMITTED,
+        code::NOT_FOUND,
+        code::AGAIN,
+        code::BUSY,
+        code::NO_DEVICE,
+        code::INVALID_ARGUMENT,
+        code::NOT_SUPPORTED,
+        code::BUFFER_TOO_SMALL,
+    ];
     match code_value {
-        0 => Outcome::Succeeded,
-        code::CANCELLED => Outcome::Cancelled,
-        code::IO | code::INTERRUPTED => Outcome::Failed,
-        _ => Outcome::Rejected,
+        0 => (Outcome::Succeeded, 0),
+        code::CANCELLED => (Outcome::Cancelled, code::CANCELLED.unsigned_abs()),
+        refused if REFUSED.contains(&refused) => (Outcome::Rejected, refused.unsigned_abs()),
+        _ => (Outcome::Failed, 0),
     }
 }
 

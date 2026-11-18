@@ -22,7 +22,9 @@ BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
 # -- The console and the way in -----------------------------------------------------------------------
 # BusyBox is the image's one set of applets. Its config is os/busybox.config, a file beside this fragment (`@here@`
 # is this directory; Gaia takes the file as an input tree and Buildroot reads it as BR2_PACKAGE_BUSYBOX_CONFIG).
-# The 39 applets it enables are the table in docs/prs/B40.md, each with where the image calls it or why the
+# The applets it enables are the table in docs/prs/B40.md (39), changed for the board checks below (+5, -4) and the
+# bench dead-man (+1: sleep, components/bench-trial-deadman), each with
+# where the image calls it or why the
 # recovery console needs it. Not enabled: every network server (telnetd, httpd, tftpd, inetd, dnsd, ftpd, udhcpd,
 # ssl_server), the network clients but ip and ping (wget, tftp, nc, telnet, udhcpc), su, passwd, getty, vi, crond
 # and init. login IS enabled: systemd's serial-getty@ttyGS0 runs util-linux's agetty, which execs /bin/login, and
@@ -37,6 +39,23 @@ BR2_PACKAGE_BUSYBOX_CONFIG="@here@/busybox.config"
 # /etc/profile without `export EDITOR=/bin/vi` (no editor on the board): the overlay directory's etc/profile is copied
 # over the skeleton's after the install (Buildroot's BR2_ROOTFS_OVERLAY). No Buildroot option names EDITOR.
 BR2_ROOTFS_OVERLAY="@here@/overlay"
+
+# -- What the board checks run (Lemnos IMG-REQ-raze 10 and 28) ------------------------------------------
+# Packages that replace or add to BusyBox applets are hidden in Buildroot unless this is set.
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
+# kmod's tools: modprobe that honours modprobe.d's `blacklist` and `options` (lemnos.ko and the stock camera drivers
+# it blacklists, IMG-REQ-raze 10 and 11), with modinfo, lsmod, insmod and rmmod. systemd already takes libkmod;
+# the tools are kmod's one binary. BusyBox's insmod, lsmod, modprobe and rmmod are off in busybox.config so there is one of each.
+BR2_PACKAGE_KMOD=y
+BR2_PACKAGE_KMOD_TOOLS=y
+# ps with -o and -C (the V1g check). BusyBox's ps has neither.
+BR2_PACKAGE_PROCPS_NG=y
+# gpioset and gpioget (the B15 check holds a GPIO line): libgpiod's tools. No BusyBox applet does this.
+BR2_PACKAGE_LIBGPIOD2=y
+BR2_PACKAGE_LIBGPIOD2_TOOLS=y
+# flock (failsafe locks) and i2cdump, i2cget, i2cset and i2cdetect (the A35 check) are BusyBox applets
+# (busybox.config), not util-linux's basic set (about 50 programs) or i2c-tools. No python3 and no compiler: with
+# gpioset on the image, the checks need neither (IMG-REQ-raze 28).
 # No sshd and no dropbear: Orion serves SSH itself (its comm core, ssh.listen), so a second server would be
 # a second way in with its own keys.
 # The console: a getty on the USB gadget's ACM port, ttyGS0, is systemd's serial-getty@ttyGS0.service. It is

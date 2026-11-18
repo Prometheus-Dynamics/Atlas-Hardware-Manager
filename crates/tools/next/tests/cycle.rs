@@ -202,7 +202,9 @@ async fn a_full_run_passes_every_step_and_writes_the_scorecard() {
     );
     assert!(card_text.contains("Verdict: PASSED"), "{card_text}");
     assert!(
-        card_text.contains("Security on the board: not read"),
+        // The sim's hello carries no security fact (the stand-in comm core has no record): the
+        // board has not said. Orion's `Node::security` reads it from the hello.
+        card_text.contains("Security on the board: the board has not said"),
         "{card_text}"
     );
     assert!(
@@ -488,8 +490,8 @@ async fn an_unexpected_state_stops_the_run_at_that_step() {
     );
     assert_eq!(
         node.runs_started(names::SLOTS_LIST),
-        2,
-        "the list before and the check after, and no more"
+        3,
+        "the list before, the install's own snapshot of the slots before its start, and the check after, and no more"
     );
 }
 

@@ -51,7 +51,11 @@ mod protocol;
 use std::fmt;
 use std::time::Duration;
 
-use atlas_usb::{DeviceSummary, OpenOptions, UsbBus, UsbError, UsbId, UsbIo, await_device};
+use atlas_usb::UsbIdMatch;
+use atlas_usb::{
+    DeviceSummary, Expect, OpenOptions, PortPath, PortPathError, UsbBus, UsbError, UsbId, UsbIo,
+    open_expected,
+};
 use tokio::time::timeout;
 
 pub use error::FastbootError;
@@ -99,17 +103,25 @@ impl Fastboot {
         }
     }
 
-    /// Opens the device at `location` and claims its interface as `options`
-    /// says. Waits up to `wait` for the device to appear, because U-Boot
+    /// Opens the device on port `location` and claims its interface as `options`
+    /// says. The device must hold `expected` there: another identity is refused
+    /// and nothing is claimed. Waits up to `wait` for it to appear, because U-Boot
     /// re-enumerates when it starts.
     pub async fn open(
         bus: &dyn UsbBus,
         location: &str,
+        expected: UsbId,
         options: &OpenOptions,
         wait: Duration,
     ) -> Result<Self, FastbootError> {
-        let io = await_device(bus, location, options, wait).await?;
-        Ok(Self::new(io, TRANSFER_LIMIT))
+        let port: PortPath = location.parse().map_err(|error: PortPathError| {
+            FastbootError::Usb(UsbError::Other(error.to_string()))
+        })?;
+        let opened = open_expected(bus, &port, Expect::Exactly(expected), options, wait)
+            .await
+            .into_result()
+            .map_err(FastbootError::Stop)?;
+        Ok(Self::new(opened.io, TRANSFER_LIMIT))
     }
 
     /// Reads one variable. The value is the device's text, as it reports it.

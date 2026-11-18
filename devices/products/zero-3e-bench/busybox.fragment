@@ -1,0 +1,4 @@
+# The one BusyBox applet the bench's lemnos0-address script runs (the Raze's script, copied): sha256sum, the serial-hash-v1
+# digest of the board serial. The gadget's DHCP server is systemd-networkd's (DHCPServer in the runtime file), not udhcpd,
+# so udhcpd, ifconfig, killall and mountpoint (the deleted zero-3e-bringup product's Gaia gadget applets) are not needed here.
+CONFIG_SHA256SUM=y

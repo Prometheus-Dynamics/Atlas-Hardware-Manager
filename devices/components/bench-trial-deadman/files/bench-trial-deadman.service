@@ -1,0 +1,16 @@
+# BENCH ONLY: the trial dead-man (see /usr/libexec/bench-trial-deadman and component.toml). Started early and on its own:
+# slot-init mounts /data before switch_root, so local-fs.target is all it waits for; nothing orders it after lemnosd,
+# Orion or the network. No Restart=: the runner's stop is final for this boot. No Conflicts=shutdown.target either:
+# if a shutdown wedges, the dead-man firing is the wanted way out.
+[Unit]
+Description=BENCH ONLY: trial dead-man, a plain restart unless stopped
+DefaultDependencies=no
+After=local-fs.target
+ConditionPathExists=/data/board/trial-deadman
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/bench-trial-deadman
+
+[Install]
+WantedBy=sysinit.target
