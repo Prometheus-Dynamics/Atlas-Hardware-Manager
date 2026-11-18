@@ -1,0 +1,19 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."systemcore-lemnos.lemnos"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
+commit = "26364ff7eb938c9009796eff40269ab471a0d51d"
+
+[source."systemcore-orion.config"]
+kind = "tree"
+path = "../../components/systemcore-orion/files"
+digest = "sha256:349b5fb4013f2b42150fcac7429a0431167443e3e0c20e90bbe5e7c589ede889"
+
+[source."systemcore-orion.orion"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+commit = "c0187f4c195cd27f8353c055dd0a94247c2965cc"

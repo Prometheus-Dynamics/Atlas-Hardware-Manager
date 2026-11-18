@@ -1,0 +1,13 @@
+version = 1
+name = "systemcore-package"
+description = "The SystemCore's package: one .ipk carrying Orion and Lemnos, installed on the controller by its own package install (Atlas offers it; E2 runs it). Not an image: Atlas never reflashes the controller."
+
+[components]
+systemcore-orion = "../../components/systemcore-orion/component.toml"
+systemcore-lemnos = "../../components/systemcore-lemnos/component.toml"
+
+[[images]]
+name = "systemcore-package"
+board = "../../boards/systemcore/board.toml"
+components = ["systemcore-orion", "systemcore-lemnos"]
+recipe = "ipk" # F8?: no `ipk` recipe under recipes/ at 70a5133 (examples/packages only)
