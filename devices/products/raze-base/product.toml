@@ -37,11 +37,13 @@ orion-recovery = "../../components/orion-recovery/component.toml"
 # The way in over SSH (Orion's, on lemnos0) and the bench's root comm core (bench only: a product image leaves it out).
 raze-orion-ssh = "../../components/raze-orion-ssh/component.toml"
 bench-comm-root = "../../components/bench-comm-root/component.toml"
+# Bench only: the trial dead-man, so a new slot booted beside dev 993 with no login comes back to 993 (route A).
+bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-boot"

@@ -22,7 +22,8 @@ BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
 # -- The console and the way in -----------------------------------------------------------------------
 # BusyBox is the image's one set of applets. Its config is os/busybox.config, a file beside this fragment (`@here@`
 # is this directory; Gaia takes the file as an input tree and Buildroot reads it as BR2_PACKAGE_BUSYBOX_CONFIG).
-# The applets it enables are the table in docs/prs/B40.md (39), changed for the board checks below (+5, -4), each with
+# The applets it enables are the table in docs/prs/B40.md (39), changed for the board checks below (+5, -4) and the
+# bench dead-man (+1: sleep, components/bench-trial-deadman), each with
 # where the image calls it or why the
 # recovery console needs it. Not enabled: every network server (telnetd, httpd, tftpd, inetd, dnsd, ftpd, udhcpd,
 # ssl_server), the network clients but ip and ping (wget, tftp, nc, telnet, udhcpc), su, passwd, getty, vi, crond

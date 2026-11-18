@@ -1,0 +1,12 @@
+#!/bin/sh
+# BENCH ONLY: the trial dead-man (component.toml says why). The marker holds the seconds to wait (digits only);
+# anything else, or an empty file, means 600. On firing it removes the marker first, so no later boot is cut short
+# by it, then restarts with the reboot syscall (systemctl --force --force does not ask pid 1).
+marker=${BENCH_DEADMAN_MARKER:-/data/board/trial-deadman}
+n=$(head -c 16 "$marker" 2>/dev/null)
+case $n in '' | *[!0-9]* | 0) n=600 ;; esac
+echo "bench-trial-deadman: a plain restart in $n s unless stopped" 2>/dev/null >/dev/kmsg
+sleep "$n" || exit 1
+rm -f "$marker"
+echo "bench-trial-deadman: no stop in $n s, restarting" 2>/dev/null >/dev/kmsg
+exec ${BENCH_DEADMAN_SYSTEMCTL:-/usr/bin/systemctl} reboot --force --force
