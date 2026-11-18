@@ -10,14 +10,18 @@
 //!
 //! Each returned port is verified by binding it, then released for the node to bind. Ports this
 //! process has already handed out are never returned again, so two nodes started in one test do
-//! not pick the same port.
+//! not pick the same port. Across processes (a test runner that runs each test as its own process,
+//! as cargo-nextest does) a port is reserved by a file lock under the temp dir, held until the
+//! process exits: a node that stops and restarts keeps its port from every other test process too.
 //!
 //! Residual: another explicit bind in 20000 to 32767 (by a process or a test that chose that
 //! port itself) can still take the port between the check and the node's bind. An outgoing
 //! connect cannot, because it autobinds in the ephemeral range only.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
+use std::fs::File;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -26,8 +30,35 @@ pub const CANDIDATES: (u16, u16) = (20000, 32767);
 
 const PROC_RANGE: &str = "/proc/sys/net/ipv4/ip_local_port_range";
 
-/// Ports this process has handed out, so none is handed out twice.
-static HANDED_OUT: Mutex<Option<HashSet<u16>>> = Mutex::new(None);
+/// Ports this process has handed out, so none is handed out twice, each with the file whose lock
+/// reserves it from other processes (held for the life of the process).
+static HANDED_OUT: Mutex<Option<HashMap<u16, File>>> = Mutex::new(None);
+
+/// The directory of the cross-process port locks: one per user's temp dir, shared by every test
+/// process of one run (the gate sets TMPDIR once for all of them).
+fn lock_dir() -> PathBuf {
+    std::env::temp_dir().join("atlas-node-ports")
+}
+
+/// Takes the cross-process lock of `port`, or `None` when another process holds it. An error
+/// opening the lock file is a panic: without the lock the port would be unprotected.
+fn reserve(port: u16) -> Option<File> {
+    let dir = lock_dir();
+    std::fs::create_dir_all(&dir)
+        .unwrap_or_else(|e| panic!("the port lock directory {}: {e}", dir.display()));
+    let path = dir.join(format!("{port}.lock"));
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .unwrap_or_else(|e| panic!("the port lock {}: {e}", path.display()));
+    match file.try_lock() {
+        Ok(()) => Some(file),
+        Err(std::fs::TryLockError::WouldBlock) => None,
+        Err(std::fs::TryLockError::Error(e)) => panic!("locking {}: {e}", path.display()),
+    }
+}
 
 /// Reads `ip_local_port_range` ("32768\t60999") as `(low, high)`.
 pub fn parse_range(text: &str) -> Option<(u16, u16)> {
@@ -78,7 +109,7 @@ pub fn node_port() -> u16 {
         .sum();
     let start = seed() % total;
     let mut handed = HANDED_OUT.lock().unwrap_or_else(|e| e.into_inner());
-    let handed = handed.get_or_insert_with(HashSet::new);
+    let handed = handed.get_or_insert_with(HashMap::new);
     for step in 0..total {
         let mut index = (start + step) % total;
         let port = pieces
@@ -93,11 +124,14 @@ pub fn node_port() -> u16 {
                 }
             })
             .expect("the index is inside the pieces");
-        if handed.contains(&port) {
+        if handed.contains_key(&port) {
             continue;
         }
+        let Some(lock) = reserve(port) else {
+            continue;
+        };
         if TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            handed.insert(port);
+            handed.insert(port, lock);
             return port;
         }
     }
@@ -160,7 +194,7 @@ mod tests {
     #[test]
     fn handed_out_ports_are_outside_the_ephemeral_range_and_all_distinct() {
         let range = ephemeral_range().unwrap_or((32768, 60999));
-        let mut seen = HashSet::new();
+        let mut seen = std::collections::HashSet::new();
         for _ in 0..50 {
             let port = node_port();
             assert!(
@@ -192,5 +226,25 @@ mod tests {
             );
         }
         drop(client);
+    }
+    /// A port another process reserved is skipped: the lock is per open file description, so a
+    /// second open of the same lock file in this process stands in for the other process.
+    #[test]
+    fn a_port_locked_elsewhere_is_not_handed_out() {
+        let port = node_port();
+        assert!(
+            reserve(port).is_none(),
+            "the lock of a handed-out port is held"
+        );
+        let other = (CANDIDATES.0..=CANDIDATES.1)
+            .find(|p| !HANDED_OUT.lock().unwrap().as_ref().unwrap().contains_key(p))
+            .expect("a candidate not handed out");
+        let held = reserve(other).expect("a free lock");
+        assert!(
+            reserve(other).is_none(),
+            "a held lock refuses a second holder"
+        );
+        drop(held);
+        assert!(reserve(other).is_some(), "a released lock is free again");
     }
 }

@@ -16,6 +16,8 @@ tokio = { version = "1", features = ["macros", "sync"] }
 [dev-dependencies]
 # The socket-path check and the node directory (atlas-types::socket).
 atlas-types = { path = "../../core/types" }
+# The restart port: picked outside the OS ephemeral range and reserved across test processes (atlas-sim-node::ports).
+atlas-sim-node = { path = "../../testing/sim-node" }
 # The real comm core, in process, with its NT4 gateway (as Orion's own gateway test runs it).
 orion = { workspace = true, features = ["topics"] }
 orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "671d29d626f49e06ab7332417275ef1b0ac31b01", default-features = false, features = ["nt4"] }

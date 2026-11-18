@@ -44,13 +44,69 @@ step() {
   echo "    $label: $((SECONDS - start)) s"
 }
 
+# The data checks (device descriptions, then the config-only build that uses the Gaia binary the first one builds;
+# and the kernel fragments) read only devices/ and their own caches, never the cargo target: they run alongside the
+# cargo steps, each with its log kept apart. Each is joined below, in this file's order, and its log printed whole.
+# A failing one fails the gate as before. The gate waits for every background check before it exits, so none is left
+# running against a removed TMPDIR.
+bg_pids=() bg_labels=() bg_logs=()
+bg() {  # <label> <function or command...>
+  local label="$1" log="$gate_tmp/bg-${#bg_pids[@]}.log"
+  shift
+  ( "$@" ) >"$log" 2>&1 &
+  bg_pids+=("$!"); bg_labels+=("$label"); bg_logs+=("$log")
+}
+bg_wait_all() { local p; for p in "${bg_pids[@]}"; do wait "$p" 2>/dev/null || true; done; }
+trap 'bg_wait_all; rm -rf "$gate_tmp"' EXIT
+join_bg() {  # <label>: waits for that background check, prints its log, fails the gate if it failed
+  local i rc
+  for i in "${!bg_labels[@]}"; do
+    [ "${bg_labels[$i]}" = "$1" ] || continue
+    rc=0; wait "${bg_pids[$i]}" || rc=$?
+    echo "==> $1 (ran alongside the cargo steps)"
+    cat "${bg_logs[$i]}"
+    [ "$rc" -eq 0 ] || { echo "gate: $1 failed (exit $rc)" >&2; exit "$rc"; }
+    return 0
+  done
+  echo "gate: no background check named $1" >&2; exit 1
+}
+
+devices_then_config_only() {
+  # Board files are data. The config-only build of every product (PR B32, Gaia #120): each image's Buildroot
+  # configuration resolves, every fragment line takes as written, nothing is compiled. A cold GAIA_STORE fetches the
+  # kernel sources (network); a warm one is offline. It needs the gaia binary check-devices.sh builds, so it runs after.
+  if [ -x scripts/check-devices.sh ]; then
+    step "device descriptions" scripts/check-devices.sh
+  fi
+  if [ -x scripts/check-config-only.sh ]; then
+    step "config-only build (every product)" scripts/check-config-only.sh
+  fi
+}
+bg "device descriptions, then config-only" devices_then_config_only
+# Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
+# cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
+# The self-test runs the real check first (every board, failing on any line that does not take) and then its negative
+# cases, so one step covers both; running the real check again as its own step only repeated it.
+if [ -x scripts/check-kernel-fragments.sh ]; then
+  bg "kernel fragments" step "kernel fragments (the check, then its self-test)" scripts/check-kernel-fragments.sh --self-test
+fi
+
 # The workspace globs match nothing until the first crate lands.
 if compgen -G "crates/*/*/Cargo.toml" > /dev/null || compgen -G "apps/*/src-tauri/Cargo.toml" > /dev/null; then
   step format cargo fmt --all --check
   # Cargo.lock is committed. --locked fails the gate when it is stale: run
   # `cargo update -w` (or just build once without --locked) and commit it.
   step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
-  step tests cargo test --locked --workspace
+  # cargo-nextest runs every test as its own process, all binaries at once (cargo test runs one binary at a time):
+  # the same cases (it skips the #[ignore]d ones as cargo test does), but not doctests, which run after it. Tests that
+  # share something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock). Where
+  # nextest is not installed (CI), cargo test runs the same cases.
+  if cargo nextest --version >/dev/null 2>&1; then
+    step tests cargo nextest run --locked --workspace --no-fail-fast
+    step doctests cargo test --locked --workspace --doc
+  else
+    step tests cargo test --locked --workspace
+  fi
 else
   echo "no crates yet"
 fi
@@ -60,22 +116,9 @@ if [ -x scripts/ui-gate.sh ]; then
   step "ui gate" scripts/ui-gate.sh
 fi
 
-# Board files are data. They are checked by their own script once B1 adds it.
-if [ -x scripts/check-devices.sh ]; then
-  step "device descriptions" scripts/check-devices.sh
-fi
-
-# The config-only build of every product (PR B32, Gaia #120): each image's Buildroot configuration resolves, every
-# fragment line takes as written, nothing is compiled. A cold GAIA_STORE fetches the kernel sources (network); a warm one is offline.
-if [ -x scripts/check-config-only.sh ]; then
-  step "config-only build (every product)" scripts/check-config-only.sh
-fi
-
-# Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
-# cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
+join_bg "device descriptions, then config-only"
 if [ -x scripts/check-kernel-fragments.sh ]; then
-  step "kernel fragments" scripts/check-kernel-fragments.sh
-  step "kernel fragments self-test" scripts/check-kernel-fragments.sh --self-test
+  join_bg "kernel fragments"
 fi
 
 # The Lemnos gadget drop-in (R1d): installed exactly where the installed board file has a usb-gadget device.

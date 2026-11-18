@@ -23,13 +23,10 @@ const DEADLINE: Duration = Duration::from_secs(60);
 
 static RUNS: AtomicU32 = AtomicU32::new(0);
 
-/// A port that was free a moment ago. The gateway binds it next, and a restart rebinds it.
+/// The gateway's port, which a restart rebinds: outside the OS ephemeral range (an outgoing connect
+/// cannot autobind it while the board is down) and reserved from other test processes.
 fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("a free port")
-        .local_addr()
-        .expect("its address")
-        .port()
+    atlas_sim_node::ports::node_port()
 }
 
 /// A comm core with the NT4 gateway, in a thread of its own, until stopped.

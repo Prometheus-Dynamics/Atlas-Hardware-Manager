@@ -323,6 +323,7 @@ dependencies = [
 name = "atlas-nt"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-sim-node",
  "atlas-types",
  "orion",
  "orion-comm-app",

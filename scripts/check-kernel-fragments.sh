@@ -16,6 +16,8 @@
 #                                                     WITHOUT its selector lines (the state that failed in
 #                                                     PR B25) must FAIL, naming the line
 #   scripts/check-kernel-fragments.sh --devices DIR   check another tree laid out like devices/
+#   scripts/check-kernel-fragments.sh --only BOARD    resolve only that board (the self-test's negative cases use it:
+#                                                     the case changes one board, so only that board is resolved)
 #
 # Environment:
 #   ATLAS_KERNEL_CACHE     where pinned kernel trees are kept (default ${XDG_CACHE_HOME:-$HOME/.cache}/atlas/kernel).
@@ -32,10 +34,12 @@ set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 devices=$repo/devices
 mode=check
+only=
 while [[ $# -gt 0 ]]; do
   case $1 in
     --self-test) mode=self-test; shift ;;
     --devices) devices=$(cd "$2" && pwd); shift 2 ;;
+    --only) only=$2; shift 2 ;;
     *) echo "check-kernel-fragments: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -59,7 +63,7 @@ if [[ $mode == self-test ]]; then
   grep -v '^# CONFIG_LATENCYTOP is not set$' "$trim" > "$trim.new" && mv "$trim.new" "$trim"
   out=$tmp/out.txt
   rc=0
-  "$0" --devices "$tmp/devices" >"$out" 2>&1 || rc=$?
+  "$0" --devices "$tmp/devices" --only raze >"$out" 2>&1 || rc=$?
   if [[ $rc -eq 0 ]]; then
     cat "$out" >&2; die "self-test: a trim whose KALLSYMS_ALL line cannot take (LATENCYTOP removed) PASSED: the check does not catch it"
   fi
@@ -236,9 +240,38 @@ bare_marker_check() {
 }
 bare_marker_check
 
+# Resolves one board's configuration in its own O= directory and checks every fragment line against it. Prints the
+# FAIL lines, then a last line "RESULT <n failed lines> <fragment files>"; a step that cannot run ends with exit 1.
+resolve_board() {  # <name> <family> <source tree> <defconfig> <fragment list>
+  local name=$1 fam=$2 res=$3 defconfig=$4 frags=$5 o target out board_fail=0 f
+  local -a farr
+  o=$scratch/$name
+  mkdir -p "$o"
+  target=$defconfig
+  [[ $defconfig == defconfig ]] || target=${defconfig}_defconfig
+  (cd "$res" && make -s ARCH=arm64 O="$o" "$target") >"$scratch/$name.log" 2>&1 \
+    || { echo "check-kernel-fragments: $name: the $target step failed (log: $scratch/$name.log)"; return 1; }
+  IFS=',' read -ra farr <<<"$frags"
+  (cd "$res" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/.config" "${farr[@]}") >>"$scratch/$name.log" 2>&1 \
+    || { echo "check-kernel-fragments: $name: merge_config failed (log: $scratch/$name.log)"; return 1; }
+  (cd "$res" && make -s ARCH=arm64 O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
+    || { echo "check-kernel-fragments: $name: olddefconfig failed (log: $scratch/$name.log)"; return 1; }
+  for f in "${farr[@]}"; do
+    out=$(check_fragment "$o/.config" "$f" "$name" "$devices")
+    if [[ -n $out ]]; then
+      echo "$out"
+      board_fail=$((board_fail + $(printf '%s\n' "$out" | wc -l)))
+    fi
+  done
+  echo "RESULT $board_fail ${#farr[@]}"
+}
+
 fails=0
 checked=0
 skipped=0
+pids=()
+names=()
+fams=()
 declare -A patched=()
 # Fetches one pinned commit or tag of `url` into `dir` (an empty directory) and checks it out.
 #
@@ -283,6 +316,7 @@ while IFS= read -r row; do
   if [[ $fam == SKIP && $url == NO-DEFCONFIG ]]; then
     die "$name: its kernel states no \`defconfig\` (board.toml or the family's [kernel]). Buildroot cannot build a kernel without a starting configuration; state it."
   fi
+  if [[ -n $only && $name != "$only" ]]; then continue; fi
   if [[ $fam == SKIP ]]; then
     echo "check-kernel-fragments: SKIPPED $name: $url" >&2
     skipped=$((skipped + 1))
@@ -304,11 +338,30 @@ while IFS= read -r row; do
   if [[ -n ${series_pin:-} || -n ${extra:-} ]]; then
     surl=""; sref=""
     if [[ -n ${series_pin:-} ]]; then surl=${series_pin% *}; sref=${series_pin##* }; fi
-    fam_key=$(printf '%s %s %s %s' "$url" "$ref" "$surl $sref" "$extra" | sha256sum | cut -c1-16)
+    # The patched tree is kept in the cache, keyed by everything that makes it: the kernel pin, the series pin, and the
+    # board's own patch files BY CONTENT (they live in this repository and change without a pin moving). A kept tree is
+    # never written after it is made (the resolve uses O=), so reusing it is the same input as patching again. It is
+    # made in a temporary directory and renamed into place only when every patch applied.
+    xsum=""
+    if [[ -n ${extra:-} ]]; then
+      IFS=',' read -ra xs <<<"$extra"
+      for x in "${xs[@]}"; do [[ -f $x ]] || die "$name: its kernel patch ${x#$devices/} is missing"; done
+      xsum=$(cat "${xs[@]}" | sha256sum | cut -c1-16)
+    fi
+    # The patch files are named relative to the devices tree, not by absolute path: every worktree (and the self-test's
+    # copy of the tree) with the same patches shares one kept tree.
+    xnames=${extra:+${extra//$devices\//}}
+    fam_key=$(printf '%s %s %s %s %s' "$url" "$ref" "$surl $sref" "$xnames" "$xsum" | sha256sum | cut -c1-16)
+    pkept=$cache/patched-$fam_key
+    if [[ -z ${patched[$fam_key]:-} && -f $pkept/.patched ]]; then
+      echo "check-kernel-fragments: $name's patched tree is kept ($pkept: the same pins and patch contents)" >&2
+      patched[$fam_key]=$pkept
+    fi
     if [[ -z ${patched[$fam_key]:-} ]]; then
-      pdir=$scratch/patched-$fam_key
+      pdir=$cache/.patched-$fam_key.$$
       echo "check-kernel-fragments: applying $name's kernel patches (the series, then the board's own) to a copy of $url at $ref" >&2
-      rm -rf "$pdir"; cp -a "$src" "$pdir"
+      rm -rf "$pdir"; cp -a --reflink=auto "$src" "$pdir"
+      rm -f "$pdir/.pin"
       if [[ -n $surl ]]; then
         skey=$(printf '%s %s' "$surl" "$sref" | sha256sum | cut -c1-16)
         ssrc=$cache/series-$skey/src
@@ -345,43 +398,53 @@ while IFS= read -r row; do
           fi
           echo "check-kernel-fragments: $name: applied ${x#$devices/} after the series, 0 failed" >&2
         done
-        # Facts verified against the patched tree (PR A7RAILS): the recorded facts must be what the built kernel says.
-        if [[ -n $bdir && -f $bdir/kernel/post-patch-facts.txt ]]; then
-          python3 -I "$repo/scripts/check-board-facts.py" "$pdir" "$bdir" >&2 \
-            || die "$name: its recorded facts do not match the kernel built with its patches (see above)"
-        fi
       fi
-      patched[$fam_key]=$pdir
+      echo "$url $ref | $surl $sref | $xnames | $xsum" > "$pdir/.patched"
+      # Two gates (two worktrees) can build the same tree at once: the swap is under a lock, and a tree another run
+      # finished first is kept as it is (it may be in use), this run's copy dropped.
+      (
+        flock -w 600 9 || die "the patched-tree lock $cache/.patched-$fam_key.lock was not free in 600 s"
+        if [[ -f $pkept/.patched ]]; then rm -rf "$pdir"; else rm -rf "$pkept"; mv "$pdir" "$pkept"; fi
+      ) 9>"$cache/.patched-$fam_key.lock" || exit 1
+      patched[$fam_key]=$pkept
     fi
     res=${patched[$fam_key]}
-  fi
-  o=$scratch/$name
-  mkdir -p "$o"
-  target=$defconfig
-  [[ $defconfig == defconfig ]] || target=${defconfig}_defconfig
-  (cd "$res" && make -s ARCH=arm64 O="$o" "$target") >"$scratch/$name.log" 2>&1 \
-    || die "$name: the $target step failed (log: $scratch/$name.log)"
-  IFS=',' read -ra farr <<<"$frags"
-  (cd "$res" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/.config" "${farr[@]}") >>"$scratch/$name.log" 2>&1 \
-    || die "$name: merge_config failed (log: $scratch/$name.log)"
-  (cd "$res" && make -s ARCH=arm64 O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
-    || die "$name: olddefconfig failed (log: $scratch/$name.log)"
-  board_fail=0
-  for f in "${farr[@]}"; do
-    out=$(check_fragment "$o/.config" "$f" "$name" "$devices")
-    if [[ -n $out ]]; then
-      echo "$out" >&2
-      board_fail=$((board_fail + $(printf '%s\n' "$out" | wc -l)))
+    # Facts verified against the patched tree (PR A7RAILS): the recorded facts must be what the built kernel says.
+    # Every run, kept tree or not (the facts file is in this repository and is not part of the key).
+    if [[ -n ${extra:-} && -n $bdir && -f $bdir/kernel/post-patch-facts.txt ]]; then
+      python3 -I "$repo/scripts/check-board-facts.py" "$res" "$bdir" >&2 \
+        || die "$name: its recorded facts do not match the kernel built with its patches (see above)"
     fi
-  done
-  if [[ $board_fail -gt 0 ]]; then
-    fails=$((fails + board_fail))
-  else
-    echo "check-kernel-fragments: ok $name ($fam, ${#farr[@]} fragment file(s), every line takes)"
   fi
-  checked=$((checked + 1))
+  # The resolve of each board is independent (its own O= directory, read-only source tree): it runs in the background
+  # and its result is read below in board order, so the output and the verdict are the same as a serial run.
+  resolve_board "$name" "$fam" "$res" "$defconfig" "$frags" > "$scratch/$name.result" 2>&1 &
+  pids+=("$!"); names+=("$name"); fams+=("$fam")
 done < <(manifest)
 
+for i in "${!pids[@]}"; do
+  name=${names[$i]}
+  rc=0
+  wait "${pids[$i]}" || rc=$?
+  result=$(tail -n 1 "$scratch/$name.result")
+  if [[ $rc -ne 0 || $result != RESULT\ * ]]; then
+    cat "$scratch/$name.result" >&2
+    die "$name: its configuration could not be resolved (see above)"
+  fi
+  read -r _ board_fail nfrag <<<"$result"
+  if [[ $board_fail -gt 0 ]]; then
+    head -n -1 "$scratch/$name.result" >&2
+    fails=$((fails + board_fail))
+  else
+    fam=${fams[$i]}
+    echo "check-kernel-fragments: ok $name ($fam, $nfrag fragment file(s), every line takes)"
+  fi
+  checked=$((checked + 1))
+done
+
+if [[ -n $only && $checked -eq 0 ]]; then
+  die "--only $only: no such board with a kernel was checked"
+fi
 if [[ $fails -ne 0 ]]; then
   echo "check-kernel-fragments: FAILED: $fails kernel fragment line(s) do not take" >&2
   exit 1
