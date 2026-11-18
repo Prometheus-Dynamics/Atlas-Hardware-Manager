@@ -1,0 +1,46 @@
+# The RK35xx flasher's Buildroot options: the `os` of flasher-rk35xx. A RAM-only root with BusyBox init and no
+# systemd (an initramfs is not a board's OS; see flasher-bcm2712/os/flasher.fragment for the same decision).
+# Gaia starts from allnoconfig: each line below is on because it says so. The kernel and the bootloader are the
+# board's (Gaia derives them); the toolchain and host tools are the ones zero-3e-base's OS uses, which Gaia built
+# end to end. F8?: option names are Buildroot's; Gaia's option check is the test.
+
+# Toolchain: Buildroot's bootlin aarch64 glibc, the known-good toolchain for this board (zero-3e-base/os.fragment).
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+
+# Init: BusyBox, not systemd (the flasher's reason is in the header). Lemnos's init scripts run from rcS.
+BR2_INIT_BUSYBOX=y
+BR2_ROOTFS_SKELETON_DEFAULT=y
+# mdev runs at boot and on hotplug: lemnosd's device nodes (its rules are an mdev.conf fragment: a field wanted,
+# see components/lemnos-busybox).
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"
+
+# Console: a getty on the USB gadget's ACM port, ttyGS0 (the one serial console, as on the base OS). Root login
+# follows the board's security setting, as the base OS does: security OFF logs root in with no password; security
+# ON is OPEN (see raze-base's os/raze.fragment). No SSH server: Orion's recovery build serves SSH.
+BR2_TARGET_GENERIC_GETTY=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyGS0"
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
+
+# Kernel modules: none in the image (no /lib/modules, nothing loads one). The board kernel's options are its own.
+# BR2_LINUX_KERNEL_INSTALL_TARGET is not set
+
+# Host tools for the bootloader build (not on the board), kept from zero-3e-base's os.fragment with the same reason:
+# U-Boot's binman and the TF-A BL31 ELF pack u-boot-rockchip.bin, which the maskrom loader takes.
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+BR2_LINUX_KERNEL_NEEDS_HOST_PYTHON3=y
+BR2_TARGET_UBOOT_NEEDS_DTC=y
+BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
+BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
+BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
+BR2_TARGET_UBOOT_NEEDS_GNUTLS=y
+BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y
+BR2_PACKAGE_HOST_DTC=y
+BR2_TARGET_ARM_TRUSTED_FIRMWARE_IMAGES="bl31/bl31.elf"
+BR2_TARGET_UBOOT_NEEDS_ATF_BL31_ELF=y
+BR2_TARGET_UBOOT_FORMAT_CUSTOM=y
+BR2_TARGET_UBOOT_FORMAT_CUSTOM_NAME="u-boot-rockchip.bin"

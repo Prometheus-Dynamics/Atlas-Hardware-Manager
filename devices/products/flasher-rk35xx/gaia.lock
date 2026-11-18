@@ -1,0 +1,71 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."flasher-rk35xx.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+commit = "679b9ead7620bbf193620d1ebf56f53c1764d37a"
+
+[source."lemnos-busybox.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnos-orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnosd.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnosd.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."orion-recovery.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."orion-recovery.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+commit = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+[source."radxa-zero-3e.linux"]
+kind = "git"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "v7.3.3"
+commit = "d50d994bffa3c7c6db2d8bc4c5f0c55e3f46b0cd"
+
+[source."radxa-zero-3e.rkbin"]
+kind = "git"
+url = "https://github.com/rockchip-linux/rkbin.git"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+commit = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+
+[source."radxa-zero-3e.tf-a"]
+kind = "git"
+url = "https://github.com/ARM-software/arm-trusted-firmware.git"
+ref = "v2.15.0"
+commit = "da738d5eae93af342fdc4995dd3c05acb4c9d757"
+
+[source."radxa-zero-3e.u-boot"]
+kind = "git"
+url = "https://github.com/u-boot/u-boot.git"
+ref = "v2026.10"
+commit = "5508406582f6f7120dce0c4b3059819a41788db2"

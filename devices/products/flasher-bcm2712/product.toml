@@ -1,0 +1,41 @@
+# The Raze flasher: a RAM-only initramfs that the boot ROM's USB boot loads (decision 3 in docs/design.md).
+# Once it runs, the board is an ordinary Orion node on the USB link with lemnosd beside it, and flashing is
+# an ordinary update. No flasher daemon, no flasher protocol. Untested on board.
+#
+# Recipe: `initramfs-boot` (Gaia 4abf626, recipes/initramfs-boot.toml): the built tree as a plain newc
+# archive, no compression, no signature. Not `recovery`: that one zstd-compresses and minisign-signs, and
+# needs a `public_key` and a `key_env` (a signing key this repository does not hold). Signing the flasher
+# is a field wanted for the release path (PR text).
+#
+# What the recipe does NOT give: the kernel, device trees and the boot files. initramfs-boot's only input is
+# `build` and its only output is the archive, so the kernel Image and the dtb do not come out of the plan.
+# The Pi's boot.img (FAT: kernel, dtb, initramfs, config.txt) has no recipe at 4abf626 either. Both are
+# field wanted (PR text). The board's kernel is derived by Gaia from boards/raze/kernel fragments.
+version = 1
+name = "flasher-bcm2712"
+description = "Raze flasher: a RAM-only initramfs with lemnosd, the Lemnos bridge to Orion and Orion's recovery build (BusyBox init)"
+
+# Kernel options the flasher needs that the Raze's kernel fragments do NOT give (checked against
+# bcm2712_defconfig at 53679a5 and boards/raze/kernel/raze.config): the initramfs has no modules, so each of
+# these must be built in, not m. USB_CONFIGFS (m in the defconfig; lemnosd's gadget is configfs), USB_F_FS
+# (m in raze.config; Orion's link is FunctionFS), I2C_CHARDEV and I2C_DESIGNWARE_PLATFORM (m in raze.config;
+# lemnosd opens /dev/i2c-N, and the RP1 I2C controller is a DesignWare platform driver), RP1_PIO (m; the LED
+# ring and the IMU bus are PIO). The kernel is the board's, so this is for boards/raze (B2's file), not this product.
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
+
+[components]
+lemnos-busybox = "../../components/lemnos-busybox/component.toml"
+lemnosd = "../../components/lemnosd/component.toml"
+lemnos-orion = "../../components/lemnos-orion/component.toml"
+raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
+orion-recovery = "../../components/orion-recovery/component.toml"
+
+[[images]]
+name = "flasher-bcm2712"
+board = "../../boards/raze/board.toml"
+components = ["lemnos-busybox", "lemnosd", "lemnos-orion", "raze-lemnos-board", "orion-recovery"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
+recipe = "initramfs-boot"

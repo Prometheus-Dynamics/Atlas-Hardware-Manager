@@ -1,0 +1,31 @@
+# The fastboot fragment for the RK35xx flasher's U-Boot: the family's U-Boot (v2026.10, families/rk35xx) built
+# with USB fastboot, so the maskrom loader can start it from RAM and `fastboot boot` takes the flasher's kernel
+# and initramfs (decision in the B9 PR text). Each symbol was checked against U-Boot v2026.10's Kconfig files
+# (a shallow clone of the tag, grepped 2026-11-13).
+#
+# NOT USED YET: Gaia 4abf626 gives an image no bootloader fragment of its own; the bootloader is derived from
+# the board (the field wanted is in the PR text). The fragment is kept beside the product so it can be named
+# the day Gaia takes it. Untested on board.
+#
+# CONFIG_USB_FUNCTION_FASTBOOT=y: the USB fastboot gadget. The family's defconfig states it OFF
+#   (configs/radxa-zero-3-rk3566_defconfig: "# CONFIG_USB_FUNCTION_FASTBOOT is not set"), so this line must come
+#   after the defconfig. It selects FASTBOOT, which implies CMD_FASTBOOT and ANDROID_BOOT_IMAGE (so `fastboot boot`
+#   exists), and USB_GADGET_DOWNLOAD (already on in that defconfig). USB_GADGET, USB_DWC3, USB_DWC3_GENERIC and
+#   USB_DWC3_GADGET (default y) are already on for the ZERO 3E's OTG port, so they need no line here.
+CONFIG_USB_FUNCTION_FASTBOOT=y
+# CONFIG_FASTBOOT_BUF_ADDR=0x20000000: drivers/fastboot/Kconfig gives a default for RK3036/RK3188/RK322X,
+#   RK3288/RK3328/RK3399 and RK3368 only, so on RK3566 the value must be given. 0x20000000 is RAM above the RK3568
+#   load addresses of this tree (include/configs/rk3568_common.h: scriptaddr 0x00c00000, kernel_addr_r 0x02000000,
+#   fdt_addr_r 0x12000000, ramdisk_addr_r 0x12180000) and below the board's 1 GB top. The RK3399-class default
+#   0x800800 would overlap kernel_addr_r. Not measured: confirm on the board.
+CONFIG_FASTBOOT_BUF_ADDR=0x20000000
+# CONFIG_FASTBOOT_BUF_SIZE is not given: the default for ARCH_ROCKCHIP is 0x8000000 (128 MB), which the kernel and
+#   the initramfs come through; 0x20000000 + 128 MB ends below 0x40000000.
+# CONFIG_FASTBOOT_FLASH is not set: FASTBOOT_FLASH defaults ON for ROCKCHIP with MMC. The flasher downloads and
+#   boots only; the writes after that are Lemnos drivers' jobs, through lemnosd, once the board is up.
+# CONFIG_FASTBOOT_FLASH is not set
+# NOT SET HERE, on purpose: CMD_BOOTI (default y on ARM64), ANDROID_BOOT_IMAGE (default y with FASTBOOT).
+#
+# OPEN, not a CONFIG_ line: the ZERO 3E's U-Boot device tree sets dr_mode = "otg" (arch/arm/dts/
+#   rk3566-radxa-zero-3e-u-boot.dtsi). The port is a gadget only when no host is on the ID pin. The board run checks
+#   that a PC sees the fastboot device on that port.

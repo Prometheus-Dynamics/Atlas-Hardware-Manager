@@ -1,0 +1,33 @@
+# BusyBox applets for the flasher's init and the Lemnos init scripts (Lemnos packaging/init, b0bf0101).
+# Gaia's Buildroot base is allnoconfig, so an applet is on only when this file says so. Each line:
+# ash        /bin/sh: the Lemnos scripts are POSIX sh run under ash, and rcS runs them
+# init       PID 1 (BR2_INIT_BUSYBOX): /etc/inittab and rcS
+# getty      the console getty on ttyGS0 (BR2_TARGET_GENERIC_GETTY)
+# login      what getty starts for a login (root without a password, the console policy in the OS fragment)
+# mount      rcS mounts proc, sys and devtmpfs
+# start-stop-daemon  S50lemnosd and S51lemnos-orion start their supervisors with it (the script says so)
+# mdev       device nodes at boot (mdev -s) and on hotplug; the Lemnos rules are an mdev.conf fragment
+# sleep, kill, cat, date, rm, mkdir, touch, dirname, test ([)  used by the two init scripts
+# sync, reboot, poweroff, halt  the shutdown path of init
+CONFIG_ASH=y
+CONFIG_INIT=y
+CONFIG_GETTY=y
+CONFIG_LOGIN=y
+CONFIG_MOUNT=y
+CONFIG_UMOUNT=y
+CONFIG_START_STOP_DAEMON=y
+CONFIG_MDEV=y
+CONFIG_FEATURE_MDEV_CONF=y
+CONFIG_SLEEP=y
+CONFIG_KILL=y
+CONFIG_CAT=y
+CONFIG_DATE=y
+CONFIG_RM=y
+CONFIG_MKDIR=y
+CONFIG_TOUCH=y
+CONFIG_DIRNAME=y
+CONFIG_TEST=y
+CONFIG_SYNC=y
+CONFIG_REBOOT=y
+CONFIG_POWEROFF=y
+CONFIG_HALT=y
