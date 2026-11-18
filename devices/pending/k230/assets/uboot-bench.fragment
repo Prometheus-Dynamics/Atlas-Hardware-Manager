@@ -1,0 +1,19 @@
+# PENDING (K1), 2026-11-16, the env numbers as the coordinator ruled them (Gaia and Lemnos agree). The vendor defconfig stays
+# pristine; these lines go in this FRAGMENT. PROPOSED to Lemnos and Gaia, pending their OK.
+# Layout (vendor genimage_cfg/genimage.cfg at fc6cc215): SPL at 1 MiB, SPL copy at 0x180000, U-Boot at 2 MiB, env A at 0x300000,
+# env B at 0x320000; the first partition at 4 MiB or later; Gaia puts OpenSBI raw at 0x380000.
+# Env location: MMC only. CONFIG_ENV_IS_NOWHERE must be off (k230_board_common.c:61-75 returns ENVL_NOWHERE first when it is set),
+# and no other location may be on (the vendor defconfig sets SPI_FLASH=y; this fragment turns it off).
+CONFIG_ENV_IS_IN_MMC=y
+# CONFIG_ENV_IS_NOWHERE is not set
+# CONFIG_ENV_IS_IN_SPI_FLASH is not set
+CONFIG_ENV_REDUNDANT=y
+# ONE value to change if Lemnos finds 0x2000 too small (Lemnos is checking; the answer may be 0x10000).
+CONFIG_ENV_SIZE=0x2000
+CONFIG_ENV_OFFSET=0x300000
+CONFIG_ENV_OFFSET_REDUND=0x320000
+# The env disk: U-Boot's SD is mmc 1 (the boot mode SDIO1 selects it; k230_board_common.c:53-59 returns 1 for SDIO1).
+CONFIG_ENV_MMC_DEVICE_INDEX=1
+# Not set on purpose: CONFIG_WATCHDOG and CONFIG_WATCHDOG_AUTOSTART (the first boot arms nothing), CONFIG_FASTBOOT* and the USB
+# download mode (the second image adds them). No u-boot,mmc-env-offset, -offset-redundant or -partition property in the dts
+# (env/mmc.c:72-106 would override the offsets above); our dts patches add none of them.

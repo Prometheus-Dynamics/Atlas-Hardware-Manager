@@ -1,0 +1,18 @@
+# PENDING (K1): kernel fragment for the K230D AI-CAM bench slot image (mainline v7.3.4, riscv defconfig base).
+# Every line says why. UNVERIFIED on the board: none of these symbols is confirmed built into a K230 kernel yet.
+# The Kconfig names below are read from mainline's own Kconfig trees; verify each with `make olddefconfig` in the build.
+
+# PSTORE trio (the bench rule: crash logs survive a reset). Lemnos BB3 refuses a slot board without them built in.
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+
+# ramoops backs the pstore RAM. The reserved region itself is a dts reserved-memory node (the dts, not here).
+# The K230D memory node is 128 MiB at 0x0 (SDK k230d.dtsi memory@0, reg 0x0 0x8000000). The region's address and
+# size are NOT chosen here: they depend on the load map of kernel, dtb and initramfs, which Gaia's design fixes.
+
+# Watchdog: the DesignWare watchdog that lemnosd feeds (socs/k230.toml watchdog0, snps,dw-wdt).
+CONFIG_DW_WATCHDOG=y
+
+# Storage (the SD slot's host) and the dwc2 gadget are the board's, pending the mainline compatible check
+# (family.toml.pending storage_drivers, Lemnos's pending gadget row). Not enabled here until checked.

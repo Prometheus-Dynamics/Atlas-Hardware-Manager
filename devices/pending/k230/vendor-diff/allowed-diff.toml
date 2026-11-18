@@ -1,0 +1,10 @@
+# PENDING (K1): the recorded edits of the AI-CAM's vendor files (kendryte/k230_linux_sdk fc6cc215). The provenance check
+# (vendor-diff/check.sh) refuses any difference from the pristine vendor file that is not listed here, so an edit cannot
+# slip in unrecorded. Each entry: the vendor file, the reason, and the patch that is the entire allowed change.
+# ONE entry, per the ruling of 2026-11-16 (the bootargs override is NOT an edit: the SDK's board_fdt_chosen_bootargs in
+# board/canaan/common/k230_img.c:108-125 reads env "bootargs" first and uses the compiled string only when the env has none).
+
+[[edit]]
+file = "buildroot-overlay/boot/uboot/u-boot-2022.10-overlay/arch/riscv/dts/k230d_canmv_junroc_ai_cam.dts"
+reason = "the U-Boot console is UART0 (the CH342 bench port, which the ROM prints to), not the vendor's UART2 (stdout-path, dts line 66)"
+patch = "../assets/console-uart0.patch"

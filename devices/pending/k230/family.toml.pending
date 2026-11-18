@@ -1,0 +1,100 @@
+# PENDING (K1): the Kendryte K230 / K230D family, riscv64, for the CanMV K230D AI-CAM bench slot image.
+# NOT a description yet: no [descriptions] entry names it, scripts/check-devices.sh does not read this
+# directory, and it moves to devices/families/k230/family.toml only when Gaia's riscv64 design lands
+# (Gaia B8 worker: OpenSBI stage, SDK firmware-header tool via @tool:, SDK U-Boot series). Every value is
+# a draft and says where it came from. UNVERIFIED means no board and no build has confirmed it.
+version = 1
+
+[target]
+arch = "riscv64"
+os = "linux"
+
+# Kernel: mainline, the standing rule (latest 7.x). v7.3.4 is the brief's pin; Gaia's local report
+# (/mnt/ssd-samsung/gaia/boards/REPORT-mainline.md, 2026-11-08) is about v7.3.3 and was the only source read.
+# UNVERIFIED for v7.3.4: no fetch of the v7.3.4 tree succeeded from this session (raw.githubusercontent.com 404,
+# git.kernel.org 403).
+[sources.linux]
+git = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "v7.3.4"
+
+[kernel]
+source = "linux"
+defconfig = "defconfig"
+# The base OS trim and the bench options (PSTORE trio, ramoops, watchdog) live in board fragments (K1 draft
+# kernel/bench.fragment), not here, because the family is shared by any K230 board.
+fragments = []
+# Storage a slot boots from, built in. UNVERIFIED: the SDK's SD host is compatible canaan,k230-dw-mshc
+# (vendor, Lemnos survey 2.5), not a mainline compatible. The mainline driver sdhci-of-dwcmshc.c is present
+# (REPORT-mainline.md), so the SD path is a small port until the compatible is checked on the board.
+storage_drivers = ["CONFIG_MMC_SDHCI_OF_DWCMSHC"]
+
+# Boot chain: mainline U-Boot has no K230 SPL or MMC driver (REPORT-mainline.md), so the bootloader is the
+# SDK's U-Boot 2022.10 (k230d_canmv_bpi) as our own pinned series. The SDK pin is reference only:
+# kendryte/k230_sdk 7e302f733311d284be255f0d81d3463b6ae6ee6d (Lemnos socs/k230.toml and B7 both name it).
+# Our series, not the SDK's tree, is what a board builds from. Patches are Gaia's `[bootloader] patches`
+# form (Gaia 2026-11-14: a dir beside the board file, or { source, path }).
+[sources.k230-sdk]
+git = "https://github.com/kendryte/k230_sdk.git"
+ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
+
+[bootloader]
+# The SDK's boot chain applies a pad table at boot (SPL, k230d_canmv_bpi.dts:61-171). Every board of this family
+# must declare [pads] (scripts/check-devices.sh, pads_rule).
+applies_pad_table = true
+# The SDK's own U-Boot is a subdirectory of the SDK, which the source form cannot name yet (B7 outside need 1,
+# Gaia subdir). Until then this points at the SDK source and the subdir is an open item, not a fix.
+source = "k230-sdk"
+# Redundant MMC environment, the Lemnos uboot record (BB1b). The SDK's k230d defconfig has NONE of these:
+# it sets CONFIG_ENV_OFFSET=0x1e0000 with ENV_IS_IN_MMC and ENV_IS_IN_SPI_FLASH both, no ENV_REDUNDANT, and
+# no ENV_MMC_DEVICE_INDEX (k230d_canmv_bpi / k230d_canmv defconfigs, read from the SDK overlay). The series must add them.
+fragments = ["assets/uboot-bench.fragment"]
+
+# Trusted firmware / OpenSBI: NOT settled. Gaia's design has an OpenSBI stage with the kernel payload (Gaia
+# coordinator, 2026-11-14). The SDK builds OpenSBI 1.4 (B7). No K230 platform exists in research/opensbi
+# (platform/ has generic, nuclei, template only). Left out until Gaia's design names the form.
+# [bootloader.trusted_firmware] is intentionally absent.
+
+# The firmware header (SDK tools/k230_priv_gzip): a host binary with NO source in the SDK tree (checked
+# 2026-11-14 under k230_linux_sdk). It is the one candidate for a closed-blob-only step. Whether the boot ROM
+# needs its header is UNVERIFIED. Its use is Gaia's @tool: design, not this family's.
+
+# SD layout, from B7 (the SDK's post-image checked on the Zero, sdcard.img): SPL firmware at 1 MiB and 1.5 MiB,
+# U-Boot at 2 MiB, env copies at 1.875 MiB and 3.5 MiB. The AI-CAM uses the same SDK layout (B7: "check at G7").
+# UNVERIFIED on this board. These raw areas have no file yet; the SPL and U-Boot come from our series' outputs.
+[disk]
+scheme = "gpt"
+
+[[partitions]]
+name = "spl"
+role = "bootloader"
+offset = "1M"
+in_table = false
+
+[[partitions]]
+name = "spl-copy"
+role = "bootloader"
+offset = "1536K"
+in_table = false
+
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "2M"
+in_table = false
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+offset = "1920K"
+in_table = false
+
+[[partitions]]
+name = "uboot-env-copy"
+role = "raw"
+offset = "3584K"
+in_table = false
+
+# Flash: the boot ROM's USB download mode (crates/flash/k230). The load address is a caller input there;
+# the SDK's tool sends 0x80360000 and the Zero's burner links at 0x80300000 (B7). Both UNVERIFIED on a board.
+[flash]
+methods = ["k230-usb"]

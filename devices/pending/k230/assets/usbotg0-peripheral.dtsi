@@ -1,0 +1,13 @@
+// PENDING (K1): pins the K230D OTG port to device mode. Used in BOTH the U-Boot dts patch (k230d_canmv_bpi.dts)
+// and the AI-CAM kernel dts. Ship no host or otg mode: dr_mode = "peripheral" means the controller never enters host
+// mode and never drives VBUS. Coordinator ruling (a), 2026-11-14.
+//
+// Base node: the SDK's usbotg0 (k230.dtsi:209-216, usb-otg@91500000, compatible snps,dwc2, dr_mode "otg").
+// The BPI board enables it (k230d_canmv_bpi.dts:56-58, status "okay"). This overrides dr_mode only.
+//
+// CONFIRM ON BOARD: that the controller comes up in device mode with no VBUS driven, and that the UDC name is
+// 91500000.usb-otg. Bench only.
+
+&usbotg0 {
+	dr_mode = "peripheral";
+};

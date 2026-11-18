@@ -1,0 +1,15 @@
+# PENDING (K1): SDK U-Boot 2022.10 fragment for the FIRST boot. Env location MMC only; NO watchdog options (the first
+# boot arms nothing), NO fastboot or USB download (the second image adds them).
+# Env location (k230_board_common.c:61-75): CONFIG_ENV_IS_NOWHERE must be off, and MMC is the only location.
+CONFIG_ENV_IS_IN_MMC=y
+# CONFIG_ENV_IS_NOWHERE is not set
+# CONFIG_ENV_IS_IN_SPI_FLASH is not set
+CONFIG_ENV_REDUNDANT=y
+CONFIG_ENV_SIZE=0x10000
+CONFIG_ENV_OFFSET=0x1e0000
+CONFIG_ENV_OFFSET_REDUND=0x380000
+# The env disk follows the boot mode (k230_board_common.c:53-59): SDIO1 gives 1, which the SD boot uses.
+CONFIG_ENV_MMC_DEVICE_INDEX=1
+# Not set on purpose: CONFIG_WATCHDOG, CONFIG_WATCHDOG_AUTOSTART (the SDK defconfig does not set them either; the
+# first boot must not arm a watchdog), CONFIG_FASTBOOT*, CONFIG_USB_FUNCTION_FASTBOOT.
+# No u-boot,mmc-env-offset / -offset-redundant / -partition property in the dts (env/mmc.c:72-106).

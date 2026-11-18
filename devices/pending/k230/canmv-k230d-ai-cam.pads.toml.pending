@@ -1,0 +1,4 @@
+# PENDING (K1): the AI-CAM's pads.toml for the PADS rule (lands with PADS, then K1 rebases). Source: the vendor file.
+source = "kendryte/k230_linux_sdk fc6cc215 buildroot-overlay/boot/uboot/u-boot-2022.10-overlay/arch/riscv/dts/k230d_canmv_junroc_ai_cam.dts: bank table from the file's own 'from schematic' comment (lines 31-38) and defines (lines 48-54); pin table lines 95-187"
+derived_from_board = ""
+bank_voltages = { IO0_IO1 = "1V8", IO2_IO13 = "1V8", IO14_IO25 = "3V3", IO26_IO37 = "3V3", IO38_IO49 = "3V3", IO50_IO61 = "3V3", IO62_IO63 = "3V3" }
