@@ -37,6 +37,15 @@ undocumented_unsafe_blocks = "deny"
 [profile.dev]
 debug = "line-tables-only"
 
+# The tests hash and decompress hundreds of MiB (bounded-memory and verity checks); unoptimized, sha2 and liblzma set
+# the test step's length. Only these two dependencies are optimized, in the dev profile only: Atlas's own code builds
+# as before, and debug assertions and overflow checks stay on everywhere.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.dev.package.lzma-sys]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
