@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # The inner loop: only the checks a change can affect, each one a gate command (scripts/gate.sh) narrowed to the
-# changed crates or boards. NOT a substitute for the full gate: run scripts/gate.sh once before landing.
+# changed crates or boards. It is a worker's check; the full gate (scripts/gate.sh) is the lander's, on the merged
+# result (AGENTS.md, "Workers and the landing gate").
 #
 # Usage:
 #   scripts/check-scoped.sh            the changes against origin/next (committed, staged, unstaged and untracked)
