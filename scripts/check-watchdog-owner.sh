@@ -52,33 +52,58 @@ wd_section_value() {  # <file> <section> <key>
     }' "$1"
 }
 
-# A top-level key's quoted value (first occurrence), or nothing.
+# A top-level key's quoted value (first occurrence), or nothing. Read in bash (no grep, head or cut): the check calls
+# it for every product, board and self-test case, and each process costs most under load.
 wd_top_value() {  # <file> <key>
-  { grep -o "^$2 = \"[^\"]*\"" "$1" || true; } | head -1 | cut -d'"' -f2
+  local line re="^$2 = \"([^\"]*)\""
+  if [[ ! -r $1 ]]; then { grep -o "^$2 = \"[^\"]*\"" "$1" || true; } | head -1 | cut -d'"' -f2; return 0; fi
+  while IFS= read -r line || [[ -n $line ]]; do
+    if [[ $line =~ $re ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; return 0; fi
+  done < "$1"
+  return 0
+}
+
+# Sets the variable named $1 to dirname of $2, as dirname prints it, without running dirname.
+wd_dirname_to() {  # <variable> <path>
+  local p=$2
+  while [[ $p == */ && $p != / ]]; do p=${p%/}; done
+  if [[ $p != */* ]]; then printf -v "$1" '%s' .; return; fi
+  p=${p%/*}
+  while [[ $p == */ && $p != / ]]; do p=${p%/}; done
+  printf -v "$1" '%s' "${p:-/}"
 }
 
 # The board directory a product names (its board = "..."), absolute, or nothing.
 wd_board_dir() {  # <product.toml>
   local board
+  local d r
   board=$(wd_top_value "$1" board)
   [[ -n $board ]] || return 0
-  dirname "$(realpath -m "$(dirname "$1")/$board")"
+  wd_dirname_to d "$1"
+  r=$(realpath -m "$d/$board")
+  wd_dirname_to d "$r"
+  printf '%s\n' "$d"
 }
 
 # The family directory a board extends (its extends = "..."), absolute, or nothing.
 wd_family_dir() {  # <board dir>
   local ext
+  local d r
   ext=$(wd_top_value "$1/board.toml" extends)
   [[ -n $ext ]] || return 0
-  dirname "$(realpath -m "$1/$ext")"
+  r=$(realpath -m "$1/$ext")
+  wd_dirname_to d "$r"
+  printf '%s\n' "$d"
 }
 
 # The absolute component.toml paths a product lists in [components], one per line.
 wd_components() {  # <product.toml>
-  local pdir rel
-  pdir=$(dirname "$1")
-  awk '/^\[/ { on = ($0 == "[components]"); next } on && /=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v }' "$1" |
-    while IFS= read -r rel; do realpath -m "$pdir/$rel"; done
+  local pdir rel paths=()
+  wd_dirname_to pdir "$1"
+  # One realpath for all of them (it takes many paths and prints one line each, in order).
+  while IFS= read -r rel; do paths+=("$pdir/$rel"); done < <(
+    awk '/^\[/ { on = ($0 == "[components]"); next } on && /=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v }' "$1")
+  [[ ${#paths[@]} -eq 0 ]] || realpath -m -- "${paths[@]}"
   return 0
 }
 
@@ -114,16 +139,32 @@ wd_overlays() {  # <product.toml>
   return 0
 }
 
+# wd_installs over several component.toml files in one awk: "to<TAB><component dir>/source" per block, file by file in
+# the order given (each file's blocks as wd_installs prints them).
+wd_installs_all() {  # <component.toml>...
+  [[ $# -gt 0 ]] || return 0
+  awk '
+    function emit() { if (to != "" && src != "") printf "%s\t%s/%s\n", to, dir, src; to = ""; src = "" }
+    FNR == 1 { if (NR > 1) emit(); inst = 0; dir = FILENAME; sub(/\/[^\/]*$/, "", dir) }
+    /^\[\[install\]\]/ { emit(); inst = 1; next }
+    /^\[/ { emit(); inst = 0; next }
+    inst && /^[[:space:]]*to[[:space:]]*=/ { to = $0; sub(/^[^"]*"/, "", to); sub(/".*$/, "", to) }
+    inst && /^[[:space:]]*from[[:space:]]*=/ {
+      f = $0
+      if (f ~ /file[[:space:]]*=/) { sub(/.*file[[:space:]]*=[[:space:]]*"/, "", f); sub(/".*$/, "", f); src = f }
+      else if (f ~ /^[[:space:]]*from[[:space:]]*=[[:space:]]*"/) { sub(/^[^"]*"/, "", f); sub(/".*$/, "", f); src = f }
+      else src = ""
+    }
+    END { emit() }' "$@"
+}
+
 # Input pairs of a product: "dest<TAB>source" for each file it installs (components, then named overlays), once each.
 wd_input_pairs() {  # <product.toml>
-  local p=$1 comp cdir to src ov rel
+  local p=$1 comp ov rel comps=()
   while IFS= read -r comp; do
-    [[ -f $comp ]] || continue
-    cdir=$(dirname "$comp")
-    while IFS=$'\t' read -r to src; do
-      printf '%s\t%s\n' "$to" "$cdir/$src"
-    done < <(wd_installs "$comp")
+    [[ -f $comp ]] && comps+=("$comp")
   done < <(wd_components "$p")
+  wd_installs_all ${comps[@]+"${comps[@]}"}
   local ovs=()
   while IFS= read -r ov; do ovs+=("$ov"); done < <(wd_overlays "$p")
   for ov in $(printf '%s\n' ${ovs[@]+"${ovs[@]}"} | sort -u); do
