@@ -11,8 +11,9 @@
 //! Each returned port is verified by binding it, then released for the node to bind. Ports this
 //! process has already handed out are never returned again, so two nodes started in one test do
 //! not pick the same port. Across processes (a test runner that runs each test as its own process,
-//! as cargo-nextest does) a port is reserved by a file lock under the temp dir, held until the
-//! process exits: a node that stops and restarts keeps its port from every other test process too.
+//! as cargo-nextest does, and other test runs of the same user, such as a second gate) a port is
+//! reserved by a file lock under the user's runtime dir (else the temp dir), held until the process
+//! exits: a node that stops and restarts keeps its port from every other test process too.
 //!
 //! Residual: another explicit bind in 20000 to 32767 (by a process or a test that chose that
 //! port itself) can still take the port between the check and the node's bind. An outgoing
@@ -34,10 +35,20 @@ const PROC_RANGE: &str = "/proc/sys/net/ipv4/ip_local_port_range";
 /// reserves it from other processes (held for the life of the process).
 static HANDED_OUT: Mutex<Option<HashMap<u16, File>>> = Mutex::new(None);
 
-/// The directory of the cross-process port locks: one per user's temp dir, shared by every test
-/// process of one run (the gate sets TMPDIR once for all of them).
+/// The directory of the cross-process port locks, shared by every test process of the user: two
+/// gates running at once (each with its own TMPDIR) saw only their own locks and handed one port
+/// to both (found in a run of two gates side by side, 2026-11-18). `$XDG_RUNTIME_DIR` is per user
+/// and the same for every process of the session; where it is not set (CI), the temp dir.
 fn lock_dir() -> PathBuf {
-    std::env::temp_dir().join("atlas-node-ports")
+    lock_dir_from(std::env::var_os("XDG_RUNTIME_DIR"), std::env::temp_dir())
+}
+
+fn lock_dir_from(runtime: Option<std::ffi::OsString>, temp: PathBuf) -> PathBuf {
+    runtime
+        .filter(|dir| !dir.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or(temp)
+        .join("atlas-node-ports")
 }
 
 /// Takes the cross-process lock of `port`, or `None` when another process holds it. An error
@@ -246,5 +257,32 @@ mod tests {
         );
         drop(held);
         assert!(reserve(other).is_some(), "a released lock is free again");
+    }
+    /// The locks are shared by every process of the user, whatever its TMPDIR: two gates side by
+    /// side once handed one port to both when the locks lived under each one's temp dir.
+    #[test]
+    fn the_lock_dir_is_the_users_runtime_dir_not_the_temp_dir() {
+        let temp = PathBuf::from("/scratch/gate-a");
+        assert_eq!(
+            lock_dir_from(Some("/run/user/1000".into()), temp.clone()),
+            PathBuf::from("/run/user/1000/atlas-node-ports")
+        );
+        assert_eq!(
+            lock_dir_from(
+                Some("/run/user/1000".into()),
+                PathBuf::from("/scratch/gate-b")
+            ),
+            lock_dir_from(Some("/run/user/1000".into()), temp.clone()),
+            "two temp dirs, one lock dir"
+        );
+        assert_eq!(
+            lock_dir_from(None, temp.clone()),
+            PathBuf::from("/scratch/gate-a/atlas-node-ports")
+        );
+        assert_eq!(
+            lock_dir_from(Some("".into()), temp),
+            PathBuf::from("/scratch/gate-a/atlas-node-ports"),
+            "an empty runtime dir is not a directory"
+        );
     }
 }
