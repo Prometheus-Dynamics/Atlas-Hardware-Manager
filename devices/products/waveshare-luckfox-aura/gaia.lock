@@ -1,0 +1,14 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."waveshare-luckfox-aura.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
+commit = "813cbac680a73092e1ebb86da72972c44573145c"
+
+[source."waveshare-luckfox-aura.rkbin"]
+kind = "git"
+url = "https://github.com/rockchip-linux/rkbin.git"
+ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
+commit = "3e288fe814e059dd06833495f845cab04ac20a5c"

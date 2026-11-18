@@ -1,0 +1,28 @@
+# Luckfox Aura (Rockchip RV1126B, aarch64, sold by Waveshare). Its storage is
+# eMMC, not NAND, so it has no partition list here: the eMMC layout is
+# unconfirmed (open). Dev's record: devices/waveshare-luckfox-aura. Untested on
+# board (G6).
+version = 1
+extends = "../../families/rv11xx/family.toml"
+name = "waveshare-luckfox-aura"
+description = "Luckfox Aura (RV1126B), sold by Waveshare"
+
+# Storage is eMMC, as dev records it (wiki and Waveshare: eMMC optional, microSD standard,
+# no NAND). USB id 2207:110b is a GUESS (U-Boot's RV1126 default, a search snippet), not
+# confirmed: check with lsusb -d 2207: in maskrom.
+[target]
+arch = "aarch64"
+cpu = "cortex-a53"
+
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
+
+# DDR init: rkbin's rv1126b file, the one RV1126BMINIALL.ini names.
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rv11/rv1126b_ddr_1332MHz_v1.10.bin" }
+
+# Maskrom loader ini (NAME=RV110F). The merged loader is rv1126b_loader_v1.10.106.bin:
+# boot_merger output, not published by rkbin: open.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RV1126BMINIALL.ini" }

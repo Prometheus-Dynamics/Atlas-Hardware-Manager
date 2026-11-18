@@ -1,0 +1,18 @@
+# Luckfox Aura: the base OS image (Gaia F8 form, pin 70a5133).
+#
+# The Aura's storage is eMMC, as dev records it. A whole-disk eMMC image needs Gaia's
+# sd-image recipe (F7), which is not at 70a5133, so this product uses `firmware` (the built
+# tree as a tar) as a placeholder. It is NOT the flashable eMMC image. See the PR text.
+version = 1
+name = "waveshare-luckfox-aura"
+description = "Luckfox Aura: base OS"
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
+
+[[images]]
+name = "waveshare-luckfox-aura"
+board = "../../boards/waveshare-luckfox-aura/board.toml"
+os = { provider = "buildroot", source = "buildroot", fragments = [] }
+recipe = "firmware"

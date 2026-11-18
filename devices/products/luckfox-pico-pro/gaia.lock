@@ -1,0 +1,14 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."luckfox-pico-pro.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
+commit = "813cbac680a73092e1ebb86da72972c44573145c"
+
+[source."luckfox-pico-pro.rkbin"]
+kind = "git"
+url = "https://github.com/rockchip-linux/rkbin.git"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+commit = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
