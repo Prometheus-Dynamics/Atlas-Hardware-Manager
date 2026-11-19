@@ -1,0 +1,434 @@
+# !!! A1 BENCH ONLY: NOT THE RAZE'S BOARD FILE. The product's is boards/raze/lemnos-board.toml. !!!
+# This file is boards/raze/lemnos-board.toml with ONE change, grow_data = false on the slots device, for the route (A) trial boots of
+# a new slot beside dev slot 993 (coordinator's ruling 2026-11-18): 993's ext4 was not made to Lemnos's contract
+# (resize_inode on, no meta_bg), so nothing of the grow path may run against it. Installed only by the bench component
+# components/bench-a1-board (as /etc/lemnos/board.A1-BENCH-grow-off.toml, which its lemnosd drop-in names); the rehearsal
+# uses exactly this file. scripts/check-devices.sh holds it equal to boards/raze/lemnos-board.toml but for this header and that key.
+# The Raze's board file for lemnosd (Lemnos next 6905b681, the board-file format of its Q2d).
+# Installed as /etc/lemnos/board.toml. Its generated outputs (the one overlay, the boot fragment,
+# the modprobe.d file) come from `lemnos-ctl tree` at build time; nothing they contain is written by hand.
+#
+# Written to Lemnos Q2d (6905b681) and locked with the product to Lemnos d6b9361d (L1, PR B23): the lock now
+# accepts this file (validate and tree run with that rev's lemnos-ctl; docs/prs/B23.md).
+#
+# Where the values come from: Lemnos's reference board testing/boards/reference.toml at 6905b681 (the managed
+# shape of a Raze); Lemnos's SoC map socs/bcm2712-rp1.toml at 6905b681 for every controller, pin set and path;
+# dev's Raze files (devices/raze/gaia/assets/rootfs/etc/lemnos/board.toml and devices/raze/manifest.json on
+# origin/dev) for the Raze's own facts. Each entry says which one it takes and, where it differs from the
+# reference, why. docs/prs/B20.md has the full difference list.
+#
+# UNVERIFIED on a board (marked at each entry, checks for the G1 board run): the power monitor's shunt value
+# and max current. The magnetometer's bus and the power monitor's chip and address were read off Raze #2.
+# The camera sensor reaches running about 7 s after its first bind attempt on that board (the first attempts
+# fail the chip-ID check; cause open), so no start deadline tighter than that is put on the camera.
+format = "lemnos.board"
+schema_version = 1
+
+[board]
+id = "raze"
+soc = "bcm2712-rp1"
+base = "module-io"   # the base tree's node /cam0_reg holds the camera power line (see the line below)
+
+# `[host]` (docs/boards.md:95 and the example at :365): the dma-heaps the daemon's drivers allocate from, by name.
+# Written explicitly: ["linux,cma"] EQUALS the default (a board that leaves it out gets the same list). The Raze's
+# camera streams all use "linux,cma" (below). The key sits under [host], not at top level (the tip's
+# reference.toml has no dma_heaps key; the tip's docs and code put it under [host]).
+[host]
+dma_heaps = ["linux,cma"]
+
+# [boot]: the boot partition's payload bays (Lemnos I5i8, L2 move). Each is the size of the STORED file of its role
+# (the bytes the bundle carries, padded to the bay) and is FIXED at flash time: a bay cannot grow after the image is
+# built. Three bay sets whatever `keep` is. A payload larger than its bay is refused by name at install and at image
+# build. Lemnos's written rule (docs/slots.md "the boot partition", docs/boards.md) is the largest file a future slot
+# may bring, plus a margin (the board file's comment there says 10 %), rounded up. The Raze's values are the flash-time
+# sizes the coordinator set (L2d, 2026-11-14), each above that 10 % floor. Today's figures and why each has its room:
+#   kernel       10,485,760 (10 MiB). Today's next build: gzip -9n of the Image, 6,773,267 bytes (Gaia c6a3d10 build from
+#                next, 2026-11-14; the trim is in the plan). 10 MiB is about 55 % over it: room for a kernel that grows
+#                with later drivers and config. Lemnos's 10 % floor would be 7,450,594.
+#   initramfs     1,048,576 (1 MiB). The slot-init newc archive, 495,328 bytes (proven). About 2x over it.
+#   device tree    131,072 (128 KiB). bcm2712-rpi-cm5-cm5io.dtb, 79,751 bytes (sha256 f773b476..., Raze #2's bytes; the
+#                  copy in the dev image build tree). About 1.6x over it: the base tree may change with a kernel bump.
+#   overlay        16,384 (16 KiB). The compiled board overlay, 1,823 bytes (dtc -@ here). About 9x over it: the camera
+#                  stream tables and the Lemnos reference's overlays grow it (the reference board's compiled overlay
+#                  was 1,839 bytes at Lemnos's own dtc; a camera product is larger).
+#   cmdline        4,096 (4 KiB). The stored cmdline, 249 bytes (the tool's figure). About 16x over it.
+# config_lines and firmware_overlays: the two firmware lines dev's raze-device.txt gives (Raze #2's p1, read 2026-11-18),
+# which Lemnos's fixed config.txt cannot include as a file: vc4-kms-v3d-pi5 (the display pipeline) and ramoops-pi5 (pstore
+# in RAM, the board's only early-boot log; read through crash_log below). Each overlay named in a line is listed once in
+# firmware_overlays, so its .dtbo goes into every bay set (Gaia's @firmware@: the overlays boards/raze/board.toml builds).
+[boot]
+config_lines = ["dtoverlay=vc4-kms-v3d-pi5", "dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000"]
+firmware_overlays = ["vc4-kms-v3d-pi5", "ramoops-pi5"]
+bay_kernel_bytes = 10485760
+bay_initramfs_bytes = 1048576
+bay_device_tree_bytes = 131072
+bay_overlay_bytes = 16384
+bay_cmdline_bytes = 4096
+
+# The hardware the devices use. Each entry is the one place its pins are written.
+[[hardware]]
+name = "i2c-1"
+controller = "i2c1"
+pins = "gpio10_11"   # dev: SDA GPIO10, SCL GPIO11 (the reference board's gpio2_3 is its own wiring, not the Raze's)
+
+[[hardware]]
+controller = "pwm1"
+pins = "gpio45"      # the fan's pulse output, RP1 GPIO45 (the reference and dev agree)
+
+# The camera and display connector's bus (the reference's entry, the map's i2c10 = RP1 I2C at 0x88000).
+# The Raze's sensor is on i2c-10 (verified on Raze #2 by Lemnos: runtime name i2c-10, alias i2c10).
+[[hardware]]
+name = "i2c-10"
+controller = "i2c10"
+pins = "gpio38_39"
+
+# The camera receiver: the kernel module drives it (the reference's form).
+[[hardware]]
+controller = "csi0"
+module = "owned"
+
+# The PiSP back end: the module drives it, as the pisp_be role (the reference's form).
+[[hardware]]
+controller = "pisp-be"
+module = "pisp_be"
+
+# The RP1 PIO block: the LED ring (GPIO13) and the PIO I2C bus (SDA GPIO8, SCL GPIO7).
+[[hardware]]
+controller = "pio"
+
+# The SoC's USB controller in peripheral mode, as the gadget's UDC. The name is the map's sysfs name
+# for the usb controller (verified on Raze #2 by Lemnos: /sys/class/udc shows 1000480000.usb).
+[[hardware]]
+name = "udc:1000480000.usb"
+controller = "usb"
+
+# The hardware watchdog, named by the device that keeps it fed as watchdog:<node> (the reference's form).
+[[hardware]]
+controller = "watchdog"
+
+# RP1 lines the board gives to Lemnos. A line a device uses needs an entry; `boot` holds it from power-on.
+[[lines]]
+line = "gpio:pinctrl-rp1:16"
+boot = "high"
+reason = "USB-C port power: on from power-on (dev's gpio=16,20=op,dh; the state-at-boot entry replaces the config.txt line)"
+
+[[lines]]
+line = "gpio:pinctrl-rp1:20"
+boot = "high"
+reason = "USB-A port power: on from power-on (dev's gpio=16,20=op,dh; the state-at-boot entry replaces the config.txt line)"
+
+[[lines]]
+line = "gpio:pinctrl-rp1:34"
+reason = "the camera power line: the base node /cam0_reg holds it (the reference's form); cam0-power drives it"
+
+[[lines]]
+line = "gpio:pinctrl-rp1:45"
+boot = "high"
+reason = "the fan header's line: full duty from power-on until Lemnos's fan driver takes the PWM (the reference's form; the Raze's fan is full duty until a valid temperature is read)"
+
+# The system: identity, the slot store, and reboot.
+# The identity: the board's serial from the device tree (both agree). name and revision are the Raze's own
+# (dev's manifest: "Raze", revision gen1); the reference names none, so these are the Raze's.
+[[devices]]
+id = "identity"
+driver = "system-identity"
+config = { serial = "device-tree", name = "Raze", revision = "gen1" }
+
+# The daemon's keep-alive: the hardware watchdog, 15 s (dev's default: HW_WATCHDOG_RUNTIME_SEC=15).
+# The name is the watchdog's device-tree node, the stable form (docs/device-tree.md: watchdog:NODE).
+# Node from the map's watchdog controller (/soc@107c000000/watchdog@7d200000), which is the node Raze #2 shows.
+[[devices]]
+id = "watchdog"
+driver = "hw-watchdog"
+keepalive = true
+uses = { watchdog = "watchdog:/soc@107c000000/watchdog@7d200000" }
+config = { timeout_s = 15 }
+
+# MOVES AT S2b: the key list is [security] keys only. No `keys` setting on the slots, flash or security devices
+# (a `keys` there is refused at start and by validate after S2b). The draft has none.
+# The slots: data on the data partition, boot on the boot partition, records through tryboot (dev's boot
+# path, the Pi's record). boot_args = "os" is the prefix the kernel command line takes for the slot's
+# arguments (os.slot=, os.roothash=, os.data=): see docs/prs/B20.md for the command line.
+# require_signed is REMOVED at the L2 rev (Lemnos S2 #255, INPUTS): the security switch replaces it, in [security] below.
+# boot_sources (Lemnos I5i5 final, docs/boards.md "Boot sources"; tip docs/boards.md:101-119): the Pi form, one entry per
+# medium the board boots from. The Raze boots from its on-board eMMC, firmware boot-mode code 1 (measured on Raze #2,
+# docs/boards.md "Boot sources" table). Its generated cmdline word is then os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000
+# (tip service/slot-init/src/cmdline.rs:6 gives <prefix>.src.<source>=<path>; prefix = boot_args = "os").
+# The trial settings are the I5f defaults, taken explicitly: the user confirmed them on 2026-11-13.
+# health = []: the base OS has no product, so no product's health is required (INPUTS: Raze base empty).
+# reserve_mb = 2048: free room kept for /data on the Raze's ~14.9 GB eMMC ([disk] size 14910M, boards/raze/board.toml).
+# It applies to live installs only (the room() check); the offline first write has no reserve, and the first start's grow
+# of p2 to the disk's end is what gives the room. (It was the reference's value; this is the reason it is kept.)
+# keep = 3: the keep-last-N count is a setting (user policy 2026-11-07), and 3 is the reference's.
+# FLAGGED, do not rely on it: `boot = "/boot/firmware"`. On Raze #2's running image (read by Lemnos, 2026-11-13)
+# that path does not exist: the boot partition is /dev/mmcblk0p1 (vfat, 79 MB) and is not mounted. Where the
+# image mounts it, and how that stays safe against a power cut at any moment, is being settled between Lemnos
+# and Gaia; this key changes to what they decide.
+# First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
+# thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
+# continues ungrown). At the pinned Lemnos c215f575 a grow pass never blocks the driver's start and a failed step is retried with a
+# capped backoff, never given up (drivers/system-slots/src/grow.rs header there). The timings below were taken before that.
+# Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
+# measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes
+# can be much slower, so a synchronous resize can overrun 2 s even on a 64 GB card.
+# Source: Lemnos docs/slots.md in the GROW2 commit (not yet merged; Atlas cites it by rev once it is pinned).
+# This board is MBR (board.toml [disk] scheme = "mbr") and its eMMC is 14,910 MiB; the slots device grows its data
+# partition (data = "/data") by this rule.
+[[devices]]
+id = "slots"
+driver = "system-slots"
+# crash_log: the pstore mount the previous boot's crash record is read from (Lemnos IMG-REQ-raze 9; docs/boards.md
+# "system-slots"). The region is the ramoops-pi5 overlay's (boards/raze/boot/raze-device.txt); the kernel builds
+# PSTORE, PSTORE_RAM and PSTORE_CONSOLE in (families/bcm2712/assets/linux.fragment) and systemd mounts /sys/fs/pstore.
+config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [], crash_log = "/sys/fs/pstore", grow_data = false }
+
+# The security switch (Lemnos S2 #255; docs/slots.md "The security switch"; tip docs/boards.md:368-371 and 598-600).
+# OFF by default. record and keys are absolute paths; keys is the trust root the switch checks itself, and no key file
+# ships on the image yet (as before: an unreadable keys file leaves the board trusting no bundle). orion = false: the
+# Raze's Orion precheck is not at Orion's current revision, so ON stays refused with that reason until it is.
+[security]
+record = "/var/lib/lemnos/security.rec"
+keys = "/etc/lemnos/slot-keys"
+# "Orion sessions and its shell are NOT yet covered by the switch on this image (C32)."
+orion = false
+
+# The security device: serves system.security/1 and takes its facts from [security] above. Its uses name the
+# stakeholders that answer for themselves. The Raze has no system-flash device (first flash is not in this file),
+# so only the slots device is named; a board with no stakeholder bound judges on its trust root alone.
+[[devices]]
+id = "security"
+driver = "system-security"
+uses = { slots = "slots" }
+# MOVES AT S2b: uses gains identity = "identity" (the system-identity device; S2b makes the security device's uses
+# the place for it). The tip does not accept it yet, so it is not written here. The S2b form is:
+#   uses = { slots = "slots", identity = "identity" }
+
+[[devices]]
+id = "reboot"
+driver = "system-reboot"
+
+# The board as a USB device: FunctionFS for Orion's link ("orion-link"), NCM with addresses derived from the
+# board serial (no fixed MACs: two Razes share a host), and one ACM console (ttyGS0). The gadget takes its
+# serial from the identity device, named in the gadget's `config` (`identity = "identity"`): at the locked
+# Lemnos d6b9361d the daemon reads the link only from there (service/lemnosd/src/gadget.rs:80-82). Until PR B33
+# this file named it under `uses`, which nothing reads: `lemnos-ctl validate` passed it all the same, and the
+# driver would have failed the gadget at bind, because `function ncm derive` needs the board's serial
+# (drivers/usb-gadget/src/description.rs: no identity). Read from Lemnos's code, never run on a board.
+# vendor and product stay 1d6b:0104: devices/usb-ids.json recognises them as the Atlas board gadget (dev's
+# Raze gadget used the same ids). The reference's 1209:0001 is Lemnos's example.
+# identity is a CONFIG setting, at the lock d6b9361d and at the tip alike: lemnosd reads the link from the gadget's
+# config (lock service/lemnosd/src/gadget.rs:80-82, `device.config.get(IDENTITY)`; tip drivers/usb-gadget/src/lib.rs:657).
+# `uses = { identity = ... }` is read by nothing. The old Raze file had it under uses, and d6b9361d's validate still
+# accepted that file (rc 0), but the gadget then fails at bind: `function ncm derive` with no board serial is
+# Fault::NoIdentity (lock drivers/usb-gadget/src/description.rs:92-93, 463). See docs/prs/L2b.md, "The lock's validate".
+# `interfaces` is DROPPED (L2, Lemnos R1h2): with no `interfaces` the tip builds DEFAULT_INTERFACES
+# (drivers/usb-gadget/src/lib.rs:123-127; contracts/usb-link.toml [composition] default): the link (interface 0, class
+# 0xff, "orion-link"), then NCM derived, then ACM. The Raze's old inline text had the same composition but
+# `function ncm derive` with no ifname, so the NCM host interface is now named lemnos<N> (the default's
+# `ifname=lemnos%d`), where it was usb<N> before. Nothing in Atlas names the Raze's NCM interface (raze-base carries no
+# usb-gadget-network component); flagged in docs/prs/L2b.md.
+[[devices]]
+id = "gadget"
+driver = "usb-gadget"
+uses = { function = "udc:1000480000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
+
+# The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). VERIFIED on Raze #2 (read by Lemnos,
+# 2026-11-13): channel 3 of the RP1 PWM at pwm@9c000, period 41566 ns. The reference's channel 1 was wrong. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
+# dev's 70 % floor ("a 70 % floor keeps air moving", dev's manifest). kick_ms = 500 is the reference's start kick.
+[[devices]]
+id = "fan"
+driver = "pwm-channel-fan"
+uses = { pwm = "pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3" }
+config = { frequency_hz = 24057, min_duty = 700, kick_ms = 500 }
+
+# The board's temperature, and the fan control that runs the fan from it. The thermal zone is read by its
+# sysfs path; dev matched the zone by its type (cpu-thermal) and zone0 is the reference's path: CHECK at G1.
+[[devices]]
+id = "cpu-thermal"
+driver = "thermal-zone"
+config = { path = "/sys/class/thermal/thermal_zone0" }
+
+# The curve is the reference's (dev had no Lemnos fan curve: its kernel governor cooled the board), so it is
+# not a Raze decision and is a G1 check. The floor is dev's 70 % (700), not the reference's 300.
+[[devices]]
+id = "fan-control"
+driver = "fan-control"
+uses = { fan = "fan", t0 = "cpu-thermal" }
+config = { curve_t0 = "30000:300,60000:600,75000:1000", floor = 700, slew_per_s = 50 }
+
+# The two USB port power switches (dev's gpio=16,20=op,dh, now the state-at-boot entries above), active high.
+# The reference has no USB power switches; dev's Raze does (USB-A on GPIO20, USB-C on GPIO16).
+[[devices]]
+id = "usb-c-power"
+driver = "gpio-power-switch"
+uses = { line = "gpio:pinctrl-rp1:16" }
+config = { default_on = true }
+
+[[devices]]
+id = "usb-a-power"
+driver = "gpio-power-switch"
+uses = { line = "gpio:pinctrl-rp1:20" }
+config = { default_on = true }
+
+# The camera power switch: drives the sensor's regulator line, held at power-on by the base node /cam0_reg.
+[[devices]]
+id = "cam0-power"
+driver = "gpio-power-switch"
+uses = { line = "gpio:pinctrl-rp1:34" }
+config = { default_on = true }
+
+# The 16-LED ring: the strip on GPIO13 through the PIO block, 24-bit, 16 LEDs (16 LEDs and 24 bits per LED
+# VERIFIED on Raze #2, 2026-11-13). UNVERIFIED: the pixel order on the wire (`wire`); Lemnos is trying it on the
+# board. wire "rgb" and offset 5 are dev's
+# values (dev: "16 SK6812-EC20 LEDs on GPIO13, grb24 on the wire; logical LED 0 is physical LED 5").
+# Dev's direction = "cw" is not carried: dev marked it unverified on hardware, and the ring's look is the
+# later indicator rev.
+[[devices]]
+id = "ring"
+driver = "ws2812"
+bus = "pio-out:gpio=13"
+config = { count = 16, wire = "rgb", offset = 5, brightness = 255 }
+
+# The IMU on the PIO block's I2C bus, SDA GPIO8 and SCL GPIO7 at 400 kHz (dev's hardware bus note). Addresses
+# are dev's: the accelerometer at 0x18 and the gyroscope at 0x68, verified on a board by chip-id reads.
+[[devices]]
+id = "imu"
+driver = "bmi088"
+bus = "pio-i2c:sda=8,scl=7,hz=400000"
+config = { accel_address = 0x18, gyro_address = 0x68, accel_rate = 200, gyro_rate = 200, fifo = false }
+
+# VERIFIED on Raze #2 (read by Lemnos, 2026-11-13): a BMM150 answers at 0x10 on i2c-1 with chip ID 0x32. It
+# is NOT on the PIO bus; Lemnos's reference.toml at 6905b681 had that wrong (its PR Q2h corrects it).
+[[devices]]
+id = "magnetometer"
+driver = "bmm150"
+bus = "i2c-1"
+config = { address = 0x10 }
+
+# VERIFIED on Raze #2 (read by Lemnos, 2026-11-13): an INA238-family chip answers at 0x40 on i2c-1
+# (manufacturer 0x5449, device 0x2381).
+# UNVERIFIED: the shunt value. It cannot be read from the board; 0.010 ohm is the reference's value (dev's
+# manifest also said 0.01 ohm, unverified against the schematic) and stays unverified until someone confirms
+# it from the schematic. The max current is the reference's 2.0 A; dev's value was 16.384 A (the INA238's
+# 163.84 mV full scale over that shunt, derived, not a board rating). Open: the full-scale value the product wants.
+[[devices]]
+id = "power"
+driver = "ina2xx"
+bus = "i2c-1"
+config = { chip = "ina238", address = 0x40, shunt_ohms = 0.010, max_current_a = 2.0 }
+
+# Orientation fused from the IMU and the magnetometer: mahony, kp 1.0, ki 0.05, 100 Hz (dev's fusion settings).
+[[devices]]
+id = "orientation"
+driver = "orientation"
+uses = { accel = "imu", gyro = "imu", mag = "magnetometer" }
+config = { sample_rate_hz = 100, algorithm = "mahony", kp = 1.0, ki = 0.05 }
+
+# The camera chain, the reference's shape: the sensor on the camera bus (i2c-10), linked to the receiver, linked
+# to the PiSP front end, linked to the back end. continuous_clock = true is dev's clock_continuous (dev's manifest
+# and overlay: clk-continuous), which the reference does not set.
+[[devices]]
+id = "cam0-sensor"
+driver = "ov9782"
+bus = "i2c-10"
+link = "cam0-receiver"
+config = { continuous_clock = true }
+
+# The sensor's values: jobs of one encoded FrameValues each (testing/boards/reference.toml, the same numbers).
+# 2 of 64 bytes, jobs of 64 bytes. COMPUTED, NOT RUN: ov9782::JOB_BYTES is the reference's size; nothing read on a board.
+[devices.streams.values]
+buffers = 2
+buffer_bytes = 64
+job_bytes = 64
+
+# The receiver is the kernel module's: the module owns its node, and this device is its driver's. The sensor sends
+# no embedded data lines (the reference's chip::EMBEDDED_DATA is None), so there is NO `embedded` stream here and no
+# embedded_bytes key.
+[[devices]]
+id = "cam0-receiver"
+driver = "rp1-csi2"
+link = "cam0-fe"
+config = { device = "1f00110000.csi" }
+
+# 8 of 1280000 bytes, the raw frame of sensor mode 0 (1280x800 RAW10 packed: 1280 x 10 / 8 = 1600 bytes a line,
+# 800 lines). VERIFIED ON A BOARD: the raw frames size of modes 0 and 1 (INPUTS, "Camera stream tables"). The other
+# streams below are COMPUTED, NOT RUN.
+[devices.streams.frames]
+buffers = 8
+buffer_bytes = 1280000
+memory = "dma-buf"
+heap = "linux,cma"
+
+# UNVERIFIED: lanes, mbps and data_type are required by the tip's pisp-fe (validate refused the file without them:
+# `setting "lanes" is required`). They are the reference board's values (testing/boards/reference.toml), not read from
+# the Raze: 2 CSI-2 lanes, 800 Mb/s per lane, data type 0x2b (RAW10). No repo file states the Raze's lanes or rate.
+[[devices]]
+id = "cam0-fe"
+driver = "pisp-fe"
+link = "cam0-isp"
+config = { device = "1f00110000.csi", lanes = 2, mbps = 800, data_type = 0x2b }
+
+# 8 of 632 bytes, one front-end configuration per job (job_slots 8, job_bytes 128). COMPUTED, NOT RUN.
+# Shared memory (no memory key). Replaces the old 4 x 8192.
+[devices.streams.config]
+buffers = 8
+buffer_bytes = 632
+job_slots = 8
+job_bytes = 128
+
+# 8 of 23200 bytes, one statistics block per job, dma-buf from linux,cma. COMPUTED, NOT RUN.
+[devices.streams.statistics]
+buffers = 8
+buffer_bytes = 23200
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 2052096 bytes, BAYER16 at 1280 x 800: stride 2560 x 800 = 2048000, plus a 4096-byte pad. COMPUTED, NOT RUN.
+[devices.streams.output0]
+buffers = 4
+buffer_bytes = 2052096
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 516096 bytes, BAYER16 at 640 x 400 (half the mode): stride 1280 x 400 = 512000, plus the same pad. COMPUTED, NOT RUN.
+[devices.streams.output1]
+buffers = 4
+buffer_bytes = 516096
+memory = "dma-buf"
+heap = "linux,cma"
+
+[[devices]]
+id = "cam0-isp"
+driver = "pisp-be"
+config = { device = "1000880000.pisp_be" }
+
+# 2 of 16720 bytes, one back-end configuration per job (job_slots 8, job_bytes 128). COMPUTED, NOT RUN.
+# Replaces the old 4 x 8192.
+[devices.streams.config]
+buffers = 2
+buffer_bytes = 16720
+job_slots = 8
+job_bytes = 128
+
+# 2 of 2048000 bytes, the raw frame the job reads: BAYER16 at 1280 x 800, 64-aligned stride 2560. COMPUTED, NOT RUN.
+# Replaces the old 4 x 2097152.
+[devices.streams.input]
+buffers = 2
+buffer_bytes = 2048000
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 1536000 bytes, NV12 at 1280 x 800 (luma 1024000 + chroma 512000). COMPUTED, NOT RUN. Replaces the old 4 x 4194304.
+[devices.streams.output0]
+buffers = 4
+buffer_bytes = 1536000
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 384000 bytes, NV12 at 640 x 400 (half the mode). COMPUTED, NOT RUN.
+[devices.streams.output1]
+buffers = 4
+buffer_bytes = 384000
+memory = "dma-buf"
+heap = "linux,cma"

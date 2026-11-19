@@ -1,0 +1,20 @@
+# BENCH ONLY (coordinator's ruling 2026-11-18, route A, A1): lemnosd reads the A1 bench board file instead of the
+# product's, for the trial boots of a new slot beside dev slot 993. The one difference is grow_data = false: 993's ext4
+# was not made to Lemnos's contract, so the first-start grow must not run against it. Only lemnosd reads a board file at
+# run time (Lemnos c215f575: DEFAULT_BOARD and LEMNOSD_BOARD in service/lemnosd only; slot-init reads its command line),
+# so a drop-in that changes lemnosd's --board is the whole switch. The product's /etc/lemnos/board.toml stays installed
+# (the unit's ConditionPathExists names it, and lemnos-ctl's build steps read the product's description). A product image
+# leaves this component out.
+version = 1
+name = "bench-a1-board"
+description = "BENCH ONLY: lemnosd runs on the A1 bench board file (the Raze's with grow_data = false)."
+
+[[install]]
+from = { file = "files/lemnos-board.A1-BENCH-grow-off.toml" }
+to = "/etc/lemnos/board.A1-BENCH-grow-off.toml"
+mode = "0644"
+
+[[install]]
+from = { file = "files/90-a1-bench-board.conf" }
+to = "/etc/systemd/system/lemnosd.service.d/90-a1-bench-board.conf"
+mode = "0644"

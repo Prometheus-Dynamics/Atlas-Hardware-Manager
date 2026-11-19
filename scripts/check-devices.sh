@@ -2278,6 +2278,45 @@ open_timeout_rule() {  # <devices dir>
   [[ -z $out ]]
 }
 
+# The A1 bench board file rule (route A, 2026-11-18): components/bench-a1-board's board file is the Raze's product board
+# file plus ONLY its bench header (the leading comment lines) and `, grow_data = false` on the slots line; and the
+# component's lemnosd drop-in names that file as --board. Any other difference is drift: the trial boots would test a
+# board file other than the product's.
+a1_bench_board_rule() {  # <devices dir>
+  local dev=$1 bench=$1/components/bench-a1-board/files/lemnos-board.A1-BENCH-grow-off.toml
+  local prod=$1/boards/raze/lemnos-board.toml drop=$1/components/bench-a1-board/files/90-a1-bench-board.conf
+  [[ -f $bench ]] || return 0
+  python3 -I - "$bench" "$prod" "$drop" <<'PY'
+import sys
+bench, prod, drop = (open(p).read() for p in sys.argv[1:])
+lines = bench.split("\n")
+i = 0
+while i < len(lines) and lines[i].startswith("# "):
+    if lines[i].startswith("# The Raze's board file for lemnosd"):
+        break
+    i += 1
+body = "\n".join(lines[i:])
+if body.count(", grow_data = false }") != 1:
+    print("FAIL the A1 bench board file: not exactly one `, grow_data = false }` on the slots line"); sys.exit(1)
+if body.replace(", grow_data = false }", " }", 1) != prod:
+    print("FAIL the A1 bench board file differs from boards/raze/lemnos-board.toml beyond its header and grow_data = false: copy the product file again and add the key"); sys.exit(1)
+want = "ExecStart=/usr/bin/lemnosd --board /etc/lemnos/board.A1-BENCH-grow-off.toml "
+if not any(l.startswith(want) for l in drop.splitlines()):
+    print("FAIL the A1 bench drop-in does not start lemnosd on /etc/lemnos/board.A1-BENCH-grow-off.toml"); sys.exit(1)
+PY
+}
+a1_bench_board_self_test() {
+  local tmp rc=0
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  a1_bench_board_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i 's/^keep = 3/keep = 4/; s/keep = 3,/keep = 4,/' "$tmp/devices/components/bench-a1-board/files/lemnos-board.A1-BENCH-grow-off.toml"
+  a1_bench_board_rule "$tmp/devices" >/dev/null && rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! a1_out=$(a1_bench_board_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$a1_out"
+fi
+
 # The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
 if ! ds_out=$(data_size_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
@@ -2376,6 +2415,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX" rk_env_self_test
   st "self-check: the slot id rule no longer refuses an id that is not the version's" slot_id_rule_self_test
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
+  st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()

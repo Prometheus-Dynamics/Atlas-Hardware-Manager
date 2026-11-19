@@ -160,7 +160,8 @@ config = { timeout_s = 15 }
 # and Gaia; this key changes to what they decide.
 # First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
 # thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
-# continues ungrown). At the pinned Lemnos 31e0f736 the resize still runs synchronously inside the 2 s call deadline.
+# continues ungrown). At the pinned Lemnos c215f575 a grow pass never blocks the driver's start and a failed step is retried with a
+# capped backoff, never given up (drivers/system-slots/src/grow.rs header there). The timings below were taken before that.
 # Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
 # measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes
 # can be much slower, so a synchronous resize can overrun 2 s even on a 64 GB card.
