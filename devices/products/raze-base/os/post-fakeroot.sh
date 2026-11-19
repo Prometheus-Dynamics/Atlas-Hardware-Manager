@@ -74,6 +74,8 @@ etc/systemd/system/sockets.target.wants/dbus.socket
 etc/systemd/user/sockets.target.wants/dbus.socket
 etc/systemd/system/dbus-org.freedesktop.hostname1.service
 etc/systemd/system/dbus-org.freedesktop.timedate1.service
+etc/systemd/system/dbus-org.freedesktop.network1.service
+usr/share/factory/var/lib/dbus
 usr/lib/systemd/system/dbus-org.freedesktop.hostname1.service
 usr/lib/systemd/system/dbus-org.freedesktop.timedate1.service
 '
@@ -109,8 +111,10 @@ trim() {
 
   # 1. Every required path must be there, before anything is removed. All missing ones are named.
   missing=""
+  # A var/ path may be in usr/share/factory/var instead: Buildroot's BR2_INIT_SYSTEMD_VAR_FACTORY pre-command hook
+  #   (skeleton-init-systemd.mk) moves var/ there before this script runs, and tmpfiles copies it back at boot.
   for p in $DBUS_REQUIRED; do
-    if [ ! -e "$T/$p" ] && [ ! -L "$T/$p" ]; then missing="$missing $p"; fi
+    if [ ! -e "$T/$p" ] && [ ! -L "$T/$p" ] && [ ! -e "$T/usr/share/factory/$p" ]; then missing="$missing $p"; fi
   done
   [ -z "$missing" ] || die "listed dbus path(s) missing from the target:$missing (the fixed list in os/post-fakeroot.sh is out of date with Buildroot, or the trim would be a silent no-op)"
 
@@ -118,6 +122,16 @@ trim() {
   for p in $DBUS_REQUIRED $DBUS_OPTIONAL; do
     rm -rf "$T/$p"
   done
+
+  # 2a. The factory hook's tmpfiles lines (usr/lib/tmpfiles.d/00-buildroot-var.conf, `C! /var/lib/dbus`) copy the
+  #   factory copy back to /var at boot: a line for a removed dbus path goes with it.
+  vf=$T/usr/lib/tmpfiles.d/00-buildroot-var.conf
+  if [ -f "$vf" ]; then
+    grep -v '[[:space:]]/var/lib/dbus\([[:space:]]\|$\)' "$vf" > "$vf.raze-new" || true
+    chmod "$(stat -c %a "$vf")" "$vf.raze-new"; mv -f "$vf.raze-new" "$vf"
+  fi
+  tmpl=$(grep -l 'dbus' "$T"/usr/lib/tmpfiles.d/*.conf "$T"/etc/tmpfiles.d/*.conf 2>/dev/null || true)
+  [ -z "$tmpl" ] || die "tmpfiles lines still name dbus in: $(echo $tmpl)"
 
   # 2b. dbus's user and group, which mkusers wrote from dbus's users table: the line named dbus in passwd, shadow,
   #   group and gshadow, and dbus as a member of any other group.
