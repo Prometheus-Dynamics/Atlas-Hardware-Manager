@@ -1,3 +1,5 @@
 # EXAMPLE fragment.
 BR2_example=y
 BR2_FRAGMENT_DIR="@here@"
+# The toolchain, named (check-devices named-toolchain rule): Buildroot's internal one, its default.
+BR2_TOOLCHAIN_BUILDROOT=y

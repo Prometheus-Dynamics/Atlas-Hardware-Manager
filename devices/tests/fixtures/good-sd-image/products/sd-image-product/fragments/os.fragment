@@ -5,3 +5,5 @@ BR2_FRAGMENT_DIR="@here@"
 # Host tools the slot is made with (the build's own mkfs.erofs and veritysetup; Gaia refuses a slot image without them).
 BR2_PACKAGE_HOST_EROFS_UTILS=y
 BR2_PACKAGE_HOST_CRYPTSETUP=y
+# The toolchain, named (check-devices named-toolchain rule): Buildroot's internal one, its default.
+BR2_TOOLCHAIN_BUILDROOT=y

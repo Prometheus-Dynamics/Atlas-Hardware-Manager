@@ -2317,6 +2317,47 @@ if ! a1_out=$(a1_bench_board_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$a1_out"
 fi
 
+# The named-toolchain rule (2026-11-18, raze-base's libgpiod v2): every Buildroot image's fragments name its toolchain
+# variant. A fragment that names none resolves against whatever the default is (Buildroot's internal toolchain with
+# 7.1 headers here; a Bootlin STABLE default elsewhere has 5.4), so the config-only build could pass on a default the
+# product does not own and the image would drop packages that need newer headers. Accepted: the internal toolchain
+# (BR2_TOOLCHAIN_BUILDROOT=y), a Bootlin variant (BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_<VARIANT>=y) or a custom external one.
+named_toolchain_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, re, sys, tomllib
+dev = sys.argv[1]; pdir = os.path.join(dev, "products"); rc = 0
+want = re.compile(r"^BR2_TOOLCHAIN_(BUILDROOT|EXTERNAL_BOOTLIN_[A-Z0-9_]+|EXTERNAL_CUSTOM)=y$", re.M)
+for name in sorted(os.listdir(pdir)):
+    f = os.path.join(pdir, name, "product.toml")
+    if not os.path.isfile(f): continue
+    with open(f, "rb") as h: prod = tomllib.load(h)
+    for spec in prod.get("images") or []:
+        img = spec.get("name", "?") if isinstance(spec, dict) else "?"
+        os_ = spec.get("os") if isinstance(spec, dict) else None
+        if not isinstance(os_, dict) or os_.get("provider") != "buildroot": continue
+        text = ""
+        for frag in os_.get("fragments", []):
+            p = os.path.join(pdir, name, frag)
+            if os.path.isfile(p): text += open(p).read() + "\n"
+        if not want.search(text):
+            print(f"FAIL products/{name}: image {img}'s Buildroot fragments name no toolchain variant (BR2_TOOLCHAIN_BUILDROOT=y, BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_<VARIANT>=y or BR2_TOOLCHAIN_EXTERNAL_CUSTOM=y): the config would resolve against a default"); rc = 1
+sys.exit(rc)
+PY
+}
+named_toolchain_self_test() {
+  local tmp rc=0
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  named_toolchain_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i '/^BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y$/d' "$tmp/devices/products/raze-base/os/raze.fragment"
+  local out
+  out=$(named_toolchain_rule "$tmp/devices") && rc=1
+  [[ $out == *'products/raze-base: image raze-base'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! nt_out=$(named_toolchain_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$nt_out"
+fi
+
 # The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
 if ! ds_out=$(data_size_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
@@ -2416,6 +2457,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the slot id rule no longer refuses an id that is not the version's" slot_id_rule_self_test
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
+  st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()

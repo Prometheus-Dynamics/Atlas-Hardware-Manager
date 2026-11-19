@@ -4,6 +4,18 @@
 # F8?: the Buildroot option names below are the ones the fragment form takes; Gaia's option check (the
 # coming "every requested line survives") is the test. Anything it drops is a real finding.
 
+# -- The toolchain ------------------------------------------------------------------------------------
+# Named here, never left to a default: libgpiod v2 (below) needs kernel headers 5.10 or newer
+# (BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_10 in Buildroot 2026.08). Buildroot's own default is the internal toolchain
+# (headers 7.1, gcc built from source), and Bootlin's aarch64 glibc STABLE 2025.08-1 has 5.4 headers, under which
+# Buildroot drops LIBGPIOD2 and its tools. Bootlin's aarch64 glibc BLEEDING-EDGE has 5.15 headers and gcc 15. Its
+# version is Buildroot's pin, not ours and not a moving name: Buildroot 2026.08 (d5180309) fetches
+# aarch64--glibc--bleeding-edge-2025.08-1.tar.xz, sha256 54875d12829a792b8d4d1c9fb1f736afc60f514b0d260616f188eafafaac7cb5, from its
+# toolchain-external-bootlin.mk and .hash. A new Buildroot pin can move it; the config-only build is the check.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y
+
 # -- Init and the platform ---------------------------------------------------------------------------
 # systemd 258.7 (Buildroot 2026.08's version, checked in its package/systemd/systemd.mk): lemnosd's unit
 # needs systemd 254+, and the Raze's units (lemnosd, lemnos-orion, Orion's comm and node) are systemd units.
@@ -51,6 +63,7 @@ BR2_PACKAGE_KMOD_TOOLS=y
 # ps with -o and -C (the V1g check). BusyBox's ps has neither.
 BR2_PACKAGE_PROCPS_NG=y
 # gpioset and gpioget (the B15 check holds a GPIO line): libgpiod's tools. No BusyBox applet does this.
+# libgpiod v2 needs headers 5.10+: the toolchain is named for it at the top of this file.
 BR2_PACKAGE_LIBGPIOD2=y
 BR2_PACKAGE_LIBGPIOD2_TOOLS=y
 # flock (failsafe locks) and i2cdump, i2cget, i2cset and i2cdetect (the A35 check) are BusyBox applets
