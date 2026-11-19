@@ -91,7 +91,7 @@ verify_key_args = ["--pubkey", "@pubkey@"]
 # verify: the same tool reads the tree back with the boot image, deep (Lemnos pr/M36 `--verify DIR --layout-of BOARD --boot-image FILE --deep`).
 [generate.data]
 args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
-verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--socs", "@source@/socs", "--boot-image", "@boot-image@", "--deep"]
 keys = "files/slot-keys"
 
 [[install]]

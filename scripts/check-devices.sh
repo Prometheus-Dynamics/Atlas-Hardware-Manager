@@ -2410,6 +2410,44 @@ if ! pb_out=$(post_build_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pb_out"
 fi
 
+# The verify-reads-as-it-wrote rule (2026-11-19, the D1 build 6 failure): a [generate.<step>] verify re-reads the step's
+# output with the same tool, so it must name every description input the run names (--layout-of, --socs) with the same
+# value. A verify without --socs resolved the board's SoC file against the working directory and failed only after the
+# full image build (socs/bcm2712-rp1.toml: No such file).
+generate_verify_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, sys, tomllib
+dev = sys.argv[1]; rc = 0
+def flag(argv, name):
+    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+for top, _, files in os.walk(dev):
+    if "component.toml" not in files: continue
+    f = os.path.join(top, "component.toml")
+    with open(f, "rb") as h: comp = tomllib.load(h)
+    for step, spec in sorted((comp.get("generate") or {}).items()):
+        if not isinstance(spec, dict) or "verify" not in spec: continue
+        args, verify = spec.get("args") or [], spec["verify"]
+        for name in ("--layout-of", "--socs"):
+            want = flag(args, name)
+            if want is not None and flag(verify, name) != want:
+                print(f"FAIL {os.path.relpath(f, dev)}: [generate.{step}] verify does not name {name} {want} as its args do: the verify reads the description differently from the run"); rc = 1
+sys.exit(rc)
+PY
+}
+generate_verify_self_test() {
+  local tmp rc=0 out f
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  generate_verify_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  f=$tmp/devices/components/raze-lemnos-board/component.toml
+  sed -i '/^verify = \["data-partition"/s/"--socs", "@source@\/socs", //' "$f"
+  out=$(generate_verify_rule "$tmp/devices") && rc=1
+  [[ $out == *'raze-lemnos-board/component.toml: [generate.data] verify does not name --socs'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! gv_out=$(generate_verify_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$gv_out"
+fi
+
 # The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
 if ! ds_out=$(data_size_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
@@ -2511,6 +2549,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
   st "self-check: the post-build rule no longer refuses a post-build script that removes a file" post_build_self_test
+  st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
   st "self-check: check-rootfs.sh no longer refuses a rootfs that lost a setuid bit or kept dbus" "$repo/scripts/check-rootfs.sh" --self-test
   st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
