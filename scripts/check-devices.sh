@@ -2358,6 +2358,45 @@ if ! nt_out=$(named_toolchain_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$nt_out"
 fi
 
+# The post-build-removes-nothing rule (2026-11-18, the D1 build's dbus failure): a script a Buildroot fragment names as
+# BR2_ROOTFS_POST_BUILD_SCRIPT runs before the rootfs step's makedevs (fs/common.mk), and makedevs fails on any file a
+# package's permissions table names that is gone. So such a script removes nothing (no rm, rmdir, unlink or
+# find -delete outside comments); removals go in a BR2_ROOTFS_POST_FAKEROOT_SCRIPT, which runs after makedevs.
+post_build_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, re, sys
+dev = sys.argv[1]; rc = 0
+line_re = re.compile(r'^BR2_ROOTFS_POST_BUILD_SCRIPT="([^"]*)"', re.M)
+rm_re = re.compile(r'(^|[\s;&|(`])(rm|rmdir|unlink)(\s|$)|\s-delete(\s|$)')
+for top, _, files in os.walk(os.path.join(dev, "products")):
+    for name in files:
+        if not name.endswith(".fragment"): continue
+        frag = os.path.join(top, name)
+        for m in line_re.finditer(open(frag).read()):
+            for word in m.group(1).split():
+                if not word.startswith("@here@/"): continue
+                script = os.path.normpath(os.path.join(top, word[len("@here@/"):]))
+                if not os.path.isfile(script): continue
+                for n, text in enumerate(open(script), 1):
+                    code = text.split("#", 1)[0] if not text.lstrip().startswith("#") else ""
+                    if rm_re.search(code):
+                        print(f"FAIL {os.path.relpath(script, dev)}:{n}: a post-build script removes files ({text.strip()}): makedevs runs after it and fails on a removed file a permissions table names; remove in a BR2_ROOTFS_POST_FAKEROOT_SCRIPT"); rc = 1
+sys.exit(rc)
+PY
+}
+post_build_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  post_build_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  printf 'rm -rf "$T/usr/libexec/dbus-daemon-launch-helper"\n' >> "$tmp/devices/products/raze-base/os/post-build.sh"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'products/raze-base/os/post-build.sh'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! pb_out=$(post_build_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pb_out"
+fi
+
 # The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
 if ! ds_out=$(data_size_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
@@ -2458,6 +2497,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
+  st "self-check: the post-build rule no longer refuses a post-build script that removes a file" post_build_self_test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()

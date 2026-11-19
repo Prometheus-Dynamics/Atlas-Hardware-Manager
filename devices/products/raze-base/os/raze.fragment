@@ -101,7 +101,7 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # Reasons: lemnos0-address (components/raze-base-files) writes /run/systemd/network/10-lemnos0.network for networkd;
 # that file's DHCPServer is the Raze's DHCP to the host (the ruling below); and Orion's peer listen address is the
 # board's address that file sets. Without networkd the board has no lemnos0 address and no DHCP server. networkd is
-# Type=notify-reload with a BusName= it advertises: it starts without the bus, so post-build.sh does not refuse it.
+# Type=notify-reload with a BusName= it advertises: it starts without the bus, so post-fakeroot.sh does not refuse it.
 # Buildroot defaults it to y; on Gaia's allnoconfig base it is off unless a fragment says so, hence this line.
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
 
@@ -115,19 +115,23 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 #   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
 # Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
 # turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
-# os/post-build.sh removes dbus from the installed tree and fails the build if anything still needs it.
+# os/post-fakeroot.sh removes dbus from the rootfs tree and fails the build if anything still needs it.
 # BR2_PACKAGE_SYSTEMD_RESOLVED is not set
 # BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
 # BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
 # BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
 
-# The post-build script: the dbus removal and its checks (os/post-build.sh, PR B41). Buildroot runs it as
+# The post-build script: the wait-online mask (os/post-build.sh; B41 had the dbus removal here). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 # Named through the DIRECTORY (`@here@/./`), not as `@here@/post-build.sh`: Gaia (9efa797) makes a named file an input
 # of its own and sets it 0644 (nodes/source-files/src/input.rs:45), so Buildroot's exec of it failed "Permission
 # denied" (D1 build, 2026-11-18). A `.` part makes Gaia take the whole directory, which keeps the file's 0755. Back to
 # `@here@/post-build.sh` once Gaia keeps a named file's execute bit.
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/./post-build.sh"
+# The dbus removal and its checks (os/post-fakeroot.sh): after makedevs and preset-all, inside the rootfs step's fakeroot
+# script, so no package's permissions table names a file already gone (the D1 build failed when the removal was a
+# post-build step: makedevs on dbus-daemon-launch-helper). post-build.sh removes nothing (check-devices holds it so).
+BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/./post-fakeroot.sh"
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/
