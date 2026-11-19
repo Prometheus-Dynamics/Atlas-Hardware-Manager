@@ -2367,11 +2367,20 @@ post_build_rule() {  # <devices dir>
 import os, re, sys
 dev = sys.argv[1]; rc = 0
 line_re = re.compile(r'^BR2_ROOTFS_POST_BUILD_SCRIPT="([^"]*)"', re.M)
+any_re = re.compile(r'^BR2_ROOTFS_POST_(BUILD|FAKEROOT|IMAGE)_SCRIPT="([^"]*)"', re.M)
 rm_re = re.compile(r'(^|[\s;&|(`])(rm|rmdir|unlink)(\s|$)|\s-delete(\s|$)')
 for top, _, files in os.walk(os.path.join(dev, "products")):
     for name in files:
         if not name.endswith(".fragment"): continue
         frag = os.path.join(top, name)
+        for m in any_re.finditer(open(frag).read()):
+            for word in m.group(2).split():
+                if not word.startswith("@here@/"): continue
+                script = os.path.normpath(os.path.join(top, word[len("@here@/"):]))
+                if not os.path.isfile(script):
+                    print(f"FAIL {os.path.relpath(frag, dev)}: BR2_ROOTFS_POST_{m.group(1)}_SCRIPT names {word}, which is not a file"); rc = 1
+                elif not os.access(script, os.X_OK):
+                    print(f"FAIL {os.path.relpath(script, dev)}: not executable (BR2_ROOTFS_POST_{m.group(1)}_SCRIPT runs it directly): chmod 755 and commit the mode"); rc = 1
         for m in line_re.finditer(open(frag).read()):
             for word in m.group(1).split():
                 if not word.startswith("@here@/"): continue
@@ -2391,6 +2400,10 @@ post_build_self_test() {
   printf 'rm -rf "$T/usr/libexec/dbus-daemon-launch-helper"\n' >> "$tmp/devices/products/raze-base/os/post-build.sh"
   out=$(post_build_rule "$tmp/devices") && rc=1
   [[ $out == *'products/raze-base/os/post-build.sh'* ]] || rc=1
+  cp -a "$root/products/raze-base/os/post-build.sh" "$tmp/devices/products/raze-base/os/post-build.sh"
+  chmod 644 "$tmp/devices/products/raze-base/os/post-fakeroot.sh"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'post-fakeroot.sh: not executable'* ]] || rc=1
   rm -rf "$tmp"; return $rc
 }
 if ! pb_out=$(post_build_rule "$root"); then
@@ -2498,6 +2511,8 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
   st "self-check: the post-build rule no longer refuses a post-build script that removes a file" post_build_self_test
+  st "self-check: check-rootfs.sh no longer refuses a rootfs that lost a setuid bit or kept dbus" "$repo/scripts/check-rootfs.sh" --self-test
+  st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()
