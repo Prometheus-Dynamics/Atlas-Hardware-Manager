@@ -149,7 +149,10 @@ config = { timeout_s = 15 }
 # docs/boards.md "Boot sources" table). Its generated cmdline word is then os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000
 # (tip service/slot-init/src/cmdline.rs:6 gives <prefix>.src.<source>=<path>; prefix = boot_args = "os").
 # The trial settings are the I5f defaults, taken explicitly: the user confirmed them on 2026-11-13.
-# health = []: the base OS has no product, so no product's health is required (INPUTS: Raze base empty).
+# health = ["device:gadget"] (coordinator's ruling 2026-11-18, Lemnos HEALTH-TCP at c215f575): a trial confirms only while the
+# USB gadget (the board's way in) is good. No tcp: line: lemnos0's IPv4 is per board (serial-hash-v1) and the parser takes
+# only literals; a form for "this interface's own address" is Lemnos's follow-up, after this image. So no health-tcp
+# drop-in either (it would widen lemnosd's socket families for nothing). No product health: the base OS has no product.
 # reserve_mb = 2048: free room kept for /data on the Raze's ~14.9 GB eMMC ([disk] size 14910M, boards/raze/board.toml).
 # It applies to live installs only (the room() check); the offline first write has no reserve, and the first start's grow
 # of p2 to the disk's end is what gives the room. (It was the reference's value; this is the reason it is kept.)
@@ -174,7 +177,7 @@ driver = "system-slots"
 # crash_log: the pstore mount the previous boot's crash record is read from (Lemnos IMG-REQ-raze 9; docs/boards.md
 # "system-slots"). The region is the ramoops-pi5 overlay's (boards/raze/boot/raze-device.txt); the kernel builds
 # PSTORE, PSTORE_RAM and PSTORE_CONSOLE in (families/bcm2712/assets/linux.fragment) and systemd mounts /sys/fs/pstore.
-config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [], crash_log = "/sys/fs/pstore" }
+config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = ["device:gadget"], crash_log = "/sys/fs/pstore" }
 
 # The security switch (Lemnos S2 #255; docs/slots.md "The security switch"; tip docs/boards.md:368-371 and 598-600).
 # OFF by default. record and keys are absolute paths; keys is the trust root the switch checks itself, and no key file
