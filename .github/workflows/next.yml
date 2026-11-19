@@ -58,12 +58,14 @@ jobs:
       # host tools for configuration (no cross compiler is needed to resolve a config).
       # Restored from the nearest earlier key too: each tree inside is kept under its own pin, so an edit to a
       # board file that moves no kernel pin fetches nothing. Saved at the end even when a later step fails
-      # (see the save step), so a tree that was fetched once is not fetched again.
+      # (see the save step), so a tree that was fetched once is not fetched again. The pinned LLVM and Rust tools of a
+      # board with [kernel] toolchain = "llvm" (and of the check's self-test) live in it too, under llvm-tools/<pins key>
+      # (scripts/kernel-llvm-tools.sh, about 1.7 GB): a change of their pins moves the key.
       - uses: actions/cache/restore@v4
         id: kernel-cache
         with:
           path: ~/.cache/atlas/kernel
-          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml', 'scripts/kernel-llvm-tools.sh') }}
           restore-keys: kernel-${{ runner.os }}-
       # One package index update, one install: the kernel configuration is resolved with the arm64 cross compiler, as
       # the kernel build resolves it (PR B29: flex, bison, gcc-aarch64-linux-gnu); gaia plan wants the tools a recipe
@@ -92,7 +94,7 @@ jobs:
         if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/atlas/kernel
-          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml', 'scripts/kernel-llvm-tools.sh') }}
       - uses: actions/cache/save@v4
         if: always() && steps.gaia-store-cache.outputs.cache-hit != 'true'
         with:
