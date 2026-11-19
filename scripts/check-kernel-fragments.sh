@@ -28,6 +28,8 @@
 #   ATLAS_KERNEL_RESULT_CACHE=0  resolve every board, even one whose result is kept for the same inputs (results/ in
 #                          the cache dir, keyed by tree, defconfig, fragment contents, toolchain and this script).
 #   KEEP_KERNEL_SCRATCH=1  keep the scratch O= directories (default: removed).
+#   ATLAS_LLVM_TOOLS_CACHE where the pinned LLVM and Rust tools of a board with [kernel] toolchain = "llvm" are kept
+#                          (default: the kernel cache; about 1 GB, fetched once by scripts/kernel-llvm-tools.sh).
 #
 # A board whose kernel needs a patch series (a source named "*series*" in its family) is listed as SKIPPED: this
 # check does not apply patch series, and the base tree alone cannot resolve such a board's fragments.
@@ -85,7 +87,29 @@ if [[ $mode == self-test ]]; then
   if ! grep -q 'linux.fragment:[0-9]*: a bare comment marker' "$tmp3/out.txt"; then
     cat "$tmp3/out.txt" >&2; die "self-test: the check failed but did not name the file and line of the bare '#'"
   fi
-  echo "check-kernel-fragments: self-test passed (the real check passes; a line that cannot take fails, naming it; a bare '#' line fails, naming its file and line)"
+  # 4. the toolchain is the build's: CONFIG_RUST=y takes only when the Raze is configured with LLVM (the pinned tools),
+  #    and fails, naming the line, when the same fragment is resolved with gcc
+  tmp4=$(mktemp -d "${TMPDIR:-/tmp}/atlas-kernel-selftest-llvm-XXXXXX")
+  trap 'rm -rf "$tmp" "$tmp3" "$tmp4"' EXIT
+  cp -a "$devices" "$tmp4/devices"
+  printf '\n# self-test: Rust\nCONFIG_RUST=y\n' >> "$tmp4/devices/boards/raze/kernel/raze.config"
+  rc=0
+  "$0" --devices "$tmp4/devices" --only raze >"$tmp4/gcc.txt" 2>&1 || rc=$?
+  if [[ $rc -eq 0 ]] || ! grep -q 'CONFIG_RUST requested y' "$tmp4/gcc.txt"; then
+    cat "$tmp4/gcc.txt" >&2; die "self-test: CONFIG_RUST=y resolved with gcc did not fail naming CONFIG_RUST"
+  fi
+  python3 -I - "$tmp4/devices/boards/raze/board.toml" <<'PY' || die "self-test: could not set the Raze's toolchain"
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+s2 = re.sub(r'(?m)^\[kernel\]\n', '[kernel]\ntoolchain = "llvm"\n', s, count=1)
+assert s2 != s; open(p, "w").write(s2)
+PY
+  rc=0
+  "$0" --devices "$tmp4/devices" --only raze >"$tmp4/llvm.txt" 2>&1 || rc=$?
+  if [[ $rc -ne 0 ]] || ! grep -q 'ok raze' "$tmp4/llvm.txt"; then
+    cat "$tmp4/llvm.txt" >&2; die "self-test: CONFIG_RUST=y did not take with toolchain = \"llvm\" and the pinned tools"
+  fi
+  echo "check-kernel-fragments: self-test passed (the real check passes; a line that cannot take fails, naming it; a bare '#' line fails, naming its file and line; CONFIG_RUST=y takes with the pinned LLVM tools and fails with gcc)"
   exit 0
 fi
 
@@ -190,7 +214,13 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
     extra = [os.path.normpath(os.path.join(base, e["file"])) for base, e in eff if isinstance(e, dict) and "file" in e]
     # The series pin is "url commit" (a space: the row's own separator is `|`, which the pin used to carry).
     series_pin = series_pin.replace("|", " ")
-    print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin, ",".join(extra), bdir]))
+    # The compiler the kernel is configured and built with: [kernel] toolchain, the board's over the family's, "gcc"
+    # when neither says. "llvm" resolves with LLVM=1 and the pinned LLVM/Rust tools (scripts/kernel-llvm-tools.sh), as a
+    # kernel with Rust is built; Kconfig asks the compiler, so the check must use the build's.
+    toolchain = bk.get("toolchain", fk.get("toolchain", "gcc"))
+    if toolchain not in ("gcc", "llvm"):
+        sys.exit(f"check-kernel-fragments: {name}: [kernel] toolchain = {toolchain!r}: it is \"gcc\" or \"llvm\"")
+    print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin, ",".join(extra), bdir, toolchain]))
 PY
 }
 
@@ -237,7 +267,7 @@ bare_marker_check() {
   local bad=0 row name fam url ref defconfig frags series_pin extra bdir f num
   local -a fa
   while IFS= read -r row; do
-    IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir <<<"$row"
+    IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir toolchain <<<"$row"
     [[ $fam == SKIP ]] && continue
     IFS=',' read -ra fa <<<"$frags"
     for f in "${fa[@]}"; do
@@ -258,12 +288,13 @@ bare_marker_check
 # name AND content, in order, and tools_key above. Any change to any of them misses the key and resolves again; a hit
 # prints exactly what the resolve printed. Results are stored only when the resolve ran to its RESULT line.
 # ATLAS_KERNEL_RESULT_CACHE=0 resolves every board anyway.
-resolve_board() {  # <name> <family> <source tree> <defconfig> <fragment list>
-  local name=$1 res=$3 defconfig=$4 frags=$5 key kept tmp f
+resolve_board() {  # <name> <family> <source tree> <defconfig> <fragment list> <toolchain>
+  local name=$1 res=$3 defconfig=$4 frags=$5 key kept tmp f tkey=$tools_key
   local -a farr
   if [[ ${ATLAS_KERNEL_RESULT_CACHE:-1} == 0 ]]; then resolve_board_now "$@"; return; fi
   IFS=',' read -ra farr <<<"$frags"
-  key=$( { echo "$name|$defconfig"; cat "$res/.pin" "$res/.patched" 2>/dev/null; echo "$tools_key"
+  [[ $6 == llvm ]] && tkey="$tools_key llvm $llvm_key"
+  key=$( { echo "$name|$defconfig"; cat "$res/.pin" "$res/.patched" 2>/dev/null; echo "$tkey"
     for f in "${farr[@]}"; do echo "== ${f#$devices/}"; sha256sum < "$f"; done; } | sha256sum | cut -c1-32)
   kept=$cache/results/$key
   if [[ -f $kept ]]; then
@@ -280,19 +311,30 @@ resolve_board() {  # <name> <family> <source tree> <defconfig> <fragment list>
   if [[ $(tail -n 1 "$tmp") == RESULT\ * ]]; then mv -f "$tmp" "$kept"; else rm -f "$tmp"; fi
 }
 
-resolve_board_now() {  # <name> <family> <source tree> <defconfig> <fragment list>
+resolve_board_now() {  # <name> <family> <source tree> <defconfig> <fragment list> <toolchain>
   local name=$1 fam=$2 res=$3 defconfig=$4 frags=$5 o target out board_fail=0 f
   local -a farr
+  # "llvm": the kernel's own LLVM=1 build, with the pinned tools first on PATH and no cross prefix (clang targets arm64
+  # from ARCH). Exported in this board's subshell only.
+  # RUSTC and BINDGEN are named on make's command line either way (the kernel Makefile sets them with a plain `=`):
+  # a gcc board's resolve must not find a Rust toolchain the build machine has and Gaia's gcc build has not (a host
+  # rustc and bindgen on PATH made CONFIG_RUST=y take under gcc, found by the self-test, 2026-11-18).
+  local -a mk=(RUSTC=atlas-gcc-board-has-no-rustc BINDGEN=atlas-gcc-board-has-no-bindgen)
+  if [[ $6 == llvm ]]; then
+    export PATH="$llvm_path:$PATH" LIBCLANG_PATH=$llvm_libclang LLVM=1
+    unset CROSS_COMPILE
+    mk=(RUSTC="${llvm_path%%:*}/rustc" BINDGEN="${llvm_path%%:*}/bindgen")
+  fi
   o=$scratch/$name
   mkdir -p "$o"
   target=$defconfig
   [[ $defconfig == defconfig ]] || target=${defconfig}_defconfig
-  (cd "$res" && make -s ARCH=arm64 O="$o" "$target") >"$scratch/$name.log" 2>&1 \
+  (cd "$res" && make -s ARCH=arm64 "${mk[@]}" O="$o" "$target") >"$scratch/$name.log" 2>&1 \
     || { echo "check-kernel-fragments: $name: the $target step failed (log: $scratch/$name.log)"; return 1; }
   IFS=',' read -ra farr <<<"$frags"
   (cd "$res" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/.config" "${farr[@]}") >>"$scratch/$name.log" 2>&1 \
     || { echo "check-kernel-fragments: $name: merge_config failed (log: $scratch/$name.log)"; return 1; }
-  (cd "$res" && make -s ARCH=arm64 O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
+  (cd "$res" && make -s ARCH=arm64 "${mk[@]}" O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
     || { echo "check-kernel-fragments: $name: olddefconfig failed (log: $scratch/$name.log)"; return 1; }
   for f in "${farr[@]}"; do
     out=$(check_fragment "$o/.config" "$f" "$name" "$devices")
@@ -304,6 +346,10 @@ resolve_board_now() {  # <name> <family> <source tree> <defconfig> <fragment lis
   echo "RESULT $board_fail ${#farr[@]}"
 }
 
+# The pinned LLVM/Rust tools, fetched only when a board's toolchain is "llvm"; their key is the fetch script's hash
+# (its pins are in it), part of the result key of every llvm board.
+llvm_path= llvm_libclang=
+llvm_key=$(sha256sum "$repo/scripts/kernel-llvm-tools.sh" | cut -c1-32)
 fails=0
 checked=0
 skipped=0
@@ -350,7 +396,7 @@ fetch_pin() {
 }
 
 while IFS= read -r row; do
-  IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir <<<"$row"
+  IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir toolchain <<<"$row"
   if [[ $fam == SKIP && $url == NO-DEFCONFIG ]]; then
     die "$name: its kernel states no \`defconfig\` (board.toml or the family's [kernel]). Buildroot cannot build a kernel without a starting configuration; state it."
   fi
@@ -456,7 +502,13 @@ while IFS= read -r row; do
   fi
   # The resolve of each board is independent (its own O= directory, read-only source tree): it runs in the background
   # and its result is read below in board order, so the output and the verdict are the same as a serial run.
-  resolve_board "$name" "$fam" "$res" "$defconfig" "$frags" > "$scratch/$name.result" 2>&1 &
+  if [[ $toolchain == llvm && -z $llvm_path ]]; then
+    echo "check-kernel-fragments: $name is configured with LLVM: the pinned LLVM and Rust tools (scripts/kernel-llvm-tools.sh)" >&2
+    tools_out=$("$repo/scripts/kernel-llvm-tools.sh" "${ATLAS_LLVM_TOOLS_CACHE:-$cache}") || die "$name: the pinned LLVM and Rust tools could not be fetched (see above). This FAILS in CI too."
+    llvm_path=$(sed -n 's/^PATH=//p' <<<"$tools_out"); llvm_libclang=$(sed -n 's/^LIBCLANG_PATH=//p' <<<"$tools_out")
+    [[ -n $llvm_path && -n $llvm_libclang ]] || die "$name: kernel-llvm-tools.sh printed no PATH or LIBCLANG_PATH"
+  fi
+  resolve_board "$name" "$fam" "$res" "$defconfig" "$frags" "$toolchain" > "$scratch/$name.result" 2>&1 &
   pids+=("$!"); names+=("$name"); fams+=("$fam")
 done < <(manifest)
 
