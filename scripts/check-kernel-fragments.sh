@@ -92,7 +92,10 @@ if [[ $mode == self-test ]]; then
   tmp4=$(mktemp -d "${TMPDIR:-/tmp}/atlas-kernel-selftest-llvm-XXXXXX")
   trap 'rm -rf "$tmp" "$tmp3" "$tmp4"' EXIT
   cp -a "$devices" "$tmp4/devices"
-  printf '\n# self-test: Rust\nCONFIG_RUST=y\n' >> "$tmp4/devices/boards/raze/kernel/raze.config"
+  # The case starts from a Raze with no toolchain line (gcc) and CONFIG_RUST=y, whatever the real tree says.
+  sed -i '/^toolchain = /d' "$tmp4/devices/boards/raze/board.toml"
+  grep -qx 'CONFIG_RUST=y' "$tmp4/devices/boards/raze/kernel/raze.config" \
+    || printf '\n# self-test: Rust\nCONFIG_RUST=y\n' >> "$tmp4/devices/boards/raze/kernel/raze.config"
   rc=0
   "$0" --devices "$tmp4/devices" --only raze >"$tmp4/gcc.txt" 2>&1 || rc=$?
   if [[ $rc -eq 0 ]] || ! grep -q 'CONFIG_RUST requested y' "$tmp4/gcc.txt"; then

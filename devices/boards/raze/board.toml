@@ -17,6 +17,11 @@ description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 # exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
 # gadget from the device tree until then. Provisional.
 [kernel]
+# The Raze's kernel is built with LLVM (Gaia's [kernel] toolchain, coordinator's ruling 2026-11-18: on this board, not the
+# bcm2712 family, until another board of the family needs it): lemnos.ko is Rust, and a Rust kernel is built with clang,
+# the pinned LLVM 23.1.5, rustc 1.99.0 + rust-src and bindgen 0.73.2 (Gaia's pins = scripts/kernel-llvm-tools.sh's).
+# scripts/check-kernel-fragments.sh resolves this board the same way.
+toolchain = "llvm"
 device_tree = "broadcom/bcm2712-rpi-cm5-cm5io"
 # The kernel form the payload's `kernel` role takes (L2d): gzip, as the Pi firmware boots it (the 993 slot's kernel8.img
 # is gzip and boots daily). The bay is sized for the stored file (lemnos-board.toml [boot] bay_kernel_bytes).

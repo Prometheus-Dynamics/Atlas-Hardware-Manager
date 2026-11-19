@@ -1,0 +1,29 @@
+# lemnos.ko, Lemnos's kernel module, built out of tree against the image's own kernel build by Gaia's kernel-module
+# builder (Gaia item 6): built after the kernel step with the board's [kernel] toolchain (the Raze: llvm, Rust on),
+# placed under /lib/modules/<release>/updates/ with depmod run by the builder. Nothing else is set here: the builder
+# refuses any setting but `names`, and nothing is installed from the build by hand.
+#
+# Where the module is (Lemnos c215f575 docs/kernel-module.md "For an image builder"): the module's Makefile is in
+# kernel/ and wraps the kernel's module build (`make -C kernel KDIR=<built tree> ARCH=arm64 ...`); the output is
+# lemnos.ko. Its RP1 PIO part follows the kernel's own CONFIG_RP1_PIO (kernel/Kbuild reads it from the built tree's
+# config; the Raze's is y), so no setting is needed for it. Built with -Werror.
+#
+# Its own component, not part of components/lemnos (the packaging): a builder component holds a source and the build
+# only, and a product without a Rust kernel lists the packaging alone. Proven by Lemnos: lemnos.ko builds from
+# c215f575's module (unchanged since efcc2106) against rpi-7.3.y b005af66 with LLVM=1 and CONFIG_RUST=y, -Werror, no
+# warnings (notes/ARM64-BUILD.md). Not built by this repository's checks; not loaded on a board yet.
+version = 1
+name = "lemnos-module"
+description = "lemnos.ko, built against the image's kernel by Gaia's kernel-module builder"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "c215f57527e17eab009e91f7d19f9c67112941b2"  # Lemnos next c215f575, the Raze image's final Lemnos rev (coordinator 2026-11-18)
+subdir = "kernel"
+
+[build]
+builder = "kernel-module"
+source = "src"
+
+[build.settings]
+names = ["lemnos"]

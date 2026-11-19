@@ -24,6 +24,8 @@ ref = "2026.08"
 
 [components]
 lemnos = "../../components/lemnos/component.toml"
+# lemnos.ko, built against this image's kernel (Gaia's kernel-module builder; the kernel is llvm with Rust on).
+lemnos-module = "../../components/lemnos-module/component.toml"
 lemnosd = "../../components/lemnosd/component.toml"
 lemnos-ctl = "../../components/lemnos-ctl/component.toml"
 lemnos-orion = "../../components/lemnos-orion/component.toml"
@@ -46,7 +48,7 @@ bench-a1-board = "../../components/bench-a1-board/component.toml"
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman", "bench-a1-board"]
+components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman", "bench-a1-board"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"

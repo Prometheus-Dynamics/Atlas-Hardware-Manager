@@ -114,8 +114,8 @@ mode = "0644"
 # board file (Lemnos Q2a, with the generated overlay's UDC). dev's board-usb-gadget.conf is not carried.
 
 # lemnos.ko's modprobe.d fragment: the generated modprobe.conf (`lemnos-ctl tree --modprobe`), installed as Lemnos
-# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). lemnos.ko itself is not built by this kernel yet
-# (the packaging comment above), so the options name a module that is not loaded; the file is what the board's module needs.
+# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). lemnos.ko is built by components/lemnos-module
+# against this image's kernel and loaded at boot by components/lemnos (modules-load.d); these are its options.
 [[install]]
 from = { generated = "modprobe.conf" }
 to = "/etc/modprobe.d/lemnos.conf"
