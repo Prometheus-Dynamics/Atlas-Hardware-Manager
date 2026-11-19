@@ -1,0 +1,4 @@
+# raze-base: the setuid/setgid entries of Buildroot's root that Gaia clears (not in product.toml keep_setid), each with
+# its reason. scripts/check-slot-setid.sh holds the slot's EROFS to it; scripts/build-product.sh runs it after a build.
+# Approved by the coordinator 2026-11-19 (D1).
+bin/busybox  FEATURE_SUID is off, so a setuid busybox runs every applet as root; login runs from agetty as root; ping is root-only after the strip and nothing non-root runs it

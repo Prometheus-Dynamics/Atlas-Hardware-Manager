@@ -85,8 +85,11 @@ elif [[ -n $pckey ]]; then
   die "$pname names no pc-key input, so --pc-key has nothing to go into"
 fi
 args+=(${tools[@]+"${tools[@]}"})
-[[ -z $jobs ]] || args+=(--jobs "$jobs")
-[[ -z $until_step ]] || args+=(--until "$until_step")
+# --jobs and --until are `gaia build` flags only: `gaia plan` refuses them ("unknown flag"), and the plan below runs
+# with args (D1 build 7, 2026-11-19: a finished build exited 2 there with no word, the plan's stderr being dropped).
+build_only=()
+[[ -z $jobs ]] || build_only+=(--jobs "$jobs")
+[[ -z $until_step ]] || build_only+=(--until "$until_step")
 
 # The version (the Atlas dev scheme of this checkout's HEAD; a tracked change is refused) and, for a slot-boot
 # product, the slot: both as Gaia --settings, printed before anything runs.
@@ -114,12 +117,44 @@ fi
 
 echo "build-product: $pname with $gaia_line, store $GAIA_STORE${until_step:+, until $until_step}"
 start=$SECONDS
-"$gaia" build "${args[@]}" || die "FAILED products/$pname after $((SECONDS - start)) s (Gaia's words are above)"
+"$gaia" build "${args[@]}" ${build_only[@]+"${build_only[@]}"} || die "FAILED products/$pname after $((SECONDS - start)) s (Gaia's words are above)"
 echo "build-product: built products/$pname ($((SECONDS - start)) s)"
+
+# The slot's set-id bits (scripts/check-slot-setid.sh): for a product with os/setid-stripped, the EROFS root Gaia made
+# is held to keep_setid and that list, against the set-id bits of the tree it was made from (the EROFS step's `setid`
+# report). Both are read from this build's run record (Gaia writes it beside the store, in runs/).
+stripped=$(dirname "$product")/os/setid-stripped
+if [[ -z $until_step && -f $stripped ]]; then
+  found=$(python3 -I - "$product" "$(dirname "$GAIA_STORE")/runs" "$GAIA_STORE" <<'PY'
+import glob, json, os, sys, tomllib
+product, runs, store = sys.argv[1:]
+with open(product, "rb") as f: images = [i.get("name") for i in tomllib.load(f).get("images", [])]
+if len(images) != 1: sys.exit(f"{product} has {len(images)} images: the set-id check names one image's EROFS")
+recs = []
+for f in glob.glob(os.path.join(runs, "*.json")):
+    try: r = json.load(open(f))
+    except (OSError, ValueError): continue
+    if os.path.realpath(r.get("product", "")) == os.path.realpath(product): recs.append((r.get("end_ns", 0), f, r))
+if not recs: sys.exit(f"no run record of {product} in {runs}")
+_, rec, run = max(recs)
+if run.get("outcome") != "done": sys.exit(f"the newest run record of {product} ({rec}) is not a finished build: {run.get('outcome')}")
+def path(ref):
+    kind, _, digest = ref.partition(":sha256:")
+    return os.path.join(store, "objects", kind, digest[:2], digest)
+erofs = [s["outputs"] for s in run["steps"] if s["step"] == "gaia.fs.erofs"]
+if len(erofs) != 1: sys.exit(f"{rec}: {len(erofs)} EROFS steps: the set-id check needs one")
+print(path(erofs[0]["image"]), path(erofs[0]["setid"]), images[0], sep="\n")
+PY
+) || die "the set-id check could not find this build's EROFS root (see above)"
+  { read -r erofs; read -r setid; read -r image; } <<<"$found"
+  "$repo/scripts/check-slot-setid.sh" "$erofs" "$setid" "$product" "$image" "$stripped" \
+    || die "FAILED products/$pname: the slot root's set-id bits differ from keep_setid and $stripped (above)"
+fi
 
 # What was made: each output of the plan, as Gaia shows it. A partial build has no outputs to show.
 [[ -z $until_step ]] || { echo "build-product: partial build (--until $until_step): no outputs are listed"; exit 0; }
-outputs=$("$gaia" plan "${args[@]}" 2>/dev/null | sed -n '/^outputs:$/,$p' | sed -n 's/^  \([^ ]*\)  .*/\1/p')
+plan=$("$gaia" plan "${args[@]}") || die "gaia plan failed for $pname after the build (Gaia's words are above)"
+outputs=$(sed -n '/^outputs:$/,$p' <<<"$plan" | sed -n 's/^  \([^ ]*\)  .*/\1/p')
 [[ -n $outputs ]] || die "the plan of $pname names no outputs"
 [[ -z $out ]] || mkdir -p "$out"
 for o in $outputs; do

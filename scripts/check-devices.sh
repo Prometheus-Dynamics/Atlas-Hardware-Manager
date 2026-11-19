@@ -2361,7 +2361,10 @@ fi
 # The post-build-removes-nothing rule (2026-11-18, the D1 build's dbus failure): a script a Buildroot fragment names as
 # BR2_ROOTFS_POST_BUILD_SCRIPT runs before the rootfs step's makedevs (fs/common.mk), and makedevs fails on any file a
 # package's permissions table names that is gone. So such a script removes nothing (no rm, rmdir, unlink or
-# find -delete outside comments); removals go in a BR2_ROOTFS_POST_FAKEROOT_SCRIPT, which runs after makedevs.
+# find -delete outside comments).
+# No fragment names BR2_ROOTFS_POST_FAKEROOT_SCRIPT under the pinned Gaia (2026-11-19, the D1 build 6 evidence in
+# products/raze-base/os/raze.fragment): Gaia ships Buildroot's target/ from before the rootfs step, so a post-fakeroot
+# script's changes never reach the slot. This refusal goes when Gaia's FAKEROOT-OUTPUT is pinned.
 post_build_rule() {  # <devices dir>
   python3 -I - "$1" <<'PY'
 import os, re, sys
@@ -2373,6 +2376,9 @@ for top, _, files in os.walk(os.path.join(dev, "products")):
     for name in files:
         if not name.endswith(".fragment"): continue
         frag = os.path.join(top, name)
+        for m in re.finditer(r'^BR2_ROOTFS_POST_FAKEROOT_SCRIPT="([^"]*)"', open(frag).read(), re.M):
+            if m.group(1).strip():
+                print(f"FAIL {os.path.relpath(frag, dev)}: names BR2_ROOTFS_POST_FAKEROOT_SCRIPT, whose changes do not reach the slot under the pinned Gaia (it ships Buildroot's target/ from before the rootfs step; see products/raze-base/os/raze.fragment)"); rc = 1
         for m in any_re.finditer(open(frag).read()):
             for word in m.group(2).split():
                 if not word.startswith("@here@/"): continue
@@ -2389,7 +2395,7 @@ for top, _, files in os.walk(os.path.join(dev, "products")):
                 for n, text in enumerate(open(script), 1):
                     code = text.split("#", 1)[0] if not text.lstrip().startswith("#") else ""
                     if rm_re.search(code):
-                        print(f"FAIL {os.path.relpath(script, dev)}:{n}: a post-build script removes files ({text.strip()}): makedevs runs after it and fails on a removed file a permissions table names; remove in a BR2_ROOTFS_POST_FAKEROOT_SCRIPT"); rc = 1
+                        print(f"FAIL {os.path.relpath(script, dev)}:{n}: a post-build script removes files ({text.strip()}): makedevs runs after it and fails on a removed file a permissions table names"); rc = 1
 sys.exit(rc)
 PY
 }
@@ -2401,9 +2407,13 @@ post_build_self_test() {
   out=$(post_build_rule "$tmp/devices") && rc=1
   [[ $out == *'products/raze-base/os/post-build.sh'* ]] || rc=1
   cp -a "$root/products/raze-base/os/post-build.sh" "$tmp/devices/products/raze-base/os/post-build.sh"
-  chmod 644 "$tmp/devices/products/raze-base/os/post-fakeroot.sh"
+  chmod 644 "$tmp/devices/products/raze-base/os/post-build.sh"
   out=$(post_build_rule "$tmp/devices") && rc=1
-  [[ $out == *'post-fakeroot.sh: not executable'* ]] || rc=1
+  [[ $out == *'post-build.sh: not executable'* ]] || rc=1
+  chmod 755 "$tmp/devices/products/raze-base/os/post-build.sh"
+  printf 'BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/./post-build.sh"\n' >> "$tmp/devices/products/raze-base/os/raze.fragment"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'raze.fragment: names BR2_ROOTFS_POST_FAKEROOT_SCRIPT'* ]] || rc=1
   rm -rf "$tmp"; return $rc
 }
 if ! pb_out=$(post_build_rule "$root"); then
@@ -2548,9 +2558,8 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
-  st "self-check: the post-build rule no longer refuses a post-build script that removes a file" post_build_self_test
+  st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a post-fakeroot script" post_build_self_test
   st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
-  st "self-check: check-rootfs.sh no longer refuses a rootfs that lost a setuid bit or kept dbus" "$repo/scripts/check-rootfs.sh" --self-test
   st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
