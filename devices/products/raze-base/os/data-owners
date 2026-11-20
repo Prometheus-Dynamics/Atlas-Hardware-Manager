@@ -1,0 +1,10 @@
+# raze-base: the users and groups that can own files on /data, at fixed ids (coordinator's ruling 2026-11-20: any user
+# that can own files on /data has a fixed id, so an image update never orphans its files). One line each:
+#   USER UID GROUP GID  reason
+# scripts/check-devices.sh holds the components' [[users]]/[[groups]] declarations to this table; scripts/check-slot-users.sh
+# holds the built root's /etc/passwd and /etc/group to it (scripts/build-product.sh runs it after a build).
+# Source of the ids: 993's root (Raze #2's running image, helios-2026.2.0-dev.993-styx-e1097ec7, its /etc/passwd and
+# /etc/group, read 2026-11-20): route A keeps 993's /data, so these must equal 993's.
+lemnos       900 lemnos       900  lemnosd drops to it (components/lemnos); 993's lemnos is 900:900
+orion        901 orion        901  orion-node runs as it and owns /data/orion/node (components/orion); 993's orion is 901:901
+lemnos-orion 902 lemnos-orion 902  lemnos-orion's bridge (components/lemnos); not on 993, so dev's "the next 902" (Atlas 675bd03f data-owners)

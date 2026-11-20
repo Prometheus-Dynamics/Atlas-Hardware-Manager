@@ -2417,6 +2417,75 @@ if ! pb_out=$(post_build_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pb_out"
 fi
 
+# The fixed-ids rule (coordinator's ruling 2026-11-20: any user that can own files on /data has a fixed id, so an image
+# update never orphans its files). Every component's [[users]] states its uid and every [[groups]] its gid; no two
+# users (or groups) declared in one product share an id; and a product with os/data-owners (USER UID GROUP GID reason)
+# lists exactly the users its image's components declare, at the declared ids. scripts/check-slot-users.sh holds the
+# built root to the same table.
+fixed_ids_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import glob, os, sys, tomllib
+dev = sys.argv[1]; rc = 0
+def load(p):
+    with open(p, "rb") as f: return tomllib.load(f)
+for p in sorted(glob.glob(os.path.join(dev, "**", "component.toml"), recursive=True)):
+    if os.sep + "tests" + os.sep in p: continue
+    c = load(p); rel = os.path.relpath(p, dev)
+    for u in c.get("users", []):
+        if not isinstance(u.get("uid"), int): print(f"FAIL {rel}: user {u.get('name')} has no fixed uid (any user that can own files on /data has one)"); rc = 1
+    for g in c.get("groups", []):
+        if not isinstance(g.get("gid"), int): print(f"FAIL {rel}: group {g.get('name')} has no fixed gid"); rc = 1
+for p in sorted(glob.glob(os.path.join(dev, "products", "*", "product.toml"))):
+    prod = load(p); pdir = os.path.dirname(p); rel = os.path.relpath(p, dev)
+    users, groups = {}, {}
+    for img in prod.get("images", []):
+        for name in img.get("components", []):
+            cp = prod.get("components", {}).get(name)
+            if not cp: continue
+            c = load(os.path.normpath(os.path.join(pdir, cp)))
+            for u in c.get("users", []): users[u["name"]] = (u.get("uid"), u.get("group"))
+            for g in c.get("groups", []): groups[g["name"]] = g.get("gid")
+    for kind, table in (("uid", {n: v[0] for n, v in users.items()}), ("gid", groups)):
+        seen = {}
+        for n, i in table.items():
+            if i is not None and i in seen: print(f"FAIL {rel}: {kind} {i} is declared for both {seen[i]} and {n}"); rc = 1
+            seen.setdefault(i, n)
+    owners = os.path.join(pdir, "os", "data-owners")
+    if not os.path.isfile(owners): continue
+    rows = {}
+    for n, line in enumerate(open(owners), 1):
+        t = line.strip()
+        if not t or t.startswith("#"): continue
+        f = t.split(None, 4)
+        if len(f) < 5 or not f[1].isdigit() or not f[3].isdigit():
+            print(f"FAIL {os.path.relpath(owners, dev)}:{n}: not USER UID GROUP GID reason"); rc = 1; continue
+        rows[f[0]] = (int(f[1]), f[2], int(f[3]))
+    for name, (uid, grp) in sorted(users.items()):
+        if name not in rows: print(f"FAIL {os.path.relpath(owners, dev)}: user {name} (declared, uid {uid}) is not in the table"); rc = 1; continue
+        r = rows[name]
+        if (r[0], r[1], r[2]) != (uid, grp, groups.get(grp)):
+            print(f"FAIL {os.path.relpath(owners, dev)}: {name} is {r[0]} {r[1]} {r[2]} in the table, {uid} {grp} {groups.get(grp)} in the declarations"); rc = 1
+    for name in sorted(set(rows) - set(users)):
+        print(f"FAIL {os.path.relpath(owners, dev)}: {name} is in the table but no component of the product declares it"); rc = 1
+sys.exit(rc)
+PY
+}
+fixed_ids_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  fixed_ids_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i 's/^uid = 900$/uid = 905/' "$tmp/devices/components/lemnos/component.toml"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *'lemnos is 900 lemnos 900 in the table, 905 lemnos 900 in the declarations'* ]] || rc=1
+  sed -i '/^uid = 905$/d' "$tmp/devices/components/lemnos/component.toml"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *'user lemnos has no fixed uid'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! fi_out=$(fixed_ids_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$fi_out"
+fi
+
 # The verify-reads-as-it-wrote rule (2026-11-19, the D1 build 6 failure): a [generate.<step>] verify re-reads the step's
 # output with the same tool, so it must name every description input the run names (--layout-of, --socs) with the same
 # value. A verify without --socs resolved the board's SoC file against the working directory and failed only after the
@@ -2556,6 +2625,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
   st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a hook script that is not a file" post_build_self_test
+  st "self-check: the fixed-ids rule no longer refuses a user without a fixed uid or a declaration that differs from os/data-owners" fixed_ids_self_test
   st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
   st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
   st "self-check: check-slot-mounts.sh no longer refuses a slot root without /data" "$repo/scripts/check-slot-mounts.sh" --self-test
