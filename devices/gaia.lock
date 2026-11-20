@@ -1,8 +1,10 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 1c2b9dc9 (D1, 2026-11-20): Gaia next with rustk (the kernel on LLVM with Rust, out-of-tree modules; proof1
+# on Atlas 34f531b9's devices/) and FILE-INPUT-MODE 08cbc080 (a named input file keeps its execute bit). Before: 9efa797.
 # Moved to a6299c62 (PINS, crash_log reader; c0d084f + one file): Gaia next. Before: c0d084f (PR G12): Gaia next with rk-env #150 (the rk35xx env index and redundant copies, checked against the
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "9efa797f8991069f338da3ba2eec655afb738cfa"
+commit = "1c2b9dc974b2ef388afdc62a9b138147ca9a5b6d"

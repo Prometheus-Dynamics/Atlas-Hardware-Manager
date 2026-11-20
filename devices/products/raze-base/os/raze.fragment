@@ -125,13 +125,10 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 
 # The post-build script: the wait-online mask (os/post-build.sh; B41 had the dbus removal here). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
-# Named through the DIRECTORY (`@here@/./`), not as `@here@/post-build.sh`: Gaia (9efa797) makes a named file an input
-# of its own and sets it 0644 (nodes/source-files/src/input.rs:45), so Buildroot's exec of it failed "Permission
-# denied" (D1 build, 2026-11-18). A `.` part makes Gaia take the whole directory, which keeps the file's 0755. Back to
-# `@here@/post-build.sh` once Gaia keeps a named file's execute bit.
-BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/./post-build.sh"
+BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
 # NO BR2_ROOTFS_POST_FAKEROOT_SCRIPT, AND NO FAKEROOT-STEP HOOK OF ANY KIND, UNDER THE PINNED GAIA: such a hook does not
-# reach the slot. Gaia (9efa797, crates/nodes/os-buildroot/src/lib.rs:565-588, perms.rs:26) makes its `rootfs` output
+# reach the slot. Gaia (9efa797, crates/nodes/os-buildroot/src/lib.rs:565-588, perms.rs:26; the same at the 1c2b9dc9
+# pin, lib.rs:885-912) makes its `rootfs` output
 # from Buildroot's output/target/ as it stands BEFORE the rootfs step; Buildroot runs chown, mkusers, makedevs, the
 # pre-command hooks (preset-all) and the post-fakeroot script on a per-filesystem COPY (build/buildroot-fs/<fs>/target),
 # and Gaia reads that copy's rootfs.tar only for the owners and modes of paths still in target/, then deletes the tar.
