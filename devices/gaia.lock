@@ -1,10 +1,14 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 171ca25f (D1, 2026-11-20): Gaia next with FAKEROOT-OUTPUT (os-buildroot KEY_VERSION 7: the root filesystem is
+# Buildroot's rootfs.tar from after its fakeroot stage, so mkusers, preset-all, the device tables and post-fakeroot
+# scripts reach the slot; crates/nodes/os-buildroot/src/lib.rs:903-913), the 64 MiB multi-block flash image
+# (94886210), step CPU and the pool summary. Before: 1c2b9dc9.
 # Moved to 1c2b9dc9 (D1, 2026-11-20): Gaia next with rustk (the kernel on LLVM with Rust, out-of-tree modules; proof1
 # on Atlas 34f531b9's devices/) and FILE-INPUT-MODE 08cbc080 (a named input file keeps its execute bit). Before: 9efa797.
 # Moved to a6299c62 (PINS, crash_log reader; c0d084f + one file): Gaia next. Before: c0d084f (PR G12): Gaia next with rk-env #150 (the rk35xx env index and redundant copies, checked against the
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "1c2b9dc974b2ef388afdc62a9b138147ca9a5b6d"
+commit = "171ca25f0d3d3a80f890a1f83620d843d1ab1b7d"

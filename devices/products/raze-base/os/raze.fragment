@@ -115,9 +115,8 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 #   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
 # Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
 # turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
-# D1 SHIPS DBUS, as 993 does (coordinator's ruling, 2026-11-19): the dbus trim cannot reach the slot under the pinned
-# Gaia (see the post-fakeroot note below). The trim and its checks are parked on branch save/D1-dbus-trim (cbf1b1f4) and
-# come back when Gaia's FAKEROOT-OUTPUT lands.
+# D1 SHIPS DBUS, as 993 does (coordinator's ruling C, 2026-11-19). The trim and its checks are parked on branch
+# save/D1-dbus-trim (cbf1b1f4): a follow-up after D1, now that a post-fakeroot change reaches the slot (171ca25f).
 # BR2_PACKAGE_SYSTEMD_RESOLVED is not set
 # BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
 # BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
@@ -126,16 +125,10 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 # The post-build script: the wait-online mask (os/post-build.sh; B41 had the dbus removal here). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
-# NO BR2_ROOTFS_POST_FAKEROOT_SCRIPT, AND NO FAKEROOT-STEP HOOK OF ANY KIND, UNDER THE PINNED GAIA: such a hook does not
-# reach the slot. Gaia (9efa797, crates/nodes/os-buildroot/src/lib.rs:565-588, perms.rs:26; the same at the 1c2b9dc9
-# pin, lib.rs:885-912) makes its `rootfs` output
-# from Buildroot's output/target/ as it stands BEFORE the rootfs step; Buildroot runs chown, mkusers, makedevs, the
-# pre-command hooks (preset-all) and the post-fakeroot script on a per-filesystem COPY (build/buildroot-fs/<fs>/target),
-# and Gaia reads that copy's rootfs.tar only for the owners and modes of paths still in target/, then deletes the tar.
-# Evidence, D1 build 6 (2026-11-18, a81a26e4, post-fakeroot.sh removing dbus): its EROFS (fsck.erofs --extract) still
-# held usr/bin/dbus-daemon, usr/lib/systemd/system/dbus.service and usr/lib/sysusers.d/dbus.conf. scripts/check-devices.sh
-# refuses the line. What changes the shipped tree is post-build (it runs on target/) and the components. When Gaia's
-# FAKEROOT-OUTPUT lands (the rootfs output becomes what the fakeroot step made), this note and that refusal go.
+# Gaia ships what Buildroot's fakeroot stage made (FAKEROOT-OUTPUT, pinned since 171ca25f: the rootfs output is
+# rootfs.tar, crates/nodes/os-buildroot/src/lib.rs:903-913), so mkusers, preset-all, the device tables and a
+# post-fakeroot script all reach the slot. Atlas's components are merged into the root AFTER that stage
+# (gaia.tree.merge of the OS tree and each component's layer): their sysusers.d and preset files are not applied by it.
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/

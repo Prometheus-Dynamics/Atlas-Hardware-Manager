@@ -2362,9 +2362,8 @@ fi
 # BR2_ROOTFS_POST_BUILD_SCRIPT runs before the rootfs step's makedevs (fs/common.mk), and makedevs fails on any file a
 # package's permissions table names that is gone. So such a script removes nothing (no rm, rmdir, unlink or
 # find -delete outside comments).
-# No fragment names BR2_ROOTFS_POST_FAKEROOT_SCRIPT under the pinned Gaia (2026-11-19, the D1 build 6 evidence in
-# products/raze-base/os/raze.fragment): Gaia ships Buildroot's target/ from before the rootfs step, so a post-fakeroot
-# script's changes never reach the slot. This refusal goes when Gaia's FAKEROOT-OUTPUT is pinned.
+# A post-fakeroot script is allowed again since the Gaia 171ca25f pin (FAKEROOT-OUTPUT: its changes reach the slot);
+# the 2026-11-19 refusal of BR2_ROOTFS_POST_FAKEROOT_SCRIPT went with that pin, as it said it would.
 post_build_rule() {  # <devices dir>
   python3 -I - "$1" <<'PY'
 import os, re, sys
@@ -2376,9 +2375,6 @@ for top, _, files in os.walk(os.path.join(dev, "products")):
     for name in files:
         if not name.endswith(".fragment"): continue
         frag = os.path.join(top, name)
-        for m in re.finditer(r'^BR2_ROOTFS_POST_FAKEROOT_SCRIPT="([^"]*)"', open(frag).read(), re.M):
-            if m.group(1).strip():
-                print(f"FAIL {os.path.relpath(frag, dev)}: names BR2_ROOTFS_POST_FAKEROOT_SCRIPT, whose changes do not reach the slot under the pinned Gaia (it ships Buildroot's target/ from before the rootfs step; see products/raze-base/os/raze.fragment)"); rc = 1
         for m in any_re.finditer(open(frag).read()):
             for word in m.group(2).split():
                 if not word.startswith("@here@/"): continue
@@ -2411,9 +2407,10 @@ post_build_self_test() {
   out=$(post_build_rule "$tmp/devices") && rc=1
   [[ $out == *'post-build.sh: not executable'* ]] || rc=1
   chmod 755 "$tmp/devices/products/raze-base/os/post-build.sh"
-  printf 'BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/./post-build.sh"\n' >> "$tmp/devices/products/raze-base/os/raze.fragment"
+  # A post-fakeroot script that is not a file is refused like any other (the name check covers all three hooks).
+  printf 'BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/no-such-script.sh"\n' >> "$tmp/devices/products/raze-base/os/raze.fragment"
   out=$(post_build_rule "$tmp/devices") && rc=1
-  [[ $out == *'raze.fragment: names BR2_ROOTFS_POST_FAKEROOT_SCRIPT'* ]] || rc=1
+  [[ $out == *'BR2_ROOTFS_POST_FAKEROOT_SCRIPT names @here@/no-such-script.sh, which is not a file'* ]] || rc=1
   rm -rf "$tmp"; return $rc
 }
 if ! pb_out=$(post_build_rule "$root"); then
@@ -2558,7 +2555,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
-  st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a post-fakeroot script" post_build_self_test
+  st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a hook script that is not a file" post_build_self_test
   st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
   st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
   st "self-check: check-slot-mounts.sh no longer refuses a slot root without /data" "$repo/scripts/check-slot-mounts.sh" --self-test
