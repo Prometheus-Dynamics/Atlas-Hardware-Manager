@@ -13,6 +13,10 @@
 #   scripts/check-slot-mounts.sh --self-test
 #   scripts/build-product.sh runs it after every full build that makes an EROFS root.
 #
+# Every board file in the root (/etc/lemnos/*.toml) whose [board] names a `soc` needs that SoC's description, a regular file at
+# /usr/share/lemnos/socs/<soc>.toml: lemnosd checks the live device tree against it (the image contract since
+# 2026-11-20; without it lemnosd says "live tree not checked").
+#
 # The boot partition's mount point is not checked: on Raze's tryboot record form nobody mounts it after slot-init
 # (records are raw sector writes found through sysfs; Lemnos 8b10f491); `boot` matters for the file and ubi forms.
 set -euo pipefail
@@ -64,9 +68,22 @@ if board and os.path.isfile(board):
     for d in b.get("devices", []):
         if d.get("driver") == "system-slots" and d.get("config", {}).get("data", "/data") != "/data":
             bad.append(f"/etc/lemnos/board.toml: system-slots device {d.get('id', '?')} names a data path other than /data (slot-init moves the partition to /data)")
+socs = set()
+etc_lemnos = resolve("/etc/lemnos")
+if etc_lemnos and os.path.isdir(etc_lemnos):
+    for c in sorted(os.listdir(etc_lemnos)):
+        f = os.path.join(etc_lemnos, c)
+        if not c.endswith(".toml") or not os.path.isfile(f): continue
+        try:
+            with open(f, "rb") as fh: doc = tomllib.load(fh)
+        except (OSError, tomllib.TOMLDecodeError): continue
+        soc = doc.get("board", {}).get("soc") if isinstance(doc.get("board"), dict) else None
+        if isinstance(soc, str) and soc and soc not in socs:
+            socs.add(soc)
+            want(f"/usr/share/lemnos/socs/{soc}.toml", "file", f"/etc/lemnos/{c} names soc {soc}: lemnosd checks the live tree against it")
 for x in bad: print(f"check-slot-mounts: BAD {erofs}: {x}")
 if bad: print(f"check-slot-mounts: FAILED ({len(bad)} finding(s))"); sys.exit(1)
-print("check-slot-mounts: ok: /sbin/init executable, /data a directory, /etc/machine-id a regular file")
+print("check-slot-mounts: ok: /sbin/init executable, /data a directory, /etc/machine-id a regular file" + (f", SoC description(s) for {', '.join(sorted(socs))}" if socs else ""))
 PY
   rm -rf "$tmp"
   return $rc
@@ -92,7 +109,12 @@ self_test() {
       dir-mid) rm "$r/etc/machine-id"; mkdir "$r/etc/machine-id" ;;
       data=*) data=${a#data=} ;;
     esac; done
-    printf '[[devices]]\nid = "slots"\ndriver = "system-slots"\nconfig = { data = "%s" }\n' "$data" > "$r/etc/lemnos/board.toml"
+    printf '[board]\nsoc = "x-soc"\n[[devices]]\nid = "slots"\ndriver = "system-slots"\nconfig = { data = "%s" }\n' "$data" > "$r/etc/lemnos/board.toml"
+    mkdir -p "$r/usr/share/lemnos/socs"; printf 'name = "x-soc"\n' > "$r/usr/share/lemnos/socs/x-soc.toml"
+    for a in "$@"; do case $a in
+      no-soc) rm "$r/usr/share/lemnos/socs/x-soc.toml" ;;
+      bench-soc) printf '[board]\nsoc = "y-soc"\n' > "$r/etc/lemnos/board.bench.toml" ;;
+    esac; done
     mkfs.erofs "$tmp/$n.erofs" "$r" >/dev/null 2>&1
   }
   expect_fail() {  # <name> <text>   (a failing check is expected: its words are kept, then read)
@@ -107,7 +129,9 @@ self_test() {
   mk nomid no-mid;            expect_fail nomid "/etc/machine-id is not a regular file"
   mk dirmid dir-mid;          expect_fail dirmid "/etc/machine-id is not a regular file"
   mk elsewhere data=/srv/data; expect_fail elsewhere "other than /data"
-  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path each fail; links resolve as the slot sees them)"
+  mk nosoc no-soc;            expect_fail nosoc "/usr/share/lemnos/socs/x-soc.toml is not a regular file"
+  mk benchsoc bench-soc;      expect_fail benchsoc "/etc/lemnos/board.bench.toml names soc y-soc"
+  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path, and a board file (any /etc/lemnos/*.toml) whose soc has no /usr/share/lemnos/socs/<soc>.toml each fail; links resolve as the slot sees them)"
   return $rc
 }
 

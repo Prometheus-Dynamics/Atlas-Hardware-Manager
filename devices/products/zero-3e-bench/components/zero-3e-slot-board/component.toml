@@ -68,6 +68,14 @@ from = { description = "lemnos" }
 to = "/etc/lemnos/board.toml"
 mode = "0644"
 
+# The SoC description lemnosd checks the live tree against (/usr/share/lemnos/socs/<soc>.toml, the board file's soc),
+# as the Raze's (components/raze-lemnos-board): in the image contract since 2026-11-20; scripts/check-slot-mounts.sh
+# requires it for every board file in the root that names a soc.
+[[install]]
+from = { source = "lemnos", path = "socs/rk3566.toml" }
+to = "/usr/share/lemnos/socs/rk3566.toml"
+mode = "0644"
+
 # The gadget drop-in (Lemnos R1d): the FunctionFS mount needs CAP_SYS_ADMIN in the root phase (the same unit drop-in as the Raze).
 [[install]]
 from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }

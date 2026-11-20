@@ -94,6 +94,15 @@ args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/so
 verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--socs", "@source@/socs", "--boot-image", "@boot-image@", "--deep"]
 keys = "files/slot-keys"
 
+# The SoC description lemnosd checks the live device tree against (/usr/share/lemnos/socs/<soc>.toml, the board file's
+# `soc`; LEMNOS_SOCS overrides the directory). Lemnos's packaging list never carried it; it is in the image contract
+# since 2026-11-20 (coordinator, after the D1 rehearsal: lemnosd said "live tree not checked: ... No such file").
+# scripts/check-slot-mounts.sh requires it for every board file in the root that names a soc.
+[[install]]
+from = { source = "lemnos", path = "socs/bcm2712-rp1.toml" }
+to = "/usr/share/lemnos/socs/bcm2712-rp1.toml"
+mode = "0644"
+
 [[install]]
 from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }
 to = "/etc/systemd/system/lemnosd.service.d/gadget.conf"
