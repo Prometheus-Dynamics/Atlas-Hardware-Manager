@@ -123,13 +123,14 @@ echo "build-product: built products/$pname ($((SECONDS - start)) s)"
 # The slot's set-id bits (scripts/check-slot-setid.sh): for a product with os/setid-stripped, the EROFS root Gaia made
 # is held to keep_setid and that list, against the set-id bits of the tree it was made from (the EROFS step's `setid`
 # report). Both are read from this build's run record (Gaia writes it beside the store, in runs/).
+# The slot root's mount points (scripts/check-slot-mounts.sh): every full build that makes an EROFS root has /data,
+# where Lemnos slot-init moves the data partition. Both checks read the root from this build's run record.
 stripped=$(dirname "$product")/os/setid-stripped
-if [[ -z $until_step && -f $stripped ]]; then
+if [[ -z $until_step ]]; then
   found=$(python3 -I - "$product" "$(dirname "$GAIA_STORE")/runs" "$GAIA_STORE" <<'PY'
 import glob, json, os, sys, tomllib
 product, runs, store = sys.argv[1:]
 with open(product, "rb") as f: images = [i.get("name") for i in tomllib.load(f).get("images", [])]
-if len(images) != 1: sys.exit(f"{product} has {len(images)} images: the set-id check names one image's EROFS")
 recs = []
 for f in glob.glob(os.path.join(runs, "*.json")):
     try: r = json.load(open(f))
@@ -142,13 +143,19 @@ def path(ref):
     kind, _, digest = ref.partition(":sha256:")
     return os.path.join(store, "objects", kind, digest[:2], digest)
 erofs = [s["outputs"] for s in run["steps"] if s["step"] == "gaia.fs.erofs"]
-if len(erofs) != 1: sys.exit(f"{rec}: {len(erofs)} EROFS steps: the set-id check needs one")
+if not erofs: sys.exit(0)  # no slot root in this product: nothing to check
+if len(erofs) != 1 or len(images) != 1: sys.exit(f"{rec}: {len(erofs)} EROFS steps in {len(images)} images: the slot checks read one image's EROFS")
 print(path(erofs[0]["image"]), path(erofs[0]["setid"]), images[0], sep="\n")
 PY
-) || die "the set-id check could not find this build's EROFS root (see above)"
-  { read -r erofs; read -r setid; read -r image; } <<<"$found"
-  "$repo/scripts/check-slot-setid.sh" "$erofs" "$setid" "$product" "$image" "$stripped" \
-    || die "FAILED products/$pname: the slot root's set-id bits differ from keep_setid and $stripped (above)"
+) || die "the slot checks could not find this build's EROFS root (see above)"
+  if [[ -n $found ]]; then
+    { read -r erofs; read -r setid; read -r image; } <<<"$found"
+    "$repo/scripts/check-slot-mounts.sh" "$erofs" || die "FAILED products/$pname: the slot root lacks a mount point (above)"
+    if [[ -f $stripped ]]; then
+      "$repo/scripts/check-slot-setid.sh" "$erofs" "$setid" "$product" "$image" "$stripped" \
+        || die "FAILED products/$pname: the slot root's set-id bits differ from keep_setid and $stripped (above)"
+    fi
+  fi
 fi
 
 # What was made: each output of the plan, as Gaia shows it. A partial build has no outputs to show.

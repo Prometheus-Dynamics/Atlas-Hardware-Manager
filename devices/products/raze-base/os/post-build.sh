@@ -14,6 +14,11 @@
 # not stop it (tested with systemd 259 --root preset-all), and a drop-in cannot change [Install] (also tested). A mask is
 # honoured by preset-all (the unit is ignored and not linked). Nothing on the image orders on network-online.target
 # except that unit's own WantedBy= (checked on the extracted root and devices/components).
+#
+# /data: the directory Lemnos slot-init moves the data partition onto before switch_root (c215f575,
+# service/slot-init/src/boot.rs:1433); no Buildroot package makes it, and a root without it does not start (the D1
+# rehearsal on build 9). scripts/check-slot-mounts.sh holds every slot root to it after the build. An empty directory
+# is made here rather than in os/overlay, where git would need a file inside it.
 set -eu
 
 die() { echo "raze-base post-build: $*" >&2; exit 1; }
@@ -22,4 +27,5 @@ T=$1
 [ -d "$T" ] || die "no target directory: $T"
 mkdir -p "$T/etc/systemd/system"
 ln -sfn /dev/null "$T/etc/systemd/system/systemd-networkd-wait-online.service"
-echo "raze-base post-build: wait-online masked in $T"
+mkdir -p "$T/data"
+echo "raze-base post-build: wait-online masked, /data made in $T"

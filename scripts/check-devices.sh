@@ -2561,6 +2561,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a post-fakeroot script" post_build_self_test
   st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
   st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
+  st "self-check: check-slot-mounts.sh no longer refuses a slot root without /data" "$repo/scripts/check-slot-mounts.sh" --self-test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()
