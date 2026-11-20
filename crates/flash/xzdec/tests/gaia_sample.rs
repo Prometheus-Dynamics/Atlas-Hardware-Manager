@@ -91,11 +91,4 @@ fn gaia_block_count_arithmetic_matches_the_block_limit() {
     assert_eq!(blocks_for((512 << 30) + 1), MAX_BLOCKS + 1);
 }
 
-#[test]
-#[ignore = "awaiting Gaia's signed sample (image + signature stream); TODO: add the file and check its record"]
-fn a_signed_gaia_sample_has_its_image_then_its_record() {
-    // TODO(Gaia): when Gaia's signed sample lands, add it under tests/fixtures and check:
-    // scan reports the image stream (3 blocks, 8 MiB dictionary) with a record span after
-    // it, decode_image yields the 167,772,160 bytes of the image, read_record gives 108 bytes.
-    panic!("no signed sample yet");
-}
+// Gaia's signed sample is tests/gaia_multi_block.rs (Gaia next 94886210, four blocks, unsigned and signed).
