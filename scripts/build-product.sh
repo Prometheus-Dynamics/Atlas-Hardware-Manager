@@ -123,8 +123,8 @@ echo "build-product: built products/$pname ($((SECONDS - start)) s)"
 # The slot's set-id bits (scripts/check-slot-setid.sh): for a product with os/setid-stripped, the EROFS root Gaia made
 # is held to keep_setid and that list, against the set-id bits of the tree it was made from (the EROFS step's `setid`
 # report). Both are read from this build's run record (Gaia writes it beside the store, in runs/).
-# The slot root's mount points (scripts/check-slot-mounts.sh): every full build that makes an EROFS root has /data,
-# where Lemnos slot-init moves the data partition. Both checks read the root from this build's run record.
+# What Lemnos slot-init needs in the slot root (scripts/check-slot-mounts.sh): /sbin/init, /data, /etc/machine-id, after
+# every full build that makes an EROFS root. Both checks read the root from this build's run record.
 stripped=$(dirname "$product")/os/setid-stripped
 if [[ -z $until_step ]]; then
   found=$(python3 -I - "$product" "$(dirname "$GAIA_STORE")/runs" "$GAIA_STORE" <<'PY'

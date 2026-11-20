@@ -16,7 +16,7 @@
 # except that unit's own WantedBy= (checked on the extracted root and devices/components).
 #
 # /data: the directory Lemnos slot-init moves the data partition onto before switch_root (c215f575,
-# service/slot-init/src/boot.rs:1433); no Buildroot package makes it, and a root without it does not start (the D1
+# service/slot-init/src/boot.rs:1432-1438); no Buildroot package makes it, and a root without it does not start (the D1
 # rehearsal on build 9). scripts/check-slot-mounts.sh holds every slot root to it after the build. An empty directory
 # is made here rather than in os/overlay, where git would need a file inside it.
 set -eu
