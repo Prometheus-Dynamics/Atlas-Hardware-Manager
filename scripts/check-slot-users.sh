@@ -27,6 +27,8 @@
 #   - a user or group of the product's os/data-owners table (USER UID GROUP GID reason: the users that can own files on
 #     /data, at fixed ids) is missing from the root or has another id there, or a sysusers.d line in the root names
 #     one of them with another id or with none (`-`): no file on the image states an id other than the one that ships.
+#   - a line of the product's os/units table (`linked UNIT reason` / `masked UNIT reason`: units the product depends on,
+#     asserted by name) does not hold: a linked unit is masked, missing or has no enable link; a masked one is not masked.
 set -euo pipefail
 
 check() {  # <erofs> [product.toml]
@@ -203,7 +205,7 @@ gid_of = {}
 for line in (rd("etc/group") or "").splitlines():
     f = line.split(":")
     if len(f) >= 3: gid_of[f[0]] = f[2]
-declared, owners = [], []
+declared, owners, named = [], [], []
 if product:
     pdir = os.path.dirname(os.path.abspath(product))
     with open(product, "rb") as f: prod = tomllib.load(f)
@@ -223,6 +225,15 @@ if product:
             if len(f) < 5 or not f[1].isdigit() or not f[3].isdigit():
                 bad.append(f"{table}:{n}: not USER UID GROUP GID reason: {t}"); continue
             owners.append((f[0], f[1], f[2], f[3]))
+    utable = os.path.join(pdir, "os", "units")
+    if os.path.isfile(utable):
+        for n, line in enumerate(open(utable), 1):
+            t = line.strip()
+            if not t or t.startswith("#"): continue
+            f = t.split(None, 2)
+            if len(f) < 3 or f[0] not in ("linked", "masked"):
+                bad.append(f"{utable}:{n}: not linked|masked UNIT reason: {t}"); continue
+            named.append((f[0], f[1]))
 for unit, comp in declared:
     tmpl = re.sub(r"@[^.]+\.", "@.", unit) if "@" in unit else unit
     kind, texts = unit_texts(tmpl)
@@ -232,6 +243,16 @@ for unit, comp in declared:
     targets = [w for s_, k, v in kv if s_ == "Install" and k in ("WantedBy", "RequiredBy") for w in v.split()]
     if not targets: bad.append(f"{unit}: declared enabled by component {comp}, but its unit has no WantedBy=/RequiredBy=")
     elif not linked(unit, targets): bad.append(f"{unit}: declared enabled by component {comp}, but no enable link names it")
+for want, unit in named:
+    kind, texts = unit_texts(unit)
+    if want == "masked":
+        if kind != "masked": bad.append(f"{unit}: os/units says masked, the root has {'it unmasked' if kind == 'file' else 'no unit file'}")
+        continue
+    if kind != "file":
+        bad.append(f"{unit}: os/units says linked, the root has {'it masked' if kind == 'masked' else 'no unit file'}"); continue
+    kv = [x for t in texts for x in ini(t)]
+    targets = [w for s_, k, v in kv if s_ == "Install" and k in ("WantedBy", "RequiredBy") for w in v.split()]
+    if not targets or not linked(unit, targets): bad.append(f"{unit}: os/units says linked, but no enable link names it")
 for user, uid, group, gid in owners:
     if user not in uid_of: bad.append(f"data owner {user}: not in the root's /etc/passwd (pinned {uid}:{gid})")
     elif uid_of[user] != (uid, gid): bad.append(f"data owner {user}: the root has {uid_of[user][0]}:{uid_of[user][1]}, the pin is {uid}:{gid} (os/data-owners)")
@@ -246,7 +267,7 @@ for user, uid, group, gid in owners:
                 if idf != want: bad.append(f"{rel}: {line.strip()}: states id {idf} for {f[1]}, the image ships {want} (os/data-owners)")
 for x in bad: print(f"check-slot-users: BAD {x}")
 if bad: print(f"check-slot-users: FAILED ({len(bad)} finding(s)) in {erofs}"); sys.exit(1)
-print(f"check-slot-users: ok: {len(users)} users, {len(groups)} groups; every unit's and sysusers.d's names present; every preset-enabled unit linked" + (f"; {len(declared)} declared-enabled unit(s) linked, {len(owners)} data owner(s) at their pinned ids" if product else ""))
+print(f"check-slot-users: ok: {len(users)} users, {len(groups)} groups; every unit's and sysusers.d's names present; every preset-enabled unit linked" + (f"; {len(declared)} declared-enabled unit(s) linked, {len(owners)} data owner(s) at their pinned ids, {len(named)} os/units line(s) as stated" if product else ""))
 PY
   rm -rf "$tmp"
   return $rc
@@ -288,6 +309,7 @@ self_test() {
       wrong-gid) sed -i 's/^orion:x:901:$/orion:x:951:/' "$r/etc/group" ;;
       dyn-line) : ;;
       nolink-declared) rm "$E/multi-user.target.wants/orion-node.service"; printf 'disable orion-node.service\n' > "$r/usr/lib/systemd/system-preset/10-x.preset" ;;
+      unmask) rm "$E/masked.service" ;;
       nolemnos) sed -i '/^lemnos:/d' "$r/etc/passwd" "$r/etc/group"; sed -i '/lemnos/d' "$r/usr/lib/sysusers.d/x.conf" ;;
     esac; done
     mkfs.erofs "$tmp/$n.erofs" "$r" >/dev/null 2>&1
@@ -301,6 +323,7 @@ self_test() {
   printf 'version = 1\nname = "p"\n[components]\nc = "c/component.toml"\n[[images]]\nname = "img"\ncomponents = ["c"]\n' > "$tmp/prod/product.toml"
   printf 'version = 1\nname = "c"\n[[services]]\nunit = "lemnosd.service"\nenable = true\n[[services]]\nunit = "orion-node.service"\nenable = true\n' > "$tmp/prod/c/component.toml"
   printf '# t\nlemnos 900 lemnos 900  test\norion 901 orion 901  test\n' > "$tmp/prod/os/data-owners"
+  printf '# t\nlinked orion-node.service  test\nmasked masked.service  test\n' > "$tmp/prod/os/units"
   expect_fail_p() {  # <name> <text>   (the product mode)
     check "$tmp/$1.erofs" "$tmp/prod/product.toml" > "$tmp/$1.p.log" 2>&1 && { echo "check-slot-users: self-test: $1 passed (product)" >&2; rc=1; return; }
     grep -qF -- "$2" "$tmp/$1.p.log" || { echo "check-slot-users: self-test: $1 failed (product) without naming '$2'" >&2; cat "$tmp/$1.p.log" >&2; rc=1; }
@@ -309,6 +332,8 @@ self_test() {
   check "$tmp/good.erofs" "$tmp/prod/product.toml" > "$tmp/good.p.log" 2>&1 || { cat "$tmp/good.p.log" >&2; echo "check-slot-users: self-test: the good root failed with its product" >&2; rc=1; }
   mk wrongid wrong-id;    expect_fail_p wrongid "data owner lemnos: the root has 905:900, the pin is 900:900"
   mk wronggid wrong-gid;  expect_fail_p wronggid "data owner group orion: the root has gid 951, the pin is 901"
+  mk unmasked unmask;     expect_fail_p unmasked "masked.service: os/units says masked, the root has it unmasked"
+  mk unitnolink nolink;   expect_fail_p unitnolink "orion-node.service: os/units says linked, but no enable link names it"
   mk dynline dyn-line;    expect_fail_p dynline "states id - for lemnos, the image ships 900"
   mk undeclared nolink-declared; expect_fail_p undeclared "orion-node.service: declared enabled by component c, but no enable link names it"
   check "$tmp/good.erofs" > "$tmp/good.log" 2>&1 || { cat "$tmp/good.log" >&2; echo "check-slot-users: self-test: the good root failed" >&2; rc=1; }
@@ -318,7 +343,7 @@ self_test() {
   mk nolink nolink;       expect_fail nolink "orion-node.service: enabled by usr/lib/systemd/system-preset/80-x.preset, but no enable link names it"
   mk nolemnosd nolemnosd; expect_fail nolemnosd "lemnosd.service is not enabled"
   mk nolemnos nolemnos;   expect_fail nolemnos "user or group lemnos is missing"
-  [[ $rc -eq 0 ]] && echo "check-slot-users: self-test: passed (a unit's missing user (drop-in), a sysusers user missing, a missing membership, a preset-enabled unit without a link, lemnosd not enabled, no lemnos user and a preset-named template instance without a link each fail; with a product, a data owner at another uid or gid, a sysusers line stating no id for one, and a declared-enabled unit without a link fail; DynamicUser, %i, a masked unit, an alias, a DefaultInstance and a preset disable pass)"
+  [[ $rc -eq 0 ]] && echo "check-slot-users: self-test: passed (a unit's missing user (drop-in), a sysusers user missing, a missing membership, a preset-enabled unit without a link, lemnosd not enabled, no lemnos user and a preset-named template instance without a link each fail; with a product, a data owner at another uid or gid, a sysusers line stating no id for one, a declared-enabled unit without a link, an os/units unit unmasked or without its link fail; DynamicUser, %i, a masked unit, an alias, a DefaultInstance and a preset disable pass)"
   return $rc
 }
 

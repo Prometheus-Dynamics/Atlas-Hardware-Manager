@@ -2,7 +2,7 @@
 # leaves its logs for the support bundle (Orion).
 version = 1
 name = "raze-base-files"
-description = "Raze base system config: the bounded persistent journal, networkd enabled"
+description = "Raze base system config: the bounded persistent journal"
 
 [[install]]
 from = { file = "files/60-board-journald.conf" }
@@ -12,10 +12,11 @@ mode = "0644"
 # The USB network address of lemnos0 (serial-hash-v1) is the lemnos0-addressing component (its files moved there so the
 # bench and the Raze share one copy). Raze's product names that component.
 
-# networkd is built by the Raze fragment (BR2_PACKAGE_SYSTEMD_NETWORKD=y): on an allnoconfig base it is not built, so there is no unit to enable.
-[[services]]
-unit = "systemd-networkd.service"
-enable = true
+# networkd is NOT declared here (coordinator's ruling 2026-11-20): a component declares the units it ships. networkd
+# is the OS's (BR2_PACKAGE_SYSTEMD_NETWORKD=y): Buildroot's preset-all enables it (90-systemd.preset) inside the
+# fakeroot stage, and scripts/check-slot-users.sh holds the root to the presets. Declared, Gaia would follow its
+# Also=systemd-networkd-wait-online.service as `systemctl enable` does and refuse the Raze's deliberate wait-online mask
+# (os/post-build.sh). check-slot-users' product mode asserts both by name: networkd linked, wait-online masked.
 
 # No systemd watchdog here: lemnosd feeds the hardware watchdog (15 s by default, from the board file),
 # and it is the only opener of the device.
