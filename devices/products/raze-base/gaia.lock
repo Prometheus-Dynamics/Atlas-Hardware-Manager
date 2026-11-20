@@ -12,6 +12,12 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "c215f57527e17eab009e91f7d19f9c67112941b2"
 commit = "c215f57527e17eab009e91f7d19f9c67112941b2"
 
+[source."lemnos-module.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "c215f57527e17eab009e91f7d19f9c67112941b2"
+commit = "c215f57527e17eab009e91f7d19f9c67112941b2"
+
 [source."lemnos-orion.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
