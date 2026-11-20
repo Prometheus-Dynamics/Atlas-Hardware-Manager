@@ -21,6 +21,8 @@
 #     DefaultInstance=: Buildroot removes the tty1 getty link when its console getty is elsewhere);
 #   - lemnosd.service is in the root but not enabled, or user or group `lemnos` is missing: lemnosd owns the hardware
 #     watchdog slot-init arms (scripts/check-watchdog-owner.sh), so a lemnosd that does not start resets the board.
+#   - a unit's ReadWritePaths=, BindPaths= or BindReadOnlyPaths= names a /data path that is not in the image and that no
+#     unit ordered before it makes (systemd sets up the namespace before the unit's own commands, ExecStartPre=+ too).
 # With PRODUCT (the product.toml the root was built from), also:
 #   - a unit a component of the product's image declares enabled ([[services]] enable = true; Gaia links what the
 #     declarations say, not what the preset files say) has no enable link in the root;
@@ -196,6 +198,39 @@ if "lemnosd.service" in names:
         bad.append("lemnosd.service is not enabled: it owns the hardware watchdog slot-init arms, so the board would reset")
     if "lemnos" not in users or "lemnos" not in groups:
         bad.append("user or group lemnos is missing: lemnosd drops to it after its root phase (it owns the watchdog)")
+# 4b. a /data path in a unit's mount namespace must be there before the namespace is set up (coordinator's ruling
+# 2026-11-20, after the D1 rehearsal's orion-node: ReadWritePaths=/data/orion/node, made by its own `+` ExecStartPre,
+# failed at NAMESPACE on every start). systemd sets up ReadWritePaths=/BindPaths=/BindReadOnlyPaths= before any of the
+# unit's commands, so the unit cannot make its own: the path exists in the image, or a unit ordered before it (its
+# After=, or the other unit's Before=) makes exactly that path in one of its Exec lines (install -d or mkdir). A path
+# with the `-` prefix (missing is allowed) is skipped; /data itself is the image's mount point.
+def ordered_before(v, u, ukv):
+    if any(s_ == "Unit" and k == "After" and v in val.split() for s_, k, val in ukv): return True
+    vk, vt = unit_texts(v)
+    return vk == "file" and any(s_ == "Unit" and k == "Before" and u in val.split() for t in vt for s_, k, val in ini(t))
+def makes(v, path):
+    vk, vt = unit_texts(v)
+    if vk != "file": return False
+    tok = re.compile(r"(?<![\w/.-])" + re.escape(path) + r"/?(?![\w/.-])")
+    for t in vt:
+        for s_, k, val in ini(t):
+            if s_ == "Service" and k.startswith("Exec") and tok.search(val) and (re.search(r"\binstall\b.*\s-d\b", val) or re.search(r"\bmkdir\b", val)):
+                return True
+    return False
+for n in sorted(names):
+    kind, texts = unit_texts(n)
+    if kind != "file": continue
+    kv = [x for t in texts for x in ini(t)]
+    for s_, k, val in kv:
+        if s_ != "Service" or k not in ("ReadWritePaths", "BindPaths", "BindReadOnlyPaths"): continue
+        for w in val.split():
+            if w.startswith("-"): continue
+            path = w.lstrip("+").split(":", 1)[0].rstrip("/")
+            if path != "/data" and not path.startswith("/data/"): continue
+            if path == "/data" or os.path.lexists(os.path.join(root, path.lstrip("/"))): continue
+            if not any(v != n and ordered_before(v, n, kv) and makes(v, path) for v in sorted(names)):
+                bad.append(f"{n}: {k}={path} is set up before the unit's commands run, and no unit ordered before it makes "
+                           f"{path} (its own ExecStartPre cannot: the namespace comes first)")
 # 5. the product: its declared-enabled units and its data owners' fixed ids
 uid_of = {}
 for line in (rd("etc/passwd") or "").splitlines():
@@ -298,6 +333,11 @@ self_test() {
     printf 'disable off.service\nenable orion-node.service\n' > "$r/usr/lib/systemd/system-preset/80-x.preset"
     ln -s ../../../../usr/lib/systemd/system/lemnosd.service "$E/multi-user.target.wants/lemnosd.service"
     ln -s ../../../../usr/lib/systemd/system/orion-node.service "$E/multi-user.target.wants/orion-node.service"
+    # The /data namespace rule: maker.service makes /data/y, orion-node is ordered after it and lists /data/y (and an
+    # optional -/data/opt) as writable.
+    printf '[Service]\nType=oneshot\nExecStartPre=/bin/sh -c '"'"'install -d -m 0750 /data/y'"'"'\nExecStart=/bin/true\n' > "$S/maker.service"
+    mkdir -p "$E/orion-node.service.d"
+    printf '[Unit]\nAfter=maker.service\n[Service]\nReadWritePaths=/data/y -/data/opt\n' > "$E/orion-node.service.d/10-state.conf"
     for a in "$@"; do case $a in
       unit-user) mkdir -p "$E/orion-node.service.d"; printf '[Service]\nUser=nobody2\n' > "$E/orion-node.service.d/u.conf" ;;
       sysusers) printf 'u dbus - "System Message Bus"\n' >> "$r/usr/lib/sysusers.d/x.conf" ;;
@@ -310,6 +350,8 @@ self_test() {
       dyn-line) : ;;
       nolink-declared) rm "$E/multi-user.target.wants/orion-node.service"; printf 'disable orion-node.service\n' > "$r/usr/lib/systemd/system-preset/10-x.preset" ;;
       unmask) rm "$E/masked.service" ;;
+      rwp-self) printf '[Service]\nExecStartPre=+/bin/sh -c '"'"'install -d /data/z'"'"'\nReadWritePaths=/data/z\n' > "$E/orion-node.service.d/20-self.conf" ;;
+      rwp-unordered) printf '[Unit]\nAfter=\n[Service]\nReadWritePaths=/data/y\n' > "$E/orion-node.service.d/10-state.conf" ;;
       nolemnos) sed -i '/^lemnos:/d' "$r/etc/passwd" "$r/etc/group"; sed -i '/lemnos/d' "$r/usr/lib/sysusers.d/x.conf" ;;
     esac; done
     mkfs.erofs "$tmp/$n.erofs" "$r" >/dev/null 2>&1
@@ -333,6 +375,8 @@ self_test() {
   mk wrongid wrong-id;    expect_fail_p wrongid "data owner lemnos: the root has 905:900, the pin is 900:900"
   mk wronggid wrong-gid;  expect_fail_p wronggid "data owner group orion: the root has gid 951, the pin is 901"
   mk unmasked unmask;     expect_fail_p unmasked "masked.service: os/units says masked, the root has it unmasked"
+  mk rwpself rwp-self;           expect_fail rwpself "orion-node.service: ReadWritePaths=/data/z is set up before the unit's commands run, and no unit ordered before it makes /data/z"
+  mk rwpunordered rwp-unordered; expect_fail rwpunordered "orion-node.service: ReadWritePaths=/data/y is set up before the unit's commands run, and no unit ordered before it makes /data/y"
   mk unitnolink nolink;   expect_fail_p unitnolink "orion-node.service: os/units says linked, but no enable link names it"
   mk dynline dyn-line;    expect_fail_p dynline "states id - for lemnos, the image ships 900"
   mk undeclared nolink-declared; expect_fail_p undeclared "orion-node.service: declared enabled by component c, but no enable link names it"
@@ -343,7 +387,7 @@ self_test() {
   mk nolink nolink;       expect_fail nolink "orion-node.service: enabled by usr/lib/systemd/system-preset/80-x.preset, but no enable link names it"
   mk nolemnosd nolemnosd; expect_fail nolemnosd "lemnosd.service is not enabled"
   mk nolemnos nolemnos;   expect_fail nolemnos "user or group lemnos is missing"
-  [[ $rc -eq 0 ]] && echo "check-slot-users: self-test: passed (a unit's missing user (drop-in), a sysusers user missing, a missing membership, a preset-enabled unit without a link, lemnosd not enabled, no lemnos user and a preset-named template instance without a link each fail; with a product, a data owner at another uid or gid, a sysusers line stating no id for one, a declared-enabled unit without a link, an os/units unit unmasked or without its link fail; DynamicUser, %i, a masked unit, an alias, a DefaultInstance and a preset disable pass)"
+  [[ $rc -eq 0 ]] && echo "check-slot-users: self-test: passed (a unit's missing user (drop-in), a sysusers user missing, a missing membership, a preset-enabled unit without a link, lemnosd not enabled, no lemnos user and a preset-named template instance without a link each fail; with a product, a data owner at another uid or gid, a sysusers line stating no id for one, a declared-enabled unit without a link, an os/units unit unmasked or without its link fail; a /data ReadWritePaths= made only by the unit itself, or by a unit not ordered before it, fails, and one made by a unit ordered before it, or with the - prefix, passes; DynamicUser, %i, a masked unit, an alias, a DefaultInstance and a preset disable pass)"
   return $rc
 }
 
