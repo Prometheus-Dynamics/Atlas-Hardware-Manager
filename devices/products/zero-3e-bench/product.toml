@@ -11,7 +11,7 @@
 # PINS (Z2): the Lemnos components here are this product's own copies at Lemnos next c215f575 (the Raze image's final Lemnos rev, coordinator 2026-11-18; with Orion 671d29d).
 # The root Cargo.toml lemnos-slot-store rev is also c215f575, so the one-rev rule passes. The shared devices/components/lemnos*
 # (the Raze's pin) are unchanged.
-# Gaia: 9efa797f (devices/gaia.lock, as next).
+# Gaia: as devices/gaia.lock pins it (Gaia next).
 version = 1
 name = "zero-3e-bench"
 description = "Radxa ZERO 3E bench OS: U-Boot slot form (Lemnos BB1b), USB gadget and Ethernet, mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."

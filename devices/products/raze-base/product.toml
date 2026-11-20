@@ -9,7 +9,7 @@
 # Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
 # (orion-bin); the Raze's board file and the base files.
 #
-# THE PINS: Gaia is pinned at a6299c62 (devices/gaia.lock; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
+# THE PINS: Gaia is pinned in devices/gaia.lock (1c2b9dc9 since D1; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-disk` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
 # Lemnos next c215f575: the FINAL Lemnos rev for this image, declared by the coordinator 2026-11-18 (with Orion 671d29d).
 # It carries data-partition (M36f), HEALTH-TCP and boot-partition --add-to; its kernel module is unchanged since efcc2106.
