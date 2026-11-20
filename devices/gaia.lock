@@ -1,6 +1,11 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 6efa33ed (D1, 2026-11-20): Gaia next with DO 32 COMPONENT-ACCOUNTS (gaia.tree.accounts and gaia.tree.services:
+# the components' [[users]], [[groups]] and [[services]] declarations make the root's accounts and enable links; a
+# fixed-id collision or a declared-enabled unit with no unit file or [Install] fails the build by name), the runner's
+# --no-watchdog (f4187cf9). No os-buildroot KEY_VERSION bump (still 7): the root merge, the EROFS and what follows them
+# rebuild, the Buildroot steps do not. Before: 171ca25f.
 # Moved to 171ca25f (D1, 2026-11-20): Gaia next with FAKEROOT-OUTPUT (os-buildroot KEY_VERSION 7: the root filesystem is
 # Buildroot's rootfs.tar from after its fakeroot stage, so mkusers, preset-all, the device tables and post-fakeroot
 # scripts reach the slot; crates/nodes/os-buildroot/src/lib.rs:903-913), the 64 MiB multi-block flash image
@@ -11,4 +16,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "171ca25f0d3d3a80f890a1f83620d843d1ab1b7d"
+commit = "6efa33edc8a2e8a4594e36fbdb6a488898cd7a2d"
