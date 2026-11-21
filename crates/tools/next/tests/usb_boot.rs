@@ -745,56 +745,146 @@ async fn bay_exact_uploads_the_image_byte_for_byte_with_the_ramdisk_config() {
 }
 
 #[tokio::test]
-async fn a_kernel_less_partition_is_refused_by_name_unless_it_is_the_control() {
+async fn a_kernel_less_partition_is_refused_by_name() {
+    // Step 0(a): the PC-side refusal by name is where a missing kernel is caught.
     let boot = boot_with_firmware();
     let mut files = lemnos_partition("slot-a", &boot);
     files.retain(|(p, _)| p != "slots/bay0/kernel8.img");
     let case = case_with(boot.clone(), files);
-    // Step 0(a): refused by name, nothing sent.
-    let (code, out) = usb_boot(&case, &["--bay-exact"]).await;
-    assert_eq!(code, 1, "{out}");
-    assert!(out.contains("kernel8.img is missing from bay0"), "{out}");
-    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
-    // The control needs the BAY-EXACT form.
-    let (code, out) = usb_boot(&case, &["--control", "kernel-less"]).await;
-    assert_eq!(code, 1, "{out}");
-    assert!(out.contains("needs --bay-exact"), "{out}");
-    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
-    // As the control it is served, and labelled.
-    let (code, out) = usb_boot(
-        &case,
-        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
-    )
-    .await;
-    assert_eq!(code, 0, "{out}");
-    assert!(out.contains("CONTROL kernel-less"), "{out}");
+    for extra in [&["--dry-run"][..], &["--bay-exact"][..]] {
+        let (code, out) = usb_boot(&case, extra).await;
+        assert_eq!(code, 1, "{out}");
+        assert!(out.contains("kernel8.img is missing from bay0"), "{out}");
+    }
     assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
 }
 
-#[tokio::test]
-async fn the_control_refuses_a_partition_that_has_its_kernel_or_fails_otherwise() {
+// Control C: run A's image with only the Nov 20 padding put back.
+
+/// The partition with every bay member stored at its exact length (`pad` = None: run A's fixed
+/// layout) or padded by `pad` bytes, zeros and spaces for cmdline.txt, as Lemnos padded on Nov 20.
+fn bay_partition(
+    slot: &str,
+    boot: &[(String, Vec<u8>)],
+    pad: Option<(usize, u8)>,
+) -> Vec<(String, Vec<u8>)> {
+    let mut files = lemnos_partition(slot, boot);
+    for (path, bytes) in files.iter_mut() {
+        let Some((_, content)) = boot
+            .iter()
+            .find(|(role, _)| *path == format!("slots/bay0/{role}"))
+        else {
+            continue;
+        };
+        *bytes = content.clone();
+        if let Some((n, zero_byte)) = pad {
+            let byte = if path.ends_with("cmdline.txt") {
+                b' '
+            } else {
+                zero_byte
+            };
+            bytes.resize(content.len() + n, byte);
+        }
+    }
+    files
+}
+
+/// A case whose partition is the control, with the base (run A's partition) written beside it.
+fn control_case(control: Vec<(String, Vec<u8>)>, base: &[(String, Vec<u8>)]) -> (Case, PathBuf) {
     let boot = boot_with_firmware();
-    let whole = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let case = case_with(boot, control);
+    let dir = case.bootfiles.parent().expect("scratch").join("a");
+    std::fs::create_dir_all(&dir).expect("a dir");
+    let base = boot_partition(&dir, base);
+    (case, base)
+}
+
+async fn control(case: &Case, base: &Path) -> (i32, String) {
+    let base = base.display().to_string();
+    usb_boot(
+        case,
+        &[
+            "--dry-run",
+            "--bay-exact",
+            "--control",
+            "padded",
+            "--base",
+            &base,
+        ],
+    )
+    .await
+}
+
+#[tokio::test]
+async fn the_padded_control_is_the_base_with_only_its_bay_padded() {
+    let boot = boot_with_firmware();
+    let a = bay_partition("slot-a", &boot, None);
+    let c = bay_partition("slot-a", &boot, Some((4096, 0)));
+    let (case, base) = control_case(c, &a);
+    let (code, out) = control(&case, &base).await;
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("CONTROL C, padded"), "{out}");
+    // The base itself passes as run A, plain BAY-EXACT.
+    let (case_a, _) = control_case(a.clone(), &a);
+    let (code, out) = usb_boot(&case_a, &["--dry-run", "--bay-exact"]).await;
+    assert_eq!(code, 0, "{out}");
+    assert!(sent(&case).is_empty() && sent(&case_a).is_empty());
+}
+
+#[tokio::test]
+async fn the_padded_control_refuses_a_second_difference() {
+    let boot = boot_with_firmware();
+    let a = bay_partition("slot-a", &boot, None);
+    // Padded AND a changed config.txt line.
+    let mut c = bay_partition("slot-a", &boot, Some((4096, 0)));
+    c[1].1 = b"os_prefix=slots/bay0/\n# another line\n".to_vec();
+    let (case, base) = control_case(c, &a);
+    let (code, out) = control(&case, &base).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("default.txt differs from the base's"), "{out}");
+    // Padded with bytes that are not one repeated zero or space.
+    let c = bay_partition("slot-a", &boot, Some((4096, 0xff)));
+    let (case, base) = control_case(c, &a);
+    let (code, out) = control(&case, &base).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("padded with bytes other than"), "{out}");
+}
+
+#[tokio::test]
+async fn the_padded_control_refuses_no_padding_and_a_padded_base() {
+    let boot = boot_with_firmware();
+    let a = bay_partition("slot-a", &boot, None);
+    let (case, base) = control_case(a.clone(), &a);
+    let (code, out) = control(&case, &base).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("the control is the base itself"), "{out}");
+    // A padded base is not run A's exact layout.
+    let padded = bay_partition("slot-a", &boot, Some((4096, 0)));
+    let more = bay_partition("slot-a", &boot, Some((8192, 0)));
+    let (case, base) = control_case(more, &padded);
+    let (code, out) = control(&case, &base).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("the base must be the exact layout"), "{out}");
+}
+
+#[tokio::test]
+async fn the_padded_control_needs_its_base_and_the_bay_exact_form() {
+    let boot = boot_with_firmware();
+    let a = bay_partition("slot-a", &boot, None);
+    let c = bay_partition("slot-a", &boot, Some((4096, 0)));
+    let (case, base) = control_case(c, &a);
+    let (code, out) = usb_boot(&case, &["--dry-run", "--bay-exact", "--control", "padded"]).await;
+    assert_ne!(code, 0, "{out}");
+    assert!(out.contains("needs --base"), "{out}");
+    let base = base.display().to_string();
     let (code, out) = usb_boot(
-        &whole,
-        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
+        &case,
+        &["--dry-run", "--control", "padded", "--base", &base],
     )
     .await;
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("and it has it"), "{out}");
-    // Kernel-less AND without the ramoops line: the control does not cover the second fault.
-    let mut files = lemnos_partition("slot-a", &boot);
-    files.retain(|(p, _)| p != "slots/bay0/kernel8.img");
-    files[0].1 = b"include default.txt\n".to_vec();
-    let both = case_with(boot, files);
-    let (code, out) = usb_boot(
-        &both,
-        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
-    )
-    .await;
-    assert_eq!(code, 1, "{out}");
-    assert!(out.contains("fails other checks too"), "{out}");
-    assert!(out.contains("ramoops"), "{out}");
+    assert!(out.contains("--control padded needs --bay-exact"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
 }
 
 // `--serve-dir`: the checked BAY-EXACT set written for Raspberry Pi's `rpiboot -d` on this PC.

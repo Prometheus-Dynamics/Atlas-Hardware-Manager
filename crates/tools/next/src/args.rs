@@ -86,7 +86,7 @@ pub struct UsbBootOptions {
     pub dry_run: bool,
     /// `--bay-exact`: serve the partition image byte for byte as `boot.img` (boot_ramdisk=1).
     pub bay_exact: bool,
-    /// `--control kernel-less`: a control run (needs `--bay-exact`).
+    /// `--control padded --base <file>`: a control run (needs `--bay-exact`).
     pub control: Option<crate::usb_boot::Control>,
     /// `--serve-dir <dir>`: write the checked BAY-EXACT set and the Pi's second stage into a new
     /// directory for Raspberry Pi's `rpiboot -d` on this PC, instead of sending it to an agent.
@@ -193,8 +193,9 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
     let mut timeout_s = None;
     let mut dry_run = false;
     let mut bay_exact = false;
-    let mut control = None;
     let mut serve_dir = None;
+    let mut control_kind = None;
+    let mut base = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let slot = match arg.as_str() {
@@ -207,18 +208,8 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
                 bay_exact = true;
                 continue;
             }
-            "--control" => {
-                match rest.next().map(String::as_str) {
-                    Some("kernel-less") => control = Some(crate::usb_boot::Control::KernelLess),
-                    Some(other) => {
-                        return Parsed::Usage(format!(
-                            "--control takes kernel-less (got {other:?})"
-                        ));
-                    }
-                    None => return Parsed::Usage("--control needs a value".into()),
-                }
-                continue;
-            }
+            "--control" => &mut control_kind,
+            "--base" => &mut base,
             "--agent" => &mut agent,
             "--port" => &mut port,
             "--bundle" => &mut bundle,
@@ -238,6 +229,19 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
         None => None,
         Some(Ok(seconds)) => Some(seconds),
         Some(Err(_)) => return Parsed::Usage("--timeout takes whole seconds".into()),
+    };
+    let control = match (control_kind.as_deref(), base) {
+        (None, None) => None,
+        (Some("padded"), Some(base)) => Some(crate::usb_boot::Control::Padded {
+            base: PathBuf::from(base),
+        }),
+        (Some("padded"), None) => {
+            return Parsed::Usage("--control padded needs --base <A's boot partition>".into());
+        }
+        (Some(other), _) => {
+            return Parsed::Usage(format!("--control takes padded (got {other:?})"));
+        }
+        (None, Some(_)) => return Parsed::Usage("--base is for --control padded".into()),
     };
     match (agent.is_some() || serve_dir.is_some(), port, bundle, boot_partition, pubkey) {
         (true, Some(port), Some(bundle), Some(boot_partition), Some(pubkey)) => {

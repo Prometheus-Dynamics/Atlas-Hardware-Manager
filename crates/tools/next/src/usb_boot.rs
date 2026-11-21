@@ -18,8 +18,9 @@
 //! length. The BAY-EXACT form (`--bay-exact`) serves the partition image byte for byte as
 //! `boot.img` with an outer `config.txt` of `boot_ramdisk=1`, so the second stage's own FAT reader
 //! walks the image as built, padding included. Both add `bootcode5.bin` (the Pi's second stage,
-//! from the flasher files). `--control kernel-less` (BAY-EXACT only) serves a partition whose slot's
-//! bay lacks kernel8.img and passes every other check, for the bench's control run. The job's events
+//! from the flasher files). `--control padded --base <A's partition>` (BAY-EXACT only) serves option R's
+//! control C: A's image with only its slot's bay padded back as the Nov 20 layout padded it, refused
+//! on any second difference. The job's events
 //! are followed to `boot-end`.
 //!
 //! `--serve-dir <dir>` (BAY-EXACT only) serves from this PC instead of an agent: it writes the checked
@@ -85,16 +86,18 @@ pub enum Form {
     Tree,
     /// The partition image byte for byte as `boot.img`, with an outer `boot_ramdisk=1` config.txt.
     BayExact,
-    /// As `BayExact`, a control whose slot's bay lacks kernel8.img on purpose.
-    KernelLess,
+    /// As `BayExact`, the padded control: A's image with only the bay padding put back.
+    Padded,
 }
 
-/// A control run: a partition served although it fails one named check.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A control run, served beside the real test to read its result.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Control {
-    /// The slot's bay lacks kernel8.img; every other check passes. The firmware's not-found for it
-    /// must show in the job's events.
-    KernelLess,
+    /// Option R's control C: the Nov 20 fault and nothing else. The partition is `base` (run A's,
+    /// whose bay members are stored at their exact lengths) with only the slot's bay members padded
+    /// back to fixed sizes, each with one pad byte (zeros, or spaces for cmdline.txt) as the Nov 20
+    /// layout padded them; the image is the same size. Any second difference is refused.
+    Padded { base: PathBuf },
 }
 
 /// The BAY-EXACT form's file names: the image, loaded by the second stage as a FAT ramdisk.
@@ -127,8 +130,8 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         .map_err(|error| vec![format!("{error}: nothing was sent")])?;
 
     let mut refusals = Vec::new();
-    // The bay files a kernel-less control may lack, and nothing else: see `Control::KernelLess`.
-    let mut missing_kernel = false;
+    // The slot's bay members (path under the set, stored length), for the padded control.
+    let mut bay_members: Vec<(String, u64)> = Vec::new();
     for group in fat::collisions(&tree) {
         refusals.push(format!(
             "{} collide ignoring case on the boot partition (the firmware's requests would match both): nothing was sent",
@@ -161,6 +164,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                 .map(|(path, (len, hash))| ((*path).to_string(), *len, *hash))
                 .chain(info.firmware.iter().cloned())
                 .collect();
+            bay_members = members.iter().map(|(p, len, _)| (p.clone(), *len)).collect();
             let listed: BTreeSet<&str> = manifest.boot.files.keys().map(String::as_str).collect();
             let recorded: BTreeSet<&str> = members.iter().map(|(p, _, _)| p.as_str()).collect();
             if listed != recorded {
@@ -174,9 +178,6 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                 };
                 let wanted = format!("slots/bay{set}/{path}");
                 let Some((real, bytes)) = fat::find(&tree, &wanted) else {
-                    if path == fat::BAY_PATHS[0] {
-                        missing_kernel = true;
-                    }
                     refusals.push(format!(
                         "{path} is missing from bay{set} of the boot partition (bundle SHA-256 {bundle_sha}): nothing was sent"
                     ));
@@ -255,7 +256,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         }
     }
 
-    let form = match opts.control {
+    let form = match &opts.control {
         None => {
             if !refusals.is_empty() {
                 return Err(refusals);
@@ -266,35 +267,30 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                 Form::Tree
             }
         }
-        Some(Control::KernelLess) => {
-            // A control serves a partition that must fail in exactly one known way: its slot's
-            // bay lacks kernel8.img and every other check passes. Anything else is refused.
+        Some(Control::Padded { base }) => {
             if !opts.bay_exact {
                 return Err(vec![
-                    "--control kernel-less needs --bay-exact (the control serves the partition image as it is): nothing was sent".into(),
+                    "--control padded needs --bay-exact (the control serves the partition image as it is): nothing was sent".into(),
                 ]);
             }
-            let kernel_line =
-                |r: &String| r.starts_with(&format!("{} is missing from bay", fat::BAY_PATHS[0]));
-            let other: Vec<String> = refusals
-                .iter()
-                .filter(|r| !kernel_line(r))
-                .cloned()
-                .collect();
-            if !missing_kernel || !other.is_empty() {
-                let mut out = vec![format!(
-                    "--control kernel-less: the partition must lack only {} in its slot's bay, and it {}: nothing was sent",
-                    fat::BAY_PATHS[0],
-                    if missing_kernel {
-                        "fails other checks too"
-                    } else {
-                        "has it"
-                    }
-                )];
-                out.extend(other);
+            // The control must pass every check A passes (padding is past each member's stored
+            // length, so the record and the bundle still agree), and differ from A only by padding.
+            let mut problems = refusals.clone();
+            problems.extend(padded_differences(
+                base,
+                &image,
+                &tree,
+                bay_set,
+                &bay_members,
+            ));
+            if !problems.is_empty() {
+                let mut out = vec![
+                    "--control padded: the partition must be the base's with only its slot's bay padded back, and it is not: nothing was sent".to_string(),
+                ];
+                out.extend(problems);
                 return Err(out);
             }
-            Form::KernelLess
+            Form::Padded
         }
     };
 
@@ -330,8 +326,8 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                 bytes: image,
                 role: format!(
                     "the boot partition image as built, {}",
-                    if form == Form::KernelLess {
-                        "CONTROL: its slot's bay has no kernel8.img"
+                    if form == Form::Padded {
+                        "CONTROL C: the base image with only its slot's bay padded back"
                     } else {
                         "loaded as a ramdisk"
                     }
@@ -369,6 +365,85 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         form,
         files,
     })
+}
+
+/// How the padded control `image` (with its `tree`) differs from the base partition at `base`,
+/// beyond the one allowed difference. Empty when it is exactly the base with only the slot's bay
+/// members (`bay_set`, `members` with their stored lengths) padded: each padded member is the base's
+/// bytes (stored at exactly its length in the base) followed by one repeated pad byte, zero or space,
+/// and at least one member is padded. The image must be the base image's size, so A and C load the
+/// same number of bytes.
+fn padded_differences(
+    base: &std::path::Path,
+    image: &[u8],
+    tree: &fat::Tree,
+    bay_set: usize,
+    members: &[(String, u64)],
+) -> Vec<String> {
+    let base_image = match std::fs::read(base) {
+        Ok(bytes) => bytes,
+        Err(error) => return vec![format!("the base partition {}: {error}", base.display())],
+    };
+    if base_image.len() != image.len() {
+        return vec![format!(
+            "the control image is {} bytes and the base's {}: A and C must load the same size",
+            image.len(),
+            base_image.len()
+        )];
+    }
+    let base_tree = match fat::read_tree(base_image) {
+        Ok(tree) => tree,
+        Err(error) => return vec![format!("the base partition: {error}")],
+    };
+    let lower = |t: &fat::Tree| -> BTreeMap<String, Vec<u8>> {
+        t.iter()
+            .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+            .collect()
+    };
+    let (ours, theirs) = (lower(tree), lower(&base_tree));
+    let mut found = Vec::new();
+    let names: BTreeSet<&String> = ours.keys().chain(theirs.keys()).collect();
+    let mut padded = 0;
+    for name in names {
+        let member = members
+            .iter()
+            .find(|(path, _)| name == &format!("slots/bay{bay_set}/{}", path.to_ascii_lowercase()));
+        match (ours.get(name), theirs.get(name), member) {
+            (Some(c), Some(a), _) if c == a => {}
+            (Some(c), Some(a), Some((path, len))) => {
+                let stored = usize::try_from(*len).unwrap_or(usize::MAX);
+                if a.len() != stored {
+                    found.push(format!(
+                        "{path} in the base's bay{bay_set} is {} bytes, not its stored {len}: the base must be the exact layout",
+                        a.len()
+                    ));
+                } else if c.len() <= a.len() || !c.starts_with(a) {
+                    found.push(format!(
+                        "{path} in bay{bay_set} differs from the base's beyond padding"
+                    ));
+                } else {
+                    let pad = &c[a.len()..];
+                    if !(pad.iter().all(|&b| b == 0) || pad.iter().all(|&b| b == b' ')) {
+                        found.push(format!(
+                            "{path} in bay{bay_set} is padded with bytes other than one repeated zero or space"
+                        ));
+                    } else {
+                        padded += 1;
+                    }
+                }
+            }
+            (Some(_), Some(_), None) => found.push(format!("{name} differs from the base's")),
+            (Some(_), None, _) => found.push(format!("{name} is not in the base")),
+            (None, Some(_), _) => found.push(format!("{name} is missing from the control")),
+            (None, None, _) => {}
+        }
+    }
+    if found.is_empty() && padded == 0 {
+        found.push(format!(
+            "no member of bay{bay_set} is padded: the control is the base itself"
+        ));
+    }
+    found
 }
 
 /// The folder rpiboot reads a BCM2712's second stage from, under its `-d` directory.
@@ -601,7 +676,9 @@ pub fn write_plan<W: Write>(plan: &Plan, opts: &UsbBootOptions, out: &mut W) {
     let form = match plan.form {
         Form::Tree => "tree: the partition's files by name, bay files at their stored length",
         Form::BayExact => "BAY-EXACT: the partition image as boot.img, boot_ramdisk=1",
-        Form::KernelLess => "CONTROL kernel-less (BAY-EXACT): its slot's bay has no kernel8.img",
+        Form::Padded => {
+            "CONTROL C, padded (BAY-EXACT): the base image with only its slot's bay padded back"
+        }
     };
     let _ = writeln!(out, "  form       {form}");
     let _ = writeln!(
