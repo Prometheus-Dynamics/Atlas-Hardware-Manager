@@ -63,8 +63,9 @@ mode = "0644"
 # The users Lemnos's units run as, made at build time by Gaia from these declarations: the image's root is read-only,
 # so systemd-sysusers cannot add them at boot. FIXED IDS (coordinator's ruling 2026-11-20): any user that can own files
 # on /data has a fixed id, so an image update never orphans its files. lemnos 900:900 is the id in 993's /etc/passwd
-# and /etc/group (Raze #2's running image, read from its root; route A keeps 993's /data); lemnos-orion 902:902 is
-# dev's "the next 902" (devices/common/board-os data-owners at Atlas 675bd03f): 993 has no such user. The product's
+# and /etc/group (Raze #2's running image, read from its root; route A keeps 993's /data); lemnos-orion 903:903 is
+# Atlas's choice (Lemnos's packaging leaves the bridge's id to the OS): 993 has no such user, and 902 is Orion's
+# orion-comm since Orion C52 (its sysusers file fixes it). Moved from 902 in pin move 1, before any board ran it. The product's
 # os/data-owners table repeats them with the reason, and scripts/check-slot-users.sh holds the root to it.
 [[groups]]
 name = "lemnos"
@@ -72,7 +73,7 @@ gid = 900
 
 [[groups]]
 name = "lemnos-orion"
-gid = 902
+gid = 903
 
 [[users]]
 name = "lemnos"
@@ -81,7 +82,7 @@ group = "lemnos"
 
 [[users]]
 name = "lemnos-orion"
-uid = 902
+uid = 903
 group = "lemnos-orion"
 groups = ["lemnos", "orion"]
 

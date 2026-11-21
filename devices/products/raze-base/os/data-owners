@@ -7,4 +7,5 @@
 # /etc/group, read 2026-11-20): route A keeps 993's /data, so these must equal 993's.
 lemnos       900 lemnos       900  lemnosd drops to it (components/lemnos); 993's lemnos is 900:900
 orion        901 orion        901  orion-node runs as it and owns /data/orion/node (components/orion); 993's orion is 901:901
-lemnos-orion 902 lemnos-orion 902  lemnos-orion's bridge (components/lemnos); not on 993, so dev's "the next 902" (Atlas 675bd03f data-owners)
+orion-comm   902 orion-comm   902  the comm core runs as it and owns /data/orion (components/orion); Orion's sysusers fixes 902 (C52); not on 993
+lemnos-orion 903 lemnos-orion 903  lemnos-orion's bridge (components/lemnos); not on 993; Atlas's choice, 902 being Orion's orion-comm

@@ -1,5 +1,6 @@
-# Orion's board image: package orion-bin (binary orion), run as two services from Orion's packaging
-# (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
+# Orion's board image: package orion-bin (binary orion), run as Orion's packaging runs it (C52, in the pin since
+# d4010a45): orion comm as orion-comm (uid 902, group orion, CAP_SYS_TIME and CAP_NET_BIND_SERVICE only), orion node as
+# orion, and the login helper (orion-login.socket, root, socket-activated), the one process that becomes another user. Board-neutral. Built from Orion at
 # d4010a453a5399dc6007f03a6dfc32c8d39d5d2f (Orion next, I51: its shm crates pinned at Lemnos 0d37cc55; pin move 1). The
 # workspace pins the same rev (Cargo.toml), so the board's Orion and the PC's speak one ring layout.
 #
@@ -45,6 +46,17 @@ mode = "0755"
 [[install]]
 from = { source = "src", path = "packaging/systemd/orion-comm.service" }
 to = "/usr/lib/systemd/system/orion-comm.service"
+mode = "0644"
+
+# The login helper (Orion C52): its socket (orion-comm's alone, mode 0600) and the service it starts.
+[[install]]
+from = { source = "src", path = "packaging/systemd/orion-login.socket" }
+to = "/usr/lib/systemd/system/orion-login.socket"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/orion-login.service" }
+to = "/usr/lib/systemd/system/orion-login.service"
 mode = "0644"
 
 [[install]]
@@ -100,10 +112,27 @@ group = "orion"
 groups = ["dialout"]
 home = "/var/lib/orion"
 
+# The comm core's user, uid and gid 902 (Orion's sysusers file since C52: `u orion-comm 902`, `m orion-comm orion`,
+# `m orion-comm dialout`). 902 is login.comm_user's default, the one uid the login helper answers.
+[[groups]]
+name = "orion-comm"
+gid = 902
+
+[[users]]
+name = "orion-comm"
+uid = 902
+group = "orion-comm"
+groups = ["orion", "dialout"]
+home = "/var/lib/orion"
+
 [[services]]
 unit = "orion-comm.service"
 enable = true
 
 [[services]]
 unit = "orion-node.service"
+enable = true
+
+[[services]]
+unit = "orion-login.socket"
 enable = true

@@ -4,6 +4,8 @@
 # The product's default is Orion's own unit, unchanged: at Orion 455a956 (this image's pin) it already runs as root; from
 # Orion 8e37a8a4 it runs as orion-comm with a capability bound, NoNewPrivileges and namespace limits. This drop-in
 # undoes all of that for the bench image and is the one place the bench differs; a product image leaves it out.
+# Since Orion C52 (d4010a45) the unit also names the login helper, which answers orion-comm alone: the drop-in unsets
+# ORION_LOGIN_HELPER, so the root comm core starts logins itself (the helper's socket stays, unused on the bench).
 # Security stays off on the bench image (orion.conf has no `security = on`). Untested on board.
 version = 1
 name = "bench-comm-root"
