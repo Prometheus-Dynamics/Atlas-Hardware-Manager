@@ -11,6 +11,7 @@ from = { file = "files/10-bringup-ethernet.network" }
 to = "/etc/systemd/network/10-bringup-ethernet.network"
 mode = "0644"
 
-[[services]]
-unit = "systemd-networkd.service"
-enable = true
+# networkd is NOT declared here (coordinator's ruling 2026-11-20): a component declares the units it ships. networkd
+# is the OS's (BR2_PACKAGE_SYSTEMD_NETWORKD=y): Buildroot's preset-all enables it (90-systemd.preset) inside the
+# fakeroot stage, and scripts/check-slot-users.sh holds the root to the presets. Declared, Gaia would follow its
+# Also=systemd-networkd-wait-online.service as `systemctl enable` does.

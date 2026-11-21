@@ -13,17 +13,23 @@
 //! - Dictionary: at most [`DICT_CEILING`] (8 MiB) per block. A board may lower its
 //!   own limit; [`dictionary_within`] compares the value, the comparison is the
 //!   caller's.
-//! - Blocks: the image stream may have many blocks, up to [`MAX_BLOCKS`] (8192). Gaia
-//!   writes 64 MiB blocks (`xz -6 --check=crc64 --block-size=64MiB -T<N>`), so an image
-//!   of `size` bytes has `ceil(size / 64 MiB)` blocks, and 8192 blocks is reached at
-//!   512 GiB. A change to either number, here or in Gaia's writer, must be noticed:
-//!   the `gaia_block_count_arithmetic_matches_the_block_limit` test checks it.
+//! - Blocks: the image stream may have many blocks, up to [`MAX_BLOCKS`] (8192). Gaia's
+//!   `gaia.flash.image` (Gaia next 94886210, crates/nodes/flash-image) writes the
+//!   equivalent of `xz -6 --check=crc64 --block-size=64MiB -T<n>` with liblzma's
+//!   multithreaded encoder: one block per 64 MiB of image, sizes in every block header,
+//!   the block size fixed so the bytes do not depend on the thread count. An image of
+//!   `size` bytes has `ceil(size / 64 MiB)` blocks, and 8192 blocks is reached at
+//!   512 GiB; Gaia refuses more after writing. A change to either number, here or in
+//!   Gaia's writer, must be noticed: the `gaia_block_count_arithmetic_matches_the_block_limit`
+//!   test checks it, and tests/gaia_multi_block.rs reads Gaia's own four-block files,
+//!   unsigned and signed.
 //! - Decoder memory: the dictionary plus [`DECODER_OVERHEAD`] (256 KiB). The
 //!   decoder is liblzma, with that bound as its memory limit.
-//! - Filters: LZMA2 only. Checks: none, CRC-32, CRC-64, SHA-256 (all four).
+//! - Filters: LZMA2 only. Checks: none, CRC-32, CRC-64, SHA-256 (all four; Gaia writes
+//!   CRC-64 only and refuses its own file with another).
 //! - Padding: between the two streams, zero bytes in a multiple of four (the xz
-//!   stream padding), at most [`MAX_PADDING`]. Padding after the last stream is
-//!   refused: trailing bytes are not a stream.
+//!   stream padding), at most [`MAX_PADDING`]; Gaia writes none. Padding after the
+//!   last stream is refused: trailing bytes are not a stream.
 //! - The record stream must decode to at most [`RECORD_MAX`] bytes; whether they
 //!   are exactly one record is the caller's, which parses them.
 //!

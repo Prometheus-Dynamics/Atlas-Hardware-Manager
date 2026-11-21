@@ -1,4 +1,4 @@
-# Lemnos's packaging for an image with systemd, at Lemnos next f4a295c6 (I5j merged): the units, sysusers, udev rules
+# Lemnos's packaging for an image with systemd, at Lemnos next f4a295c6 (I5j merged): the units, udev rules
 # and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
 # setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
@@ -6,15 +6,15 @@
 # lemnos-slot-init), one cargo package each. Not installed here, and why:
 #   - init/S50lemnosd, init/S51lemnos-orion, init/mdev.conf.fragment: BusyBox init, for an image
 #     without systemd (this image has systemd).
-#   - systemd/lemnos-module.conf: loads lemnos.ko, which this kernel does not build yet (the
-#     generator's modprobe.d output is the module's options; see the Raze board component).
+#   - systemd/lemnos.conf: the sysusers file; the users are this file's [[users]] declarations, with fixed ids
+#     (see there).
 version = 1
 name = "lemnos"
 description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES), coordinator 2026-11-20
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
@@ -26,10 +26,9 @@ from = { source = "src", path = "packaging/systemd/lemnos-orion.service" }
 to = "/usr/lib/systemd/system/lemnos-orion.service"
 mode = "0644"
 
-[[install]]
-from = { source = "src", path = "packaging/systemd/lemnos.conf" }
-to = "/usr/lib/sysusers.d/lemnos.conf"
-mode = "0644"
+# Not installed: Lemnos's sysusers file (packaging/systemd/lemnos.conf). Gaia makes the users from the [[users]] and
+# [[groups]] declarations below (DO 32), and that file states no fixed ids (`u lemnos -`), which would disagree with
+# the ids the image ships (no file on the image states an id other than the one that ships: coordinator 2026-11-20).
 
 [[install]]
 from = { source = "src", path = "packaging/udev/70-lemnos.rules" }
@@ -46,6 +45,14 @@ from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
 to = "/etc/lemnos/lemnos-orion.env"
 mode = "0644"
 
+# lemnos.ko is loaded at boot (Lemnos packaging/files.txt: `systemd,kmod`, an image that ships lemnos.ko): the module is
+# built by components/lemnos-module, which every product listing this component lists too (the Raze). Its options
+# (owned= and the rest) are the generated modprobe.d file the Raze board component installs.
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-module.conf" }
+to = "/usr/lib/modules-load.d/lemnos.conf"
+mode = "0644"
+
 # The Raze's USB link for the bridge (Atlas, not Lemnos's example): LEMNOS_ORION_LINKS=gadget=orion-link, as a drop-in on
 # lemnos-orion.service. MOVES to the generated output at Lemnos R1j; then this drop-in goes.
 [[install]]
@@ -53,21 +60,28 @@ from = { file = "files/lemnos-orion-links.conf" }
 to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
 mode = "0644"
 
-# The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the
-# image's root is read-only, so systemd-sysusers cannot add them at boot. No fixed ids (Lemnos's
-# sysusers file leaves them to the system).
+# The users Lemnos's units run as, made at build time by Gaia from these declarations: the image's root is read-only,
+# so systemd-sysusers cannot add them at boot. FIXED IDS (coordinator's ruling 2026-11-20): any user that can own files
+# on /data has a fixed id, so an image update never orphans its files. lemnos 900:900 is the id in 993's /etc/passwd
+# and /etc/group (Raze #2's running image, read from its root; route A keeps 993's /data); lemnos-orion 902:902 is
+# dev's "the next 902" (devices/common/board-os data-owners at Atlas 675bd03f): 993 has no such user. The product's
+# os/data-owners table repeats them with the reason, and scripts/check-slot-users.sh holds the root to it.
 [[groups]]
 name = "lemnos"
+gid = 900
 
 [[groups]]
 name = "lemnos-orion"
+gid = 902
 
 [[users]]
 name = "lemnos"
+uid = 900
 group = "lemnos"
 
 [[users]]
 name = "lemnos-orion"
+uid = 902
 group = "lemnos-orion"
 groups = ["lemnos", "orion"]
 

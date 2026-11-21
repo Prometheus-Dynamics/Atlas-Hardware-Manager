@@ -630,7 +630,7 @@ slot_sets() {  # <product.toml> <key> -> "yes" when [images.settings] sets the k
 slot_id_rule() {  # <devices dir> [version to check with; default CHECK_VERSION]
   local dev=$1 ver=${2:-$CHECK_VERSION} p pname rc=0 out="" product want k
   while IFS= read -r p; do
-    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    grep -qE '^recipe = "slot-(boot|disk)"' "$p" || continue
     pname=$(basename "$(dirname "$p")")
     for k in version slot; do
       if [[ $(slot_sets "$p" "$k") == yes ]]; then
@@ -667,7 +667,7 @@ board_boot_size() {  # <board.toml> -> the size of its role = "boot" partition, 
 boot_size_rule() {  # <devices dir>
   local dev=$1 p pname board want have rc=0 out=""
   while IFS= read -r p; do
-    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    grep -qE '^recipe = "slot-(boot|disk)"' "$p" || continue
     pname=$(basename "$(dirname "$p")")
     board=$(awk -F'"' '/^board = /{print $2; exit}' "$p")
     want=$(slot_setting "$p" boot_size)
@@ -1767,7 +1767,7 @@ SLOT_CHAIN=(
   "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
-# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot is
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot and slot-disk are
 # the slot with its bundle and boot partition: L2d).
 SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
@@ -2278,6 +2278,308 @@ open_timeout_rule() {  # <devices dir>
   [[ -z $out ]]
 }
 
+# The A1 bench board file rule (route A, 2026-11-18): components/bench-a1-board's board file is the Raze's product board
+# file plus ONLY its bench header (the leading comment lines) and `, grow_data = false` on the slots line; and the
+# component's lemnosd drop-in names that file as --board. Any other difference is drift: the trial boots would test a
+# board file other than the product's.
+a1_bench_board_rule() {  # <devices dir>
+  local dev=$1 bench=$1/components/bench-a1-board/files/lemnos-board.A1-BENCH-grow-off.toml
+  local prod=$1/boards/raze/lemnos-board.toml drop=$1/components/bench-a1-board/files/90-a1-bench-board.conf
+  [[ -f $bench ]] || return 0
+  python3 -I - "$bench" "$prod" "$drop" <<'PY'
+import sys
+bench, prod, drop = (open(p).read() for p in sys.argv[1:])
+lines = bench.split("\n")
+i = 0
+while i < len(lines) and lines[i].startswith("# "):
+    if lines[i].startswith("# The Raze's board file for lemnosd"):
+        break
+    i += 1
+body = "\n".join(lines[i:])
+if body.count(", grow_data = false }") != 1:
+    print("FAIL the A1 bench board file: not exactly one `, grow_data = false }` on the slots line"); sys.exit(1)
+if body.replace(", grow_data = false }", " }", 1) != prod:
+    print("FAIL the A1 bench board file differs from boards/raze/lemnos-board.toml beyond its header and grow_data = false: copy the product file again and add the key"); sys.exit(1)
+want = "ExecStart=/usr/bin/lemnosd --board /etc/lemnos/board.A1-BENCH-grow-off.toml "
+if not any(l.startswith(want) for l in drop.splitlines()):
+    print("FAIL the A1 bench drop-in does not start lemnosd on /etc/lemnos/board.A1-BENCH-grow-off.toml"); sys.exit(1)
+PY
+}
+a1_bench_board_self_test() {
+  local tmp rc=0
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  a1_bench_board_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i 's/^keep = 3/keep = 4/; s/keep = 3,/keep = 4,/' "$tmp/devices/components/bench-a1-board/files/lemnos-board.A1-BENCH-grow-off.toml"
+  a1_bench_board_rule "$tmp/devices" >/dev/null && rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! a1_out=$(a1_bench_board_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$a1_out"
+fi
+
+# The fan owner rule (coordinator 2026-11-20, D1 build 15): a board must have one working fan owner. At the pinned
+# Lemnos rev, lemnosd's pwm-channel-fan never binds under the real unit (ProtectKernelTunables=yes: the sysfs pwm
+# export gets EROFS), so a Lemnos board file that declares one, in a board or a component, fails unless the board also
+# carries the kernel fallback: CONFIG_SENSORS_PWM_FAN=y or =m in one of its kernel configs (boards/<id>/kernel/*.config,
+# its family's assets/linux.fragment) AND a [boot] config_lines entry that enables a pwm-fan node (`cooling_fan` or a
+# dtoverlay whose name has "fan"). Without a PWM fan the fan line's [[lines]] boot = "high" is the owner: the firmware
+# drives it high and `lemnos-ctl tree` holds it with a kernel gpio-hog (full speed, by 993's raze-fan overlay: normal
+# polarity). A component's board file is checked against the board its [board] id names.
+fan_owner_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import glob, os, re, sys, tomllib
+dev = sys.argv[1]; rc = 0
+files = sorted(glob.glob(os.path.join(dev, "boards", "*", "lemnos-board.toml")) +
+               glob.glob(os.path.join(dev, "components", "*", "files", "lemnos-board*.toml")))
+for f in files:
+    d = tomllib.load(open(f, "rb"))
+    fans = [x.get("id", "?") for x in d.get("devices", []) if x.get("driver") == "pwm-channel-fan"]
+    if not fans:
+        continue
+    bid = d.get("board", {}).get("id", "")
+    bdir = os.path.join(dev, "boards", bid)
+    configs = glob.glob(os.path.join(bdir, "kernel", "*.config"))
+    btoml = os.path.join(bdir, "board.toml")
+    if os.path.isfile(btoml):
+        m = re.search(r'^extends = "([^"]+)"', open(btoml).read(), re.M)
+        if m:
+            configs.append(os.path.join(os.path.dirname(os.path.normpath(os.path.join(bdir, m.group(1)))), "assets", "linux.fragment"))
+    kernel = any(re.search(r"^CONFIG_SENSORS_PWM_FAN=[ym]$", open(c).read(), re.M) for c in configs if os.path.isfile(c))
+    lines = d.get("boot", {}).get("config_lines", [])
+    node = any("cooling_fan" in l or re.match(r"^dtoverlay=[^,]*fan", l) for l in lines)
+    if not (kernel and node):
+        miss = " and ".join(w for w, ok in (("no CONFIG_SENSORS_PWM_FAN=y|m in its kernel configs", kernel),
+                                            ("no config_lines entry enabling a pwm-fan node", node)) if not ok)
+        print(f"FAIL {os.path.relpath(f, dev)}: declares pwm-channel-fan {', '.join(fans)} but board {bid!r} has no kernel fan fallback ({miss}): lemnosd's PWM fan does not bind under the real unit at the pinned Lemnos rev, so the board would have no working fan owner")
+        rc = 1
+sys.exit(rc)
+PY
+}
+fan_owner_self_test() {
+  local tmp rc=0 f
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  fan_owner_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  f="$tmp/devices/boards/raze/lemnos-board.toml"
+  printf '\n[[devices]]\nid = "fan"\ndriver = "pwm-channel-fan"\nuses = { pwm = "pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3" }\n' >>"$f"
+  local out
+  if out=$(fan_owner_rule "$tmp/devices" 2>&1); then rc=1
+  elif [[ $out != *"declares pwm-channel-fan fan but board 'raze' has no kernel fan fallback"* ]]; then rc=1; fi
+  printf 'CONFIG_SENSORS_PWM_FAN=m\n' >>"$tmp/devices/boards/raze/kernel/raze.config"
+  sed -i 's/^config_lines = \["dtoverlay=vc4-kms-v3d-pi5", /config_lines = ["dtparam=cooling_fan=on", "dtoverlay=vc4-kms-v3d-pi5", /' "$f"
+  fan_owner_rule "$tmp/devices" >/dev/null || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! fan_out=$(fan_owner_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$fan_out"
+fi
+
+# The named-toolchain rule (2026-11-18, raze-base's libgpiod v2): every Buildroot image's fragments name its toolchain
+# variant. A fragment that names none resolves against whatever the default is (Buildroot's internal toolchain with
+# 7.1 headers here; a Bootlin STABLE default elsewhere has 5.4), so the config-only build could pass on a default the
+# product does not own and the image would drop packages that need newer headers. Accepted: the internal toolchain
+# (BR2_TOOLCHAIN_BUILDROOT=y), a Bootlin variant (BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_<VARIANT>=y) or a custom external one.
+named_toolchain_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, re, sys, tomllib
+dev = sys.argv[1]; pdir = os.path.join(dev, "products"); rc = 0
+want = re.compile(r"^BR2_TOOLCHAIN_(BUILDROOT|EXTERNAL_BOOTLIN_[A-Z0-9_]+|EXTERNAL_CUSTOM)=y$", re.M)
+for name in sorted(os.listdir(pdir)):
+    f = os.path.join(pdir, name, "product.toml")
+    if not os.path.isfile(f): continue
+    with open(f, "rb") as h: prod = tomllib.load(h)
+    for spec in prod.get("images") or []:
+        img = spec.get("name", "?") if isinstance(spec, dict) else "?"
+        os_ = spec.get("os") if isinstance(spec, dict) else None
+        if not isinstance(os_, dict) or os_.get("provider") != "buildroot": continue
+        text = ""
+        for frag in os_.get("fragments", []):
+            p = os.path.join(pdir, name, frag)
+            if os.path.isfile(p): text += open(p).read() + "\n"
+        if not want.search(text):
+            print(f"FAIL products/{name}: image {img}'s Buildroot fragments name no toolchain variant (BR2_TOOLCHAIN_BUILDROOT=y, BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_<VARIANT>=y or BR2_TOOLCHAIN_EXTERNAL_CUSTOM=y): the config would resolve against a default"); rc = 1
+sys.exit(rc)
+PY
+}
+named_toolchain_self_test() {
+  local tmp rc=0
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  named_toolchain_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i '/^BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y$/d' "$tmp/devices/products/raze-base/os/raze.fragment"
+  local out
+  out=$(named_toolchain_rule "$tmp/devices") && rc=1
+  [[ $out == *'products/raze-base: image raze-base'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! nt_out=$(named_toolchain_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$nt_out"
+fi
+
+# The post-build-removes-nothing rule (2026-11-18, the D1 build's dbus failure): a script a Buildroot fragment names as
+# BR2_ROOTFS_POST_BUILD_SCRIPT runs before the rootfs step's makedevs (fs/common.mk), and makedevs fails on any file a
+# package's permissions table names that is gone. So such a script removes nothing (no rm, rmdir, unlink or
+# find -delete outside comments).
+# A post-fakeroot script is allowed again since the Gaia 171ca25f pin (FAKEROOT-OUTPUT: its changes reach the slot);
+# the 2026-11-19 refusal of BR2_ROOTFS_POST_FAKEROOT_SCRIPT went with that pin, as it said it would.
+post_build_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, re, sys
+dev = sys.argv[1]; rc = 0
+line_re = re.compile(r'^BR2_ROOTFS_POST_BUILD_SCRIPT="([^"]*)"', re.M)
+any_re = re.compile(r'^BR2_ROOTFS_POST_(BUILD|FAKEROOT|IMAGE)_SCRIPT="([^"]*)"', re.M)
+rm_re = re.compile(r'(^|[\s;&|(`])(rm|rmdir|unlink)(\s|$)|\s-delete(\s|$)')
+for top, _, files in os.walk(os.path.join(dev, "products")):
+    for name in files:
+        if not name.endswith(".fragment"): continue
+        frag = os.path.join(top, name)
+        for m in any_re.finditer(open(frag).read()):
+            for word in m.group(2).split():
+                if not word.startswith("@here@/"): continue
+                script = os.path.normpath(os.path.join(top, word[len("@here@/"):]))
+                if not os.path.isfile(script):
+                    print(f"FAIL {os.path.relpath(frag, dev)}: BR2_ROOTFS_POST_{m.group(1)}_SCRIPT names {word}, which is not a file"); rc = 1
+                elif not os.access(script, os.X_OK):
+                    print(f"FAIL {os.path.relpath(script, dev)}: not executable (BR2_ROOTFS_POST_{m.group(1)}_SCRIPT runs it directly): chmod 755 and commit the mode"); rc = 1
+        for m in line_re.finditer(open(frag).read()):
+            for word in m.group(1).split():
+                if not word.startswith("@here@/"): continue
+                script = os.path.normpath(os.path.join(top, word[len("@here@/"):]))
+                if not os.path.isfile(script): continue
+                for n, text in enumerate(open(script), 1):
+                    code = text.split("#", 1)[0] if not text.lstrip().startswith("#") else ""
+                    if rm_re.search(code):
+                        print(f"FAIL {os.path.relpath(script, dev)}:{n}: a post-build script removes files ({text.strip()}): makedevs runs after it and fails on a removed file a permissions table names"); rc = 1
+sys.exit(rc)
+PY
+}
+post_build_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  post_build_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  printf 'rm -rf "$T/usr/libexec/dbus-daemon-launch-helper"\n' >> "$tmp/devices/products/raze-base/os/post-build.sh"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'products/raze-base/os/post-build.sh'* ]] || rc=1
+  cp -a "$root/products/raze-base/os/post-build.sh" "$tmp/devices/products/raze-base/os/post-build.sh"
+  chmod 644 "$tmp/devices/products/raze-base/os/post-build.sh"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'post-build.sh: not executable'* ]] || rc=1
+  chmod 755 "$tmp/devices/products/raze-base/os/post-build.sh"
+  # A post-fakeroot script that is not a file is refused like any other (the name check covers all three hooks).
+  printf 'BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/no-such-script.sh"\n' >> "$tmp/devices/products/raze-base/os/raze.fragment"
+  out=$(post_build_rule "$tmp/devices") && rc=1
+  [[ $out == *'BR2_ROOTFS_POST_FAKEROOT_SCRIPT names @here@/no-such-script.sh, which is not a file'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! pb_out=$(post_build_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$pb_out"
+fi
+
+# The fixed-ids rule (coordinator's ruling 2026-11-20: any user that can own files on /data has a fixed id, so an image
+# update never orphans its files). Every component's [[users]] states its uid and every [[groups]] its gid; no two
+# users (or groups) declared in one product share an id; and a product with os/data-owners (USER UID GROUP GID reason)
+# lists exactly the users its image's components declare, at the declared ids. scripts/check-slot-users.sh holds the
+# built root to the same table.
+fixed_ids_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import glob, os, sys, tomllib
+dev = sys.argv[1]; rc = 0
+def load(p):
+    with open(p, "rb") as f: return tomllib.load(f)
+for p in sorted(glob.glob(os.path.join(dev, "**", "component.toml"), recursive=True)):
+    if os.sep + "tests" + os.sep in p: continue
+    c = load(p); rel = os.path.relpath(p, dev)
+    for u in c.get("users", []):
+        if not isinstance(u.get("uid"), int): print(f"FAIL {rel}: user {u.get('name')} has no fixed uid (any user that can own files on /data has one)"); rc = 1
+    for g in c.get("groups", []):
+        if not isinstance(g.get("gid"), int): print(f"FAIL {rel}: group {g.get('name')} has no fixed gid"); rc = 1
+for p in sorted(glob.glob(os.path.join(dev, "products", "*", "product.toml"))):
+    prod = load(p); pdir = os.path.dirname(p); rel = os.path.relpath(p, dev)
+    users, groups = {}, {}
+    for img in prod.get("images", []):
+        for name in img.get("components", []):
+            cp = prod.get("components", {}).get(name)
+            if not cp: continue
+            c = load(os.path.normpath(os.path.join(pdir, cp)))
+            for u in c.get("users", []): users[u["name"]] = (u.get("uid"), u.get("group"))
+            for g in c.get("groups", []): groups[g["name"]] = g.get("gid")
+    for kind, table in (("uid", {n: v[0] for n, v in users.items()}), ("gid", groups)):
+        seen = {}
+        for n, i in table.items():
+            if i is not None and i in seen: print(f"FAIL {rel}: {kind} {i} is declared for both {seen[i]} and {n}"); rc = 1
+            seen.setdefault(i, n)
+    owners = os.path.join(pdir, "os", "data-owners")
+    if not os.path.isfile(owners): continue
+    rows = {}
+    for n, line in enumerate(open(owners), 1):
+        t = line.strip()
+        if not t or t.startswith("#"): continue
+        f = t.split(None, 4)
+        if len(f) < 5 or not f[1].isdigit() or not f[3].isdigit():
+            print(f"FAIL {os.path.relpath(owners, dev)}:{n}: not USER UID GROUP GID reason"); rc = 1; continue
+        rows[f[0]] = (int(f[1]), f[2], int(f[3]))
+    for name, (uid, grp) in sorted(users.items()):
+        if name not in rows: print(f"FAIL {os.path.relpath(owners, dev)}: user {name} (declared, uid {uid}) is not in the table"); rc = 1; continue
+        r = rows[name]
+        if (r[0], r[1], r[2]) != (uid, grp, groups.get(grp)):
+            print(f"FAIL {os.path.relpath(owners, dev)}: {name} is {r[0]} {r[1]} {r[2]} in the table, {uid} {grp} {groups.get(grp)} in the declarations"); rc = 1
+    for name in sorted(set(rows) - set(users)):
+        print(f"FAIL {os.path.relpath(owners, dev)}: {name} is in the table but no component of the product declares it"); rc = 1
+sys.exit(rc)
+PY
+}
+fixed_ids_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  fixed_ids_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  sed -i 's/^uid = 900$/uid = 905/' "$tmp/devices/components/lemnos/component.toml"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *'lemnos is 900 lemnos 900 in the table, 905 lemnos 900 in the declarations'* ]] || rc=1
+  sed -i '/^uid = 905$/d' "$tmp/devices/components/lemnos/component.toml"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *'user lemnos has no fixed uid'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! fi_out=$(fixed_ids_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$fi_out"
+fi
+
+# The verify-reads-as-it-wrote rule (2026-11-19, the D1 build 6 failure): a [generate.<step>] verify re-reads the step's
+# output with the same tool, so it must name every description input the run names (--layout-of, --socs) with the same
+# value. A verify without --socs resolved the board's SoC file against the working directory and failed only after the
+# full image build (socs/bcm2712-rp1.toml: No such file).
+generate_verify_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import os, sys, tomllib
+dev = sys.argv[1]; rc = 0
+def flag(argv, name):
+    return argv[argv.index(name) + 1] if name in argv and argv.index(name) + 1 < len(argv) else None
+for top, _, files in os.walk(dev):
+    if "component.toml" not in files: continue
+    f = os.path.join(top, "component.toml")
+    with open(f, "rb") as h: comp = tomllib.load(h)
+    for step, spec in sorted((comp.get("generate") or {}).items()):
+        if not isinstance(spec, dict) or "verify" not in spec: continue
+        args, verify = spec.get("args") or [], spec["verify"]
+        for name in ("--layout-of", "--socs"):
+            want = flag(args, name)
+            if want is not None and flag(verify, name) != want:
+                print(f"FAIL {os.path.relpath(f, dev)}: [generate.{step}] verify does not name {name} {want} as its args do: the verify reads the description differently from the run"); rc = 1
+sys.exit(rc)
+PY
+}
+generate_verify_self_test() {
+  local tmp rc=0 out f
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  generate_verify_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  f=$tmp/devices/components/raze-lemnos-board/component.toml
+  sed -i '/^verify = \["data-partition"/s/"--socs", "@source@\/socs", //' "$f"
+  out=$(generate_verify_rule "$tmp/devices") && rc=1
+  [[ $out == *'raze-lemnos-board/component.toml: [generate.data] verify does not name --socs'* ]] || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! gv_out=$(generate_verify_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$gv_out"
+fi
+
 # The slot-disk data size rule (Z2): a GPT slot product's data partition holds keep slots and the reserve.
 if ! ds_out=$(data_size_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$ds_out"
@@ -2376,6 +2678,15 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX" rk_env_self_test
   st "self-check: the slot id rule no longer refuses an id that is not the version's" slot_id_rule_self_test
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
+  st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
+  st "self-check: the fan owner rule no longer refuses a PWM fan without a kernel fallback, or refuses one with it" fan_owner_self_test
+  st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
+  st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a hook script that is not a file" post_build_self_test
+  st "self-check: the fixed-ids rule no longer refuses a user without a fixed uid or a declaration that differs from os/data-owners" fixed_ids_self_test
+  st "self-check: the generate verify rule no longer refuses a verify that names --socs differently from its run" generate_verify_self_test
+  st "self-check: check-slot-setid.sh no longer refuses a slot whose setid bits differ from the decisions" "$repo/scripts/check-slot-setid.sh" --self-test
+  st "self-check: check-slot-mounts.sh no longer refuses a slot root without /data" "$repo/scripts/check-slot-mounts.sh" --self-test
+  st "self-check: check-slot-users.sh no longer refuses a slot root missing a unit's user or an enable link" "$repo/scripts/check-slot-users.sh" --self-test
   st "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs" wd_self_test_quiet
   st "self-check: a binary from another commit, or one that prints none, was not refused naming the pinned commit" version_gate_self_test
   st_rcs=()

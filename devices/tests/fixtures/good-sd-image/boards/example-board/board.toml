@@ -10,6 +10,11 @@ cpu = "cortex-a55"
 [sources.rkbin]
 path = "rkbin"
 
+# Gaia 1c2b9dc9 wants every board with a U-Boot to name its own defconfig (crates/core/graph/src/os.rs:382: it carries
+# the board's pin and voltage setup, so a family gives none).
+[bootloader]
+defconfig = "example-board"
+
 [bootloader.blobs]
 ROCKCHIP_TPL = { source = "rkbin", path = "bin/example.bin" }
 

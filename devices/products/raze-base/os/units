@@ -1,0 +1,7 @@
+# raze-base: units the trial depends on, asserted by name on the built root (coordinator's ruling 2026-11-20), not left
+# to the generic preset rule. One line each:
+#   linked UNIT reason   the unit has an enable link (it is not masked)
+#   masked UNIT reason   the unit is a link to /dev/null
+# scripts/check-slot-users.sh reads this table in its product mode (scripts/build-product.sh runs it after a build).
+linked systemd-networkd.service              the OS's (Buildroot's preset-all, 90-systemd.preset): lemnos0's address and Orion's ways in need it
+masked systemd-networkd-wait-online.service  os/post-build.sh masks it: networkd's Also= would link it, and boot would wait on links with no carrier

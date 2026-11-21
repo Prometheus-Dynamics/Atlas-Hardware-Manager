@@ -8,10 +8,10 @@
 # Access over the USB gadget on the OTG Type-C (serial-hash-v1 lemnos0 addressing), plus Ethernet DHCP and mDNS (Z1; the
 # coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
 #
-# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d).
-# The root Cargo.toml lemnos-slot-store rev is also 31e0f736, so the one-rev rule passes. The shared devices/components/lemnos*
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d).
+# The root Cargo.toml lemnos-slot-store rev is also b78e5317, so the one-rev rule passes. The shared devices/components/lemnos*
 # (the Raze's pin) are unchanged.
-# Gaia: 9efa797f (devices/gaia.lock, as next).
+# Gaia: as devices/gaia.lock pins it (Gaia next).
 version = 1
 name = "zero-3e-bench"
 description = "Radxa ZERO 3E bench OS: U-Boot slot form (Lemnos BB1b), USB gadget and Ethernet, mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."

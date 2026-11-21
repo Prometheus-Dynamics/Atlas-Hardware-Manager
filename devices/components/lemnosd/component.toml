@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnosd, built from Lemnos next 31e0f736 (BB1b; with Orion 671d29d).
+# One Lemnos cargo package: lemnosd, built from Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnosd --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos hardware daemon, lemnosd (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES), coordinator 2026-11-20
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

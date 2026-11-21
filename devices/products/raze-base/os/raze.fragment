@@ -4,6 +4,18 @@
 # F8?: the Buildroot option names below are the ones the fragment form takes; Gaia's option check (the
 # coming "every requested line survives") is the test. Anything it drops is a real finding.
 
+# -- The toolchain ------------------------------------------------------------------------------------
+# Named here, never left to a default: libgpiod v2 (below) needs kernel headers 5.10 or newer
+# (BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_10 in Buildroot 2026.08). Buildroot's own default is the internal toolchain
+# (headers 7.1, gcc built from source), and Bootlin's aarch64 glibc STABLE 2025.08-1 has 5.4 headers, under which
+# Buildroot drops LIBGPIOD2 and its tools. Bootlin's aarch64 glibc BLEEDING-EDGE has 5.15 headers and gcc 15. Its
+# version is Buildroot's pin, not ours and not a moving name: Buildroot 2026.08 (d5180309) fetches
+# aarch64--glibc--bleeding-edge-2025.08-1.tar.xz, sha256 54875d12829a792b8d4d1c9fb1f736afc60f514b0d260616f188eafafaac7cb5, from its
+# toolchain-external-bootlin.mk and .hash. A new Buildroot pin can move it; the config-only build is the check.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y
+
 # -- Init and the platform ---------------------------------------------------------------------------
 # systemd 258.7 (Buildroot 2026.08's version, checked in its package/systemd/systemd.mk): lemnosd's unit
 # needs systemd 254+, and the Raze's units (lemnosd, lemnos-orion, Orion's comm and node) are systemd units.
@@ -51,6 +63,7 @@ BR2_PACKAGE_KMOD_TOOLS=y
 # ps with -o and -C (the V1g check). BusyBox's ps has neither.
 BR2_PACKAGE_PROCPS_NG=y
 # gpioset and gpioget (the B15 check holds a GPIO line): libgpiod's tools. No BusyBox applet does this.
+# libgpiod v2 needs headers 5.10+: the toolchain is named for it at the top of this file.
 BR2_PACKAGE_LIBGPIOD2=y
 BR2_PACKAGE_LIBGPIOD2_TOOLS=y
 # flock (failsafe locks) and i2cdump, i2cget, i2cset and i2cdetect (the A35 check) are BusyBox applets
@@ -88,7 +101,7 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # Reasons: lemnos0-address (components/raze-base-files) writes /run/systemd/network/10-lemnos0.network for networkd;
 # that file's DHCPServer is the Raze's DHCP to the host (the ruling below); and Orion's peer listen address is the
 # board's address that file sets. Without networkd the board has no lemnos0 address and no DHCP server. networkd is
-# Type=notify-reload with a BusName= it advertises: it starts without the bus, so post-build.sh does not refuse it.
+# Type=notify-reload with a BusName= it advertises: it starts without the bus.
 # Buildroot defaults it to y; on Gaia's allnoconfig base it is off unless a fragment says so, hence this line.
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
 
@@ -102,15 +115,22 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 #   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
 # Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
 # turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
-# os/post-build.sh removes dbus from the installed tree and fails the build if anything still needs it.
+# D1 SHIPS DBUS, as 993 does (coordinator's ruling C, 2026-11-19). The trim and its checks are parked on branch
+# save/D1-dbus-trim (cbf1b1f4): a follow-up after D1, now that a post-fakeroot change reaches the slot (171ca25f).
 # BR2_PACKAGE_SYSTEMD_RESOLVED is not set
 # BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
 # BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
 # BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
 
-# The post-build script: the dbus removal and its checks (os/post-build.sh, PR B41). Buildroot runs it as
+# The post-build script: the wait-online mask (os/post-build.sh; B41 had the dbus removal here). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
+# Gaia ships what Buildroot's fakeroot stage made (FAKEROOT-OUTPUT, pinned since 171ca25f: the rootfs output is
+# rootfs.tar, crates/nodes/os-buildroot/src/lib.rs:903-913), so mkusers, preset-all, the device tables and a
+# post-fakeroot script all reach the slot. Atlas's components are merged into the root AFTER that stage
+# (gaia.tree.merge of the OS tree and each component's layer): their sysusers.d and preset files are not applied by it.
+# Their accounts and enable links come from their [[users]], [[groups]] and [[services]] declarations instead
+# (Gaia DO 32 COMPONENT-ACCOUNTS, pinned since 6efa33ed); scripts/check-slot-users.sh holds the built root to them.
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/

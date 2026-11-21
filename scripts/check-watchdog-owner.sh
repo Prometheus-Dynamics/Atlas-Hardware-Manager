@@ -589,6 +589,9 @@ wd_self_test() {  # <repo>
   raze=$dev/products/raze-base
   zbase=$dev/products/sd-noowner
   local rboard=$dev/boards/raze/lemnos-board.toml
+  # The Raze keepalive's line, read from the board file: a fixed number broke on every edit above it.
+  local kline
+  kline=$(grep -n '^keepalive = true$' "$repo/devices/boards/raze/lemnos-board.toml" | head -1 | cut -d: -f1)
   local zboard=$dev/boards/radxa-zero-3e/lemnos-board.toml
   local fam=$dev/families/rk35xx/assets/u-boot.fragment
   # The baseline is UNARMED: the NOTE cases are no-owner products the family does not arm. The armed cases restore and arm it below.
@@ -620,7 +623,7 @@ wd_self_test() {  # <repo>
   mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
   printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
   out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line 131) and RuntimeWatchdogSec=15s (products/raze-base/os/overlay/etc/systemd/system.conf.d/10-wd.conf, line 2) — remove one" \
+  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (products/raze-base/os/overlay/etc/systemd/system.conf.d/10-wd.conf, line 2) — remove one" \
     || fail "both owners were not refused naming both: $out"
   rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
 
@@ -664,7 +667,7 @@ wd_self_test() {  # <repo>
   cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
   sed -i '/^lemnosd = /d' "$raze/product.toml"
   out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: boards/raze/lemnos-board.toml keeps a hw-watchdog keepalive (line 131) that nothing feeds" || fail "an unfed keepalive on a slot product was not refused: $out"
+  has "FINDING product raze-base: boards/raze/lemnos-board.toml keeps a hw-watchdog keepalive (line $kline) that nothing feeds" || fail "an unfed keepalive on a slot product was not refused: $out"
   cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
 
   # A slot-disk product (the recipe is named, the same owner rule applies): neither owner is a FINDING.
@@ -709,7 +712,7 @@ wd_self_test() {  # <repo>
   mkdir -p "$bl/etc/systemd/system.conf.d"
   printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$bl/etc/systemd/system.conf.d/10-image.conf"
   out=$(watchdog_owner_rule "$dev" "raze-base=$bl") || true
-  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line 131) and RuntimeWatchdogSec=15s (" || fail "a built tree against the inputs was not refused: $out"
+  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (" || fail "a built tree against the inputs was not refused: $out"
   has "built config and its inputs disagree" || fail "the built/inputs disagreement was not named: $out"
   rm -rf "$bl/etc"
 

@@ -17,6 +17,11 @@ description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 # exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
 # gadget from the device tree until then. Provisional.
 [kernel]
+# The Raze's kernel is built with LLVM (Gaia's [kernel] toolchain, coordinator's ruling 2026-11-18: on this board, not the
+# bcm2712 family, until another board of the family needs it): lemnos.ko is Rust, and a Rust kernel is built with clang,
+# the pinned LLVM 23.1.5, rustc 1.99.0 + rust-src and bindgen 0.73.2 (Gaia's pins = scripts/kernel-llvm-tools.sh's).
+# scripts/check-kernel-fragments.sh resolves this board the same way.
+toolchain = "llvm"
 device_tree = "broadcom/bcm2712-rpi-cm5-cm5io"
 # The kernel form the payload's `kernel` role takes (L2d): gzip, as the Pi firmware boots it (the 993 slot's kernel8.img
 # is gzip and boots daily). The bay is sized for the stored file (lemnos-board.toml [boot] bay_kernel_bytes).
@@ -63,21 +68,41 @@ role = "boot"
 type = "0x0c"
 size = "82837504"
 
-# p2, the data partition: Linux (0x83), the slots and the slot state. The LAST partition, with no size here: it
-# is the content's size on the image (Lemnos writes it offline), and the board grows it to the disk's end on its
-# first boot (the owner of that step is Lemnos's: dev's data-setup is not carried).
-# First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
-# thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
-# continues ungrown). At the pinned Lemnos 31e0f736 the resize still runs synchronously inside the 2 s call deadline.
-# Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
-# measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes
-# can be much slower, so a synchronous resize can overrun 2 s even on a 64 GB card.
-# Source: Lemnos docs/slots.md in the GROW2 commit (not yet merged; Atlas cites it by rev once it is pinned).
-# The eMMC here is 14,910 MiB (see [disk] above). Stated again in lemnos-board.toml, at the system-slots device.
+# p2, the data partition: Linux (0x83), the slots and the slot state. The LAST partition. Its size is an explicit
+# initial size (D1 ruling, 2026-11-14), not the content's: the installed first slot and the ext4 overhead, rounded UP
+# to 1 MiB. 39,845,888 B = 38 MiB. There is NO room for a second slot here, on purpose: the grow covers it, and the
+# live-install reserve (reserve_mb, lemnos-board.toml) is the rule for updates. Lemnos's offline writer checks only that
+# the first slot fits (no reserve), and Lemnos grows p2 to the disk's end at the first start, before any update can
+# happen (Lemnos M36b, its boot-side commits). If that grow fails, installs are refused with words.
+# Arithmetic (each term from its source; blocks are 4,096 B, the mke2fs block):
+#   installed slot, 34,578,432 B:
+#     slots/<id>.erofs      27,058,176  the bundle's rootfs.erofs, verity appended (slot.json image.size; the 6,606 blocks exact)
+#     slots/<id>.json           4,096  slot.json 967 B (its bundle entry), one block
+#     slots/<id>.boot           4,096  the boot list: 483 B of `<sha256>  <path>` lines for the six boot files (sizes of the bundle)
+#     slots/bootfiles/*     7,471,104  each boot file by content, rounded up: kernel8.img 6,773,269 -> 6,774,784;
+#                                      initramfs.cpio 599,304 -> 602,112; board.dtb 79,751 -> 81,920; cmdline.txt 335 -> 4,096;
+#                                      overlays/lemnos-board.dtbo 1,823 -> 4,096; slot.json 967 -> 4,096 (tar tvf of the bundle)
+#     board/slots/*            24,576  six state files (state.env, state.json, X.meta, seq, fallbacks, resolved.env), one block each (upper bound)
+#     directories              16,384  slots, slots/bootfiles, board, board/slots, one block each
+#   root directory              4,096  (the filesystem's /)
+#   ext4 overhead, measured (Gaia e9684c5 gaia.fs.ext4 options on a 38 MiB file, mke2fs 1.47.3, dumpe2fs; 37 MiB is refused):
+#     lost+found             16,384  4 blocks (debugfs stat)
+#     journal             4,194,304  Gaia's journal: clamp(size/64, 4..128 MiB) = 4 MiB (1,024 blocks)
+#     inode table            28,672  112 inodes (paths*2+64 = 102, Gaia; the group rounds to 112): 7 blocks
+#     superblock, GDT, 4 reserved GDT, 2 bitmaps (one group)   32,768  8 blocks
+#     reserved blocks             0  -m 0 (Gaia)
+#     residual               135,168  33 blocks, not itemised (directory and extent blocks; the same 33 as the 71 MiB run)
+#   total needed: 34,578,432 + 4,096 + 16,384 + 4,194,304 + 28,672 + 32,768 + 135,168 = 38,989,824 B
+#   the smallest size mke2fs accepts with those options is 38 MiB; it leaves 209 free blocks (856,064 B).
+# Recompute from the M2 build's lzma root when that exists: the slot here is f8e7a2c6's, before B40's lzma settings
+# (B40 measured an 18,178,048 B root, against 26,841,088 here; the verity tree is 217,088 B on top of either).
+# The one place for this number: Gaia (498873cf) takes the size from this partition. The [generate.data] run's @data-size@
+# and the ext4 are both this size; product.toml has no data_size, and check-devices has no rule for it.
 [[partitions]]
 name = "data"
 role = "data"
 type = "0x83"
+size = "39845888"
 
 # Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
 [flash]

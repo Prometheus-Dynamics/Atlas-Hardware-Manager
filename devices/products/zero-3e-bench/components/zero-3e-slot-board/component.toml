@@ -9,7 +9,7 @@ description = "ZERO 3E slot board: the Lemnos board file (U-Boot record), the ge
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d)
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d)
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
 [sources.root]
@@ -59,13 +59,21 @@ verify_key_args = ["--pubkey", "@pubkey@"]
 # pin moves. Plan does not run it.
 [generate.data]
 args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
-verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--socs", "@source@/socs", "--boot-image", "@boot-image@", "--deep"]
 keys = "files/slot-keys"
 
 # The board file, as /etc/lemnos/board.toml (the board's own, named by its [descriptions]).
 [[install]]
 from = { description = "lemnos" }
 to = "/etc/lemnos/board.toml"
+mode = "0644"
+
+# The SoC description lemnosd checks the live tree against (/usr/share/lemnos/socs/<soc>.toml, the board file's soc),
+# as the Raze's (components/raze-lemnos-board): in the image contract since 2026-11-20; scripts/check-slot-mounts.sh
+# requires it for every board file in the root that names a soc.
+[[install]]
+from = { source = "lemnos", path = "socs/rk3566.toml" }
+to = "/usr/share/lemnos/socs/rk3566.toml"
 mode = "0644"
 
 # The gadget drop-in (Lemnos R1d): the FunctionFS mount needs CAP_SYS_ADMIN in the root phase (the same unit drop-in as the Raze).

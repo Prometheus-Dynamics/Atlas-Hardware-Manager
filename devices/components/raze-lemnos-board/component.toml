@@ -20,7 +20,7 @@ mode = "0644"
 # usb-gadget device; scripts/check-lemnos-gadget.py enforces that pairing both ways.
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES), coordinator 2026-11-20
 
 # The image lemnos-ctl is built in, and the generator runs in (Gaia #100: a [generate] tool is built for the build
 # machine and run in the image its component's `root` source names). The same image lemnos-ctl's own component uses.
@@ -28,7 +28,7 @@ ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos next (I5j merged, PR 
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"
 
-# The files `lemnos-ctl tree` writes from the board file (L2d, the held L2 flags, lemnos-ctl at Lemnos next f4a295c6:
+# The files `lemnos-ctl tree` writes from the board file (L2d, the held L2 flags, lemnos-ctl at Lemnos next fe8beb7c:
 # service/ctl/src/lib.rs, fn tree). NO --boot-dir: the boot partition is written as one image by `boot-partition` below
 # (I5i8: `tree --boot-dir` is refused). --boot is not passed (Gaia has no key for config.txt lines).
 # --manifest-boot comes from the SAME invocation as -o (I5i6). --cmdline-slot needs --slot (the image's slot id).
@@ -61,19 +61,47 @@ cmdline-slot = "cmdline-slot.words"
 # image's boot_size. `fit` is run before anything is written and fails when the payload does not fit its bay.
 # Outputs are the image (`boot`) and the fit/args/verify printout (`boot-report`): the five bay sizes are read from it.
 [generate.image]
-fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@"]
-args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--size", "@size@", "--out", "@out@"]
+fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@", "--firmware", "@firmware@"]
+args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--firmware", "@firmware@", "--size", "@size@", "--out", "@out@"]
 verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 
 # The slot bundle: the same tool writes it from the payload, the root image and its verity table (`@rootfs@`,
 # `@verity-table@`), signed by the key the environment names (`sign_key_env`, `sign_key_id`), and gives the payload back
-# as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at Lemnos next f4a295c6 with
+# as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at Lemnos next fe8beb7c with
 # `lemnos-ctl bundle --help` (docs/prs/L2d.md, "bundle, flag by flag").
 [generate.bundle]
-args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
+args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--firmware", "@firmware@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
 key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
 verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 verify_key_args = ["--pubkey", "@pubkey@"]
+
+# The data partition's contents (slot-disk): the slot installed from the bundle above, in Lemnos's own layout, into the directory
+# @out@ that Gaia makes an ext4 filesystem of, at the board's partition size. Flags from Lemnos pr/M36 9f5e0b0f, spelt as Gaia PR 145
+# and the Gaia pin 498873cf take them (src-498873c, crates/nodes/tree/src/generate_image.rs):
+#   @boot-image@  the boot step's image (the bay that holds the bundle's slot).
+#   @keys@        `keys = "files/slot-keys"` below: the bench key's public line, the trust list the image ships.
+#   @time@        "@time@ is Gaia's fixed build date, 1970-01-01T00:00:00Z (epoch 0), the same for every build."
+#   @data-size@   the size of the board's partition named by data_name ("data"): boards/raze/board.toml [[partitions]] size, 39,845,888.
+#                 Gaia makes the ext4 at that size too, so this run and the filesystem cannot differ (wire.rs data_size). The number
+#                 lives in board.toml only; product.toml has no data_size at 498873cf.
+# --layout-of and --socs are named as [generate.bundle] names them. --switch off is the default and is left out.
+# OPEN (the rest, after Gaia's placeholders): Lemnos M36's rev must carry the data-partition tool, the offline writer with no reserve
+# (the first write checks only that the slot fits --data-size), and the first-start grow of p2 (Lemnos M36b). Until that rev is pinned,
+# this run is not proven.
+# verify: the same tool reads the tree back with the boot image, deep (Lemnos pr/M36 `--verify DIR --layout-of BOARD --boot-image FILE --deep`).
+[generate.data]
+args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--socs", "@source@/socs", "--boot-image", "@boot-image@", "--deep"]
+keys = "files/slot-keys"
+
+# The SoC description lemnosd checks the live device tree against (/usr/share/lemnos/socs/<soc>.toml, the board file's
+# `soc`; LEMNOS_SOCS overrides the directory). Lemnos's packaging list never carried it; it is in the image contract
+# since 2026-11-20 (coordinator, after the D1 rehearsal: lemnosd said "live tree not checked: ... No such file").
+# scripts/check-slot-mounts.sh requires it for every board file in the root that names a soc.
+[[install]]
+from = { source = "lemnos", path = "socs/bcm2712-rp1.toml" }
+to = "/usr/share/lemnos/socs/bcm2712-rp1.toml"
+mode = "0644"
 
 [[install]]
 from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }
@@ -95,8 +123,8 @@ mode = "0644"
 # board file (Lemnos Q2a, with the generated overlay's UDC). dev's board-usb-gadget.conf is not carried.
 
 # lemnos.ko's modprobe.d fragment: the generated modprobe.conf (`lemnos-ctl tree --modprobe`), installed as Lemnos
-# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). lemnos.ko itself is not built by this kernel yet
-# (the packaging comment above), so the options name a module that is not loaded; the file is what the board's module needs.
+# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). lemnos.ko is built by components/lemnos-module
+# against this image's kernel and loaded at boot by components/lemnos (modules-load.d); these are its options.
 [[install]]
 from = { generated = "modprobe.conf" }
 to = "/etc/modprobe.d/lemnos.conf"

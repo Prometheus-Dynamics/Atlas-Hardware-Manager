@@ -3,7 +3,7 @@ board file (boards/raze/lemnos-board.toml). Nothing here is hand-written and not
 
 The generator writes these outputs (PR B27 passes -o, --modprobe, --cmdline; --boot is not passed) (lemnos-ctl built from Lemnos d6b9361d, the L1 rev, and its SoC map
 socs/bcm2712-rp1.toml; the lock is d6b9361d, PR B23, see Status):
-  1. board-overlay.dts      the one overlay: i2c-1 (GPIO10/11), i2c-10 (GPIO38/39), the PWM1 block (fan, GPIO45),
+  1. board-overlay.dts      the one overlay: i2c-1 (GPIO10/11), i2c-10 (GPIO38/39), the fan line's gpio-hog (GPIO45 high: no PWM fan, 2026-11-20),
                             the CSI receiver (owned by the module), the PiSP back end, the PIO block, the watchdog
                             node, the USB controller in peripheral mode, the camera regulator's base node disabled;
   2. boot.txt               the loader fragment: the lines that hold USB port power (GPIO16, GPIO20) and the fan
