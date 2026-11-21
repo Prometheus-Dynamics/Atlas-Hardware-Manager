@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "c215f57527e17eab009e91f7d19f9c67112941b2"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
+ref = "b210934dbad70926e07214875b100134d946640b"  # Lemnos b210934d (pr/RUNDIR-D1: c215f575 + the RUNDIR fix), coordinator 2026-11-20
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
