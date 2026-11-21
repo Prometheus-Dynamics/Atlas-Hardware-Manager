@@ -15,13 +15,8 @@ use sha2::{Digest, Sha256};
 
 const SIGN_SEED: [u8; 32] = [7; 32];
 const OTHER_SEED: [u8; 32] = [9; 32];
-const BAY_PATHS: [&str; 5] = [
-    "kernel8.img",
-    "initramfs.cpio",
-    "board.dtb",
-    "cmdline.txt",
-    "overlays/lemnos-board.dtbo",
-];
+/// The board's device tree names: a v6 set stores the device tree under each.
+const DTB_NAMES: [&str; 2] = ["bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"];
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -106,39 +101,97 @@ fn bundle_bytes(seed: &[u8; 32], boot: Vec<(String, Vec<u8>)>) -> Vec<u8> {
     out
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &byte in bytes {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+/// The board's layout for the bundle's boot files `boot` (Lemnos layout v6): the device tree under
+/// [`DTB_NAMES`], each `overlays/<name>.dtbo` but the board overlay a firmware overlay, each other
+/// `overlays/` file a firmware file.
+fn layout_of(boot: &[(String, Vec<u8>)]) -> lemnos_slot_store::bays::Layout {
+    use lemnos_slot_store::bays::Layout;
+    let mut overlays = Vec::new();
+    let mut files = Vec::new();
+    for (path, _) in boot {
+        let Some(name) = path.strip_prefix("overlays/") else {
+            continue;
+        };
+        if name == "lemnos-board.dtbo" {
+            continue;
+        }
+        match name.strip_suffix(".dtbo") {
+            Some(overlay) => overlays.push(overlay.to_string()),
+            None => files.push(name.to_string()),
         }
     }
-    !crc
+    let dtbs: Vec<String> = DTB_NAMES.iter().map(|n| (*n).to_string()).collect();
+    Layout::new([4096; 5])
+        .expect("a layout")
+        .with_dtbs(&dtbs)
+        .with_firmware(&overlays, None)
+        .with_files(&files)
 }
 
-/// A bay record (`bayinfo.rec`): two valid copies of the same payload, as Lemnos writes them.
-fn bayinfo(slot: &str, files: &[(u64, [u8; 32])]) -> Vec<u8> {
-    let mut payload = vec![slot.len() as u8];
-    payload.extend_from_slice(slot.as_bytes());
-    for (len, hash) in files {
-        payload.extend_from_slice(&len.to_le_bytes());
-        payload.extend_from_slice(hash);
-    }
+/// The files a set holds for `boot`, in written order (`Layout::written`).
+fn written(boot: &[(String, Vec<u8>)]) -> Vec<(String, Vec<u8>)> {
+    let layout = layout_of(boot);
+    let payloads: Vec<&[u8]> = layout
+        .paths()
+        .iter()
+        .map(|name| {
+            boot.iter()
+                .find(|(p, _)| p == name)
+                .map(|(_, b)| b.as_slice())
+                .expect("a boot file")
+        })
+        .collect();
+    layout.written(&payloads).expect("written")
+}
+
+/// A bay record as Lemnos writes it (`bays::Info::committed`, two `twocopy` copies).
+fn bayinfo(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<u8> {
+    use lemnos_slot_store::bayfat::Region;
+    use lemnos_slot_store::bays::Info;
+    use lemnos_slot_store::twocopy::{self, Kind, SECTOR};
+    let info = Info::committed(
+        Region {
+            start: 64,
+            clusters: 512,
+        },
+        slot,
+        &written(boot),
+    );
     let mut out = Vec::new();
-    for sequence in [1u64, 2] {
-        let mut copy = vec![0u8; 512];
-        copy[0..4].copy_from_slice(b"LMRC");
-        copy[4] = 1;
-        copy[5] = 6;
-        copy[8..16].copy_from_slice(&sequence.to_le_bytes());
-        copy[16..18].copy_from_slice(&(payload.len() as u16).to_le_bytes());
-        copy[18..18 + payload.len()].copy_from_slice(&payload);
-        let crc = crc32(&copy[..508]);
-        copy[508..512].copy_from_slice(&crc.to_le_bytes());
-        out.extend_from_slice(&copy);
+    for seq in [1u64, 2] {
+        let mut sector = [0u8; SECTOR];
+        twocopy::encode(Kind::BAY_INFO, seq, &info.encode(), &mut sector).expect("encoded");
+        out.extend_from_slice(&sector);
     }
     out
+}
+
+/// Bay 0 of `slot` holding `boot`: the root `firmware-overlays.txt`, the record, and each written
+/// file padded after its stored bytes by `pad` (`None`: exact), spaces for cmdline.txt. The form's
+/// generated `overlays/README` is never padded.
+fn bay0(
+    slot: &str,
+    boot: &[(String, Vec<u8>)],
+    pad: Option<(usize, u8)>,
+) -> Vec<(String, Vec<u8>)> {
+    let mut files = vec![
+        (
+            lemnos_slot_store::bays::FIRMWARE_LIST.to_string(),
+            lemnos_slot_store::bays::firmware_list_text(&layout_of(boot)).into_bytes(),
+        ),
+        ("slots/bay0/bayinfo.rec".to_string(), bayinfo(slot, boot)),
+    ];
+    for (path, bytes) in written(boot) {
+        let mut stored = bytes.clone();
+        if let Some((n, zero)) = pad
+            && path != lemnos_slot_store::bays::OVERLAY_README
+        {
+            let byte = if path == "cmdline.txt" { b' ' } else { zero };
+            stored.resize(bytes.len() + n, byte);
+        }
+        files.push((format!("slots/bay0/{path}"), stored));
+    }
+    files
 }
 
 /// A FAT16 boot partition with the given files (paths with `/`), written by `fatfs`.
@@ -180,11 +233,10 @@ fn boot_partition(dir: &Path, files: &[(String, Vec<u8>)]) -> PathBuf {
 }
 
 /// The boot partition of a slot whose bay 0 stores `stored` (the bytes the record hashes), with
-/// `padding` bytes of zeros after each file, as Lemnos pads a bay to its fixed size.
+/// 64 zeros after each file, and ramoops in the root.
 fn partition_files(
     slot: &str,
     stored: &[(String, Vec<u8>)],
-    record_hashes: &[(u64, [u8; 32])],
     extra: Vec<(String, Vec<u8>)>,
 ) -> Vec<(String, Vec<u8>)> {
     let mut files = vec![
@@ -197,31 +249,13 @@ fn partition_files(
             b"os_prefix=slots/bay0/\n".to_vec(),
         ),
         (
-            "slots/bay0/bayinfo.rec".to_string(),
-            bayinfo(slot, record_hashes),
-        ),
-        (
             "overlays/ramoops-pi5.dtbo".to_string(),
             b"ramoops overlay".to_vec(),
         ),
     ];
-    for ((path, bytes), _) in stored.iter().zip(BAY_PATHS.iter()) {
-        let mut padded = bytes.clone();
-        padded.resize(bytes.len() + 64, 0);
-        files.push((format!("slots/bay0/{path}"), padded));
-    }
+    files.extend(bay0(slot, stored, Some((64, 0))));
     files.extend(extra);
     files
-}
-
-fn record_hashes(boot: &[(String, Vec<u8>)]) -> Vec<(u64, [u8; 32])> {
-    BAY_PATHS
-        .iter()
-        .map(|path| {
-            let (_, bytes) = boot.iter().find(|(p, _)| p == path).expect("a role file");
-            (bytes.len() as u64, Sha256::digest(bytes).into())
-        })
-        .collect()
 }
 
 /// One request the fake agent received.
@@ -408,9 +442,9 @@ fn expected_served(files: &[(String, Vec<u8>)]) -> std::collections::BTreeMap<St
     let mut map: std::collections::BTreeMap<String, String> = files
         .iter()
         .map(|(path, bytes)| {
-            let stored = boot_contents()
+            let stored = written(&boot_contents())
                 .into_iter()
-                .find(|(role, _)| path.ends_with(role.as_str()) && path.contains("/bay0/"))
+                .find(|(member, _)| *path == format!("slots/bay0/{member}"))
                 .map_or(bytes.clone(), |(_, content)| content);
             (path.clone(), sha(&stored))
         })
@@ -425,8 +459,7 @@ async fn a_bay_file_that_differs_is_refused_with_both_hashes_and_nothing_is_sent
     let mut stored = boot.clone();
     // The partition's kernel differs from the bundle's; the record is consistent with it.
     stored[0].1 = b"a different kernel".to_vec();
-    let hashes = record_hashes(&stored);
-    let partition = partition_files("slot-a", &stored, &hashes, vec![]);
+    let partition = partition_files("slot-a", &stored, vec![]);
     let case = case(&SIGN_SEED, partition);
     let (code, out) = usb_boot(&case, &["--dry-run"]).await;
     assert_eq!(code, 1, "{out}");
@@ -450,7 +483,7 @@ async fn a_bay_file_that_differs_is_refused_with_both_hashes_and_nothing_is_sent
 #[tokio::test]
 async fn a_bundle_that_fails_its_signature_is_refused_and_nothing_is_sent() {
     let boot = boot_contents();
-    let partition = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    let partition = partition_files("slot-a", &boot, vec![]);
     let case = case(&OTHER_SEED, partition);
     let (code, out) = usb_boot(&case, &[]).await;
     assert_eq!(code, 1, "{out}");
@@ -465,7 +498,7 @@ async fn a_bundle_that_fails_its_signature_is_refused_and_nothing_is_sent() {
 #[tokio::test]
 async fn a_partition_without_the_ramoops_line_is_refused_and_nothing_is_sent() {
     let boot = boot_contents();
-    let mut partition = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    let mut partition = partition_files("slot-a", &boot, vec![]);
     partition[0].1 = b"kernel_watchdog_timeout=15\ninclude default.txt\n".to_vec();
     partition.retain(|(name, _)| name != "overlays/ramoops-pi5.dtbo");
     let case = case(&SIGN_SEED, partition);
@@ -485,7 +518,7 @@ async fn a_partition_without_the_ramoops_line_is_refused_and_nothing_is_sent() {
 #[tokio::test]
 async fn matching_files_are_uploaded_with_exact_paths_and_hashes_then_the_job_is_followed() {
     let boot = boot_contents();
-    let files = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    let files = partition_files("slot-a", &boot, vec![]);
     let want = expected_served(&files);
     let case = case(&SIGN_SEED, files);
     let (code, out) = usb_boot(&case, &[]).await;
@@ -544,7 +577,7 @@ async fn matching_files_are_uploaded_with_exact_paths_and_hashes_then_the_job_is
 #[tokio::test]
 async fn a_mixed_case_real_name_is_uploaded_as_it_is_and_matched_by_the_job() {
     let boot = boot_contents();
-    let mut files = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    let mut files = partition_files("slot-a", &boot, vec![]);
     for (name, _) in files.iter_mut() {
         if name == "slots/bay0/kernel8.img" {
             *name = "slots/bay0/Kernel8.img".into();
@@ -576,7 +609,7 @@ async fn a_mixed_case_real_name_is_uploaded_as_it_is_and_matched_by_the_job() {
 #[tokio::test]
 async fn the_dry_run_lists_every_file_and_sends_nothing() {
     let boot = boot_contents();
-    let files = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    let files = partition_files("slot-a", &boot, vec![]);
     let want = expected_served(&files);
     let case = case(&SIGN_SEED, files);
     let (code, out) = usb_boot(&case, &["--dry-run"]).await;
@@ -602,7 +635,7 @@ async fn the_dry_run_lists_every_file_and_sends_nothing() {
 #[tokio::test]
 async fn a_partition_with_no_bay_for_the_slot_is_refused() {
     let boot = boot_contents();
-    let partition = partition_files("other-slot", &boot, &record_hashes(&boot), vec![]);
+    let partition = partition_files("other-slot", &boot, vec![]);
     let case = case(&SIGN_SEED, partition);
     let (code, out) = usb_boot(&case, &[]).await;
     assert_eq!(code, 1, "{out}");
@@ -617,65 +650,43 @@ async fn a_partition_with_no_bay_for_the_slot_is_refused() {
     );
 }
 
-// Lemnos 7d91d645's layout: the board's firmware overlays live in the bay (with its overlays/README),
-// the bay record lists them after the five roles, and config.txt loads ramoops with parameters.
+// Lemnos layout v6 (0d37cc55): the board's firmware overlays and files live in the bay (with its
+// overlays/README), the record lists every written file's length and hash prefix, the root
+// firmware-overlays.txt names them, and config.txt loads ramoops with parameters.
 
 const RAMOOPS: &[u8] = b"ramoops overlay bytes";
 
-/// The bundle's boot files at 7d91d645: the five roles, then the firmware overlay.
+/// The bundle's boot files: the five roles, then the firmware overlay and a firmware file.
 fn boot_with_firmware() -> Vec<(String, Vec<u8>)> {
     let mut boot = boot_contents();
     boot.push(("overlays/ramoops-pi5.dtbo".into(), RAMOOPS.to_vec()));
+    boot.push((
+        "overlays/overlay_map.dtb".into(),
+        b"overlay map bytes".to_vec(),
+    ));
     boot
 }
 
-/// A bay record as Lemnos encodes it (`bays::Info`, `twocopy::encode`), firmware overlays included.
-fn lemnos_bayinfo(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<u8> {
-    use lemnos_slot_store::bays::Info;
-    use lemnos_slot_store::twocopy::{self, Kind, SECTOR};
-    let entry = |path: &str| {
-        let (_, bytes) = boot.iter().find(|(p, _)| p == path).expect("a boot file");
-        (bytes.len() as u64, <[u8; 32]>::from(Sha256::digest(bytes)))
-    };
-    let info = Info {
-        slot: slot.into(),
-        files: std::array::from_fn(|i| entry(BAY_PATHS[i])),
-        firmware: boot
-            .iter()
-            .filter(|(p, _)| !BAY_PATHS.contains(&p.as_str()))
-            .map(|(p, _)| {
-                let (len, hash) = entry(p);
-                (p.clone(), len, hash)
-            })
-            .collect(),
-    };
-    let mut out = Vec::new();
-    for seq in [1u64, 2] {
-        let mut sector = [0u8; SECTOR];
-        twocopy::encode(Kind::BAY_INFO, seq, &info.encode(), &mut sector).expect("encoded");
-        out.extend_from_slice(&sector);
-    }
-    out
-}
-
-/// The 7d91d645 boot partition of `slot`: every bay member zero-padded after its stored bytes, the
-/// way Lemnos pads a bay (the Nov 20 halt's form), the overlay only in the bay.
-fn lemnos_partition(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<(String, Vec<u8>)> {
+/// The v6 boot partition of `slot`, each bay member padded by `pad` (`None`: exact, run A's form).
+fn v6_partition(
+    slot: &str,
+    boot: &[(String, Vec<u8>)],
+    pad: Option<(usize, u8)>,
+) -> Vec<(String, Vec<u8>)> {
     let mut files = vec![
         (
             "config.txt".to_string(),
             b"kernel_watchdog_timeout=15\ninclude default.txt\ndtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000\n".to_vec(),
         ),
         ("default.txt".to_string(), b"os_prefix=slots/bay0/\n".to_vec()),
-        ("slots/bay0/bayinfo.rec".to_string(), lemnos_bayinfo(slot, boot)),
-        ("slots/bay0/overlays/README".to_string(), b"bay overlays\n".to_vec()),
     ];
-    for (path, bytes) in boot {
-        let mut padded = bytes.clone();
-        padded.resize(bytes.len() + 4096, 0);
-        files.push((format!("slots/bay0/{path}"), padded));
-    }
+    files.extend(bay0(slot, boot, pad));
     files
+}
+
+/// The v6 boot partition of `slot` with every bay member zero-padded by 4096 bytes.
+fn lemnos_partition(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<(String, Vec<u8>)> {
+    v6_partition(slot, boot, Some((4096, 0)))
 }
 
 fn case_with(boot: Vec<(String, Vec<u8>)>, partition_files: Vec<(String, Vec<u8>)>) -> Case {
@@ -685,7 +696,7 @@ fn case_with(boot: Vec<(String, Vec<u8>)>, partition_files: Vec<(String, Vec<u8>
 }
 
 #[tokio::test]
-async fn the_7d91d645_layout_passes_in_both_forms() {
+async fn the_v6_layout_passes_in_both_forms() {
     let boot = boot_with_firmware();
     let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
     let (code, out) = usb_boot(&case, &["--dry-run"]).await;
@@ -707,7 +718,10 @@ async fn a_bundle_overlay_the_bay_record_lacks_is_refused() {
     let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot_contents()));
     let (code, out) = usb_boot(&case, &["--dry-run"]).await;
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("but bay0's record holds"), "{out}");
+    assert!(
+        out.contains("but the boot partition's firmware-overlays.txt makes"),
+        "{out}"
+    );
     assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
 }
 
@@ -759,6 +773,44 @@ async fn a_kernel_less_partition_is_refused_by_name() {
     assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
 }
 
+#[tokio::test]
+async fn a_device_tree_copy_that_differs_from_the_record_is_refused() {
+    let boot = boot_with_firmware();
+    let mut files = lemnos_partition("slot-a", &boot);
+    let second = format!("slots/bay0/{}", DTB_NAMES[1]);
+    for (path, bytes) in files.iter_mut() {
+        if *path == second {
+            bytes[0] ^= 1;
+        }
+    }
+    let case = case_with(boot.clone(), files);
+    let (code, out) = usb_boot(&case, &["--dry-run", "--bay-exact"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains(&format!(
+            "{} in bay0: the file does not match the boot partition's own record",
+            DTB_NAMES[1]
+        )),
+        "{out}"
+    );
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+}
+
+#[tokio::test]
+async fn a_partition_without_its_firmware_list_is_refused_by_name() {
+    let boot = boot_with_firmware();
+    let mut files = lemnos_partition("slot-a", &boot);
+    files.retain(|(p, _)| p != "firmware-overlays.txt");
+    let case = case_with(boot.clone(), files);
+    let (code, out) = usb_boot(&case, &["--dry-run", "--bay-exact"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("the boot partition has no firmware-overlays.txt"),
+        "{out}"
+    );
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+}
+
 // Control C: run A's image with only the Nov 20 padding put back.
 
 /// The partition with every bay member stored at its exact length (`pad` = None: run A's fixed
@@ -768,25 +820,7 @@ fn bay_partition(
     boot: &[(String, Vec<u8>)],
     pad: Option<(usize, u8)>,
 ) -> Vec<(String, Vec<u8>)> {
-    let mut files = lemnos_partition(slot, boot);
-    for (path, bytes) in files.iter_mut() {
-        let Some((_, content)) = boot
-            .iter()
-            .find(|(role, _)| *path == format!("slots/bay0/{role}"))
-        else {
-            continue;
-        };
-        *bytes = content.clone();
-        if let Some((n, zero_byte)) = pad {
-            let byte = if path.ends_with("cmdline.txt") {
-                b' '
-            } else {
-                zero_byte
-            };
-            bytes.resize(content.len() + n, byte);
-        }
-    }
-    files
+    v6_partition(slot, boot, pad)
 }
 
 /// A case whose partition is the control, with the base (run A's partition) written beside it.

@@ -72,6 +72,14 @@ impl SteppedTransfer<Transfer> for Stepped {
                 self.shared.report(received, size);
                 Ok(Step::Progress)
             }
+            // Orion d4010a45: a push the board has given nothing more of for a while. Orion keeps
+            // waiting and says so; so does the transfer (never given up on unless asked).
+            Ok(PushStep::Stalled { received, size, .. }) => {
+                if let Some(size) = size {
+                    self.shared.report(received, size);
+                }
+                Ok(Step::Progress)
+            }
             Ok(PushStep::Done(transfer)) => {
                 self.pushing = None;
                 Ok(Step::Done(transfer))

@@ -32,12 +32,12 @@
 //!   nothing, so it may be made again.
 
 use std::io::ErrorKind;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
-use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
+use orion::actions::{ActionCall, Finished, Outcome, RunHandle, Target, Update};
 use orion::types::NodeName;
-use orion::{ClientError, Error as OrionError};
+use orion::{ClientError, Error as OrionError, Feature};
 
 use crate::args;
 use crate::catalog::{Action, Catalog, Route};
@@ -50,6 +50,10 @@ pub const CATALOG_ACTION: &str = "actions.list";
 pub const POLL: Duration = Duration::from_millis(250);
 /// The longest a short action may take in one call. Half the call wait is used when that is less.
 pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
+/// The deadline a detached run is started with: Orion's longest by default
+/// (`orion_action_list::MAX_DETACHED_MS`, a node's `actions.max_detached_ms`). A node refuses a
+/// detached run with none (`NoDeadline`), so that a run its caller left still ends by itself.
+pub const DETACHED_DEADLINE_MS: u64 = 60 * 60 * 1000;
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
@@ -178,7 +182,7 @@ impl BoardActions {
     /// # Errors
     ///
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
-    /// or [`ActionError::StartInDoubt`].
+    /// [`ActionError::Refused`] with the board's reason, or [`ActionError::StartInDoubt`].
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
         args::check(action, words)?;
         self.start_encoded(&action.name, args::encode(words)).await
@@ -196,32 +200,64 @@ impl BoardActions {
         // Read before the start is sent: a session that changes meanwhile makes the run look
         // older than it is, so a later use treats it as another session's (the safe side).
         let session = self.handle.session();
+        let wait = self.direct_wait();
         let sent = self
             .handle
             .with_bridge(move |orion| {
-                let run = orion.run(&ActionCall {
+                let mut run = orion.run(&ActionCall {
                     name: &owned,
                     target: Target::Node(node_name),
                     args: &encoded,
-                    deadline_ms: 0,
+                    deadline_ms: DETACHED_DEADLINE_MS,
                     detached: true,
                 })?;
-                Ok(Issued {
+                // Orion C53b (level 3, `Feature::RunHandle`): node logic names the run by its
+                // handle as it starts. The handle reaches this run alone from any later session;
+                // a number reaches only runs of the session it was given on. Read within the
+                // direct wait; a refusal (no such action, no deadline, busy) is read here too. A
+                // progress or end read meanwhile is given again to whoever attaches.
+                let handle = if orion.welcomed().needs(Feature::RunHandle).is_ok() {
+                    let until = Instant::now() + wait;
+                    loop {
+                        if let Some(handle) = run.handle() {
+                            break Some(handle);
+                        }
+                        let left = until.saturating_duration_since(Instant::now());
+                        if left.is_zero() {
+                            break None;
+                        }
+                        match run.wait(left.min(POLL)) {
+                            Ok(_) => {}
+                            Err(ClientError::Refused { error, detail }) => {
+                                return Ok(Started::Refused(Failure::of_core(error, detail)));
+                            }
+                            // The start was sent and the session went before the handle came: the
+                            // run is issued by its number, as before handles; the follow decides.
+                            Err(_) => break None,
+                        }
+                    }
+                } else {
+                    None
+                };
+                Ok(Started::Issued(Issued {
                     call: run.call(),
                     session,
                     name: started.clone(),
-                })
+                    handle,
+                }))
             })
             .await;
         // Retry: never by this crate. A start that was sent and not answered may already be on
         // the board, so the caller is told and decides.
-        sent.map_err(|error| match error {
-            SessionError::Gone(reason) => ActionError::StartInDoubt {
+        match sent {
+            Ok(Started::Issued(issued)) => Ok(issued),
+            Ok(Started::Refused(reason)) => Err(ActionError::Refused(reason)),
+            Err(SessionError::Gone(reason)) => Err(ActionError::StartInDoubt {
                 name: name.to_owned(),
                 reason,
-            },
-            SessionError::Failed(reason) => ActionError::Failed(reason),
-        })
+            }),
+            Err(SessionError::Failed(reason)) => Err(ActionError::Failed(reason)),
+        }
     }
 
     /// Follows detached run `call`, passing each progress report to `on_progress`, until the
@@ -268,13 +304,14 @@ impl BoardActions {
         mut on_progress: impl FnMut(&Progress),
     ) -> Result<Followed, ActionError> {
         let call = issued.call;
+        let handle = issued.handle;
         // Retry: following is a read. A lost session returns `Lost` with the run's number, and
         // following that number on the new session resumes it; the run is never started again.
         loop {
             let seen = self
                 .handle
                 .with_client(move |orion| {
-                    let mut run = orion.attach(call)?;
+                    let mut run = attach(orion, call, handle)?;
                     match run.wait(POLL) {
                         Ok(update) => Ok(Seen::of(update)),
                         Err(ClientError::Refused { error, detail }) => {
@@ -303,7 +340,7 @@ impl BoardActions {
                             reason: finished.detail,
                         });
                     }
-                    let result = ended(finished);
+                    let result = followed_end(finished);
                     let on_issuing_session = self.handle.session() == issued.session;
                     let done = match (hold, result) {
                         (Some(hold), Err(error)) if hold.lapsed() => {
@@ -343,6 +380,18 @@ impl BoardActions {
                         Followed::Reconnected(done)
                     });
                 }
+                // A run started on an earlier session that the board no longer holds (its end
+                // given already, kept no longer, or node logic started again): how it ended is not
+                // known here, so the outcome is unknown, never a refusal of the action.
+                Ok(Seen::Refused(reason)) if self.handle.session() != issued.session => {
+                    return Err(ActionError::Unconfirmed {
+                        call,
+                        reason: format!(
+                            "after a reconnect the board no longer holds the run started on an earlier session ({reason}): its outcome is unknown"
+                        ),
+                        ended: None,
+                    });
+                }
                 Ok(Seen::Refused(reason)) => return Err(ActionError::Refused(reason)),
                 Err(SessionError::Gone(reason)) => {
                     return Err(ActionError::Lost {
@@ -367,6 +416,7 @@ impl BoardActions {
     /// [`ActionError::Lost`] when the session did not carry the request.
     pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
         let call = issued.call;
+        let handle = issued.handle;
         // A number issued on an earlier session may now name another run on the board. It is not
         // sent a cancel, since a cancel to the wrong run stops someone else's work.
         if self.handle.session() != issued.session {
@@ -378,7 +428,7 @@ impl BoardActions {
         }
         self.handle
             .with_bridge(move |orion| {
-                let mut run = orion.attach(call)?;
+                let mut run = attach(orion, call, handle)?;
                 run.cancel().map_err(OrionError::Client)
             })
             .await
@@ -487,6 +537,48 @@ impl Seen {
     }
 }
 
+/// What a detached start read: the run, or the board's refusal of it.
+enum Started {
+    Issued(Issued),
+    Refused(Failure),
+}
+
+/// Comes back to a detached run: by its handle when the node gave one, so that no other run under
+/// the same number answers; by its number on a node too old to give handles.
+fn attach(
+    orion: &orion::Orion,
+    call: u64,
+    handle: Option<RunHandle>,
+) -> Result<orion::actions::Run, OrionError> {
+    match handle {
+        Some(handle) => orion.attach_handle(handle),
+        None => orion.attach(call),
+    }
+}
+
+/// The words a followed run's `TimedOut` carries: a detached run's only deadline is the one this
+/// crate starts it with, so its passing is the board's bound, not the action failing.
+pub const DEADLINE_PASSED: &str = "the board stopped the run when its deadline passed (Atlas gives a detached run an hour, the longest an Orion node takes unless set otherwise): that is the board's bound on the run, not the action failing; what the action did is the board's to say";
+
+/// How a followed (detached) run that ended is answered: as [`ended`], except that `TimedOut`
+/// says the board's bound passed ([`DEADLINE_PASSED`]), with the board's own words after it.
+fn followed_end(finished: Finished) -> Result<Done, ActionError> {
+    if finished.outcome != Outcome::TimedOut {
+        return ended(finished);
+    }
+    let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
+    let words = if finished.detail.trim().is_empty() {
+        DEADLINE_PASSED.to_owned()
+    } else {
+        format!("{DEADLINE_PASSED} (the board said: {})", finished.detail)
+    };
+    Err(ActionError::Failed(Failure::new(
+        FailureKind::Other,
+        code,
+        words,
+    )))
+}
+
 /// How a run that ended is answered: the board's words for anything that did not succeed. The
 /// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
 /// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
@@ -526,6 +618,15 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
             code,
             reason("the action ran out of time"),
         ))),
+        // Orion d4010a45: node logic stopped the program and it did not say how it ended. Not done
+        // and not "not done": a failure whose reason says the action may or may not have run.
+        Outcome::Indeterminate => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason(
+                "the board stopped the action and could not say how it ended: it may or may not have run",
+            ),
+        ))),
         Outcome::Unknown(code) => Err(ActionError::Failed(
             reason(&format!("the board ended the action with outcome {code}")).into(),
         )),
@@ -540,6 +641,8 @@ pub struct Issued {
     call: u64,
     session: u64,
     name: String,
+    /// The run's handle, when the node gave one (Orion level 3): it names this run alone.
+    handle: Option<RunHandle>,
 }
 
 impl Issued {
@@ -628,6 +731,26 @@ mod tests {
         let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
         assert_eq!(timed.failure().and_then(Failure::code), Some(110));
         assert!(!timed.is_busy());
+    }
+
+    #[test]
+    fn a_followed_run_that_timed_out_says_the_boards_bound_passed() {
+        let timed = followed_end(finished(Outcome::TimedOut, 110, "")).unwrap_err();
+        assert_eq!(timed.failure().and_then(Failure::code), Some(110));
+        assert!(timed.to_string().contains(DEADLINE_PASSED), "{timed}");
+        let said = followed_end(finished(Outcome::TimedOut, 110, "stopped")).unwrap_err();
+        assert!(
+            said.to_string().contains("(the board said: stopped)"),
+            "{said}"
+        );
+        // Every other ending is read as a direct run's.
+        let failed = followed_end(finished(Outcome::Failed, 0, "")).unwrap_err();
+        assert_eq!(
+            failed.to_string(),
+            ended(finished(Outcome::Failed, 0, ""))
+                .unwrap_err()
+                .to_string()
+        );
     }
 
     #[test]

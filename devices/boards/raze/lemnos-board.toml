@@ -50,14 +50,34 @@ dma_heaps = ["linux,cma"]
 # which Lemnos's fixed config.txt cannot include as a file: vc4-kms-v3d-pi5 (the display pipeline) and ramoops-pi5 (pstore
 # in RAM, the board's only early-boot log; read through crash_log below). Each overlay named in a line is listed once in
 # firmware_overlays, so its .dtbo goes into every bay set (Gaia's @firmware@: the overlays boards/raze/board.toml builds).
+# Lemnos layout v6 (0d37cc55, pin move 1): the tryboot keys the firmware reads by itself (Lemnos docs/boards.md
+# "A board whose slot device keeps the tryboot record"), as in Lemnos's tested Raze board (lemnos-targets/BAY/raze):
+#   firmware_overlays + bcm2712d0: the overlay the CM5's D0 stepping firmware applies by itself (firmware_applied), so the
+#                    bay carries its .dtbo (built by boards/raze/board.toml [kernel] overlays).
+#   firmware_files   overlay_map.dtb and hat_map.dtb, which the firmware reads from each bay's overlays/ (required on
+#                    tryboot); built by board.toml [kernel] extra_device_trees (Gaia 073a2f6e) into @firmware@.
+#   device_tree_names the names the firmware loads by default on a CM5 and a CM5 Lite on the CM5 IO board; the bay
+#                    stores the slot's one device tree under each (copies), and no device_tree= line names a file.
+#   firmware_filters the config.txt model sections the CM5 matches.
+#   [boot.eeprom]    a description of the bootloader EEPROM as read from the board (Lemnos never writes it): Lemnos's
+#                    tested Raze board's values; "not set" = the EEPROM config holds none.
 [boot]
 config_lines = ["dtoverlay=vc4-kms-v3d-pi5", "dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000"]
-firmware_overlays = ["vc4-kms-v3d-pi5", "ramoops-pi5"]
+firmware_overlays = ["vc4-kms-v3d-pi5", "ramoops-pi5", "bcm2712d0"]
+firmware_applied = ["bcm2712d0"]
+firmware_files = ["overlay_map.dtb", "hat_map.dtb"]
+device_tree_names = ["bcm2712-rpi-cm5-cm5io.dtb", "bcm2712-rpi-cm5l-cm5io.dtb"]
+firmware_filters = ["pi5", "cm5"]
 bay_kernel_bytes = 10485760
 bay_initramfs_bytes = 1048576
 bay_device_tree_bytes = 131072
 bay_overlay_bytes = 16384
 bay_cmdline_bytes = 4096
+
+[boot.eeprom]
+build = "2025-12-08"
+max_restarts = "not set"
+reboot_on_fatal_error = "not set"
 
 # The hardware the devices use. Each entry is the one place its pins are written.
 [[hardware]]

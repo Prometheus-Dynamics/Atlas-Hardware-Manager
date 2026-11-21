@@ -12,7 +12,7 @@ use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, NODE_NAME, Sim
 use ed25519_dalek::SigningKey;
 use orion::actions::{ActionCall, Finished, Outcome, Update};
 use orion::topics::FieldId;
-use orion::{Address, Orion};
+use orion::{Address, Options, Orion, Patience};
 use serde_json::Value;
 
 /// How often a wait looks again at the condition it waits for. Only [`DEADLINE`] ends a wait
@@ -470,7 +470,8 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
             name: names::SLOTS_INSTALL_FILE,
             target: atlas_sim_node::node::target(),
             args: args.as_bytes(),
-            deadline_ms: 0,
+            // A detached run needs a deadline (Orion's `NoDeadline`): its longest, an hour.
+            deadline_ms: 60 * 60 * 1000,
             detached: true,
         })
         .expect("the detached install starts");
@@ -919,12 +920,16 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
 
     // Stopped: the port is free, and the node is gone from it.
     drop(first);
-    let stopped = Orion::connect(
+    let stopped = Orion::connect_once(
         &Address::Network {
             host: format!("127.0.0.1:{port}"),
             key: None,
         },
         "after-stop",
+        Options {
+            patience: Patience::Once,
+            ..Options::default()
+        },
     );
     assert!(stopped.is_err(), "a stopped node answers nothing");
 

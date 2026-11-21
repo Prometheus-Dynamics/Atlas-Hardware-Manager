@@ -1,6 +1,7 @@
 # Orion's board image: package orion-bin (binary orion), run as two services from Orion's packaging
 # (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
-# 455a956e13e62c97081d66e0e8f3bf2aced1eac8 (the rev the workspace pins; Cargo.lock is committed there).
+# d4010a453a5399dc6007f03a6dfc32c8d39d5d2f (Orion next, I51: its shm crates pinned at Lemnos 0d37cc55; pin move 1). The
+# workspace pins the same rev (Cargo.toml), so the board's Orion and the PC's speak one ring layout.
 #
 # Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
 # 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
@@ -16,7 +17,7 @@ description = "Orion: the orion binary as the board's comm core and node logic (
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+ref = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f"  # Orion d4010a45 (I51), sent by Orion 2026-11-21, pin move 1; before: 455a956e
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

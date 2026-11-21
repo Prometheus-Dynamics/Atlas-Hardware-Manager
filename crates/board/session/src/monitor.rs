@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 
 use orion::node::Node;
 use orion::types::NodeName;
-use orion::{Address, ClientError, Identity, Options, Orion};
+use orion::{Address, ClientError, Identity, Options, Orion, Patience};
 
 use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
@@ -800,6 +800,9 @@ impl Keeper {
         let options = Options {
             timeout: CONNECT_TIMEOUT,
             identity: Some(Identity::from_secret(&self.secret)),
+            // One try: the monitor keeps trying itself (its backoff, its stop, and "the node is
+            // not connected" said meanwhile). Orion's default since d4010a45 tries until welcomed.
+            patience: Patience::Once,
             ..Options::default()
         };
         Orion::connect_with(&address, PROGRAM, options)

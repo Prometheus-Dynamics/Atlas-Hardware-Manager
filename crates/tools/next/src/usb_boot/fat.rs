@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
 use fatfs::{Dir, FileSystem, FsOptions, ReadWriteSeek};
-use lemnos_slot_store::bays::{Info, ROLES};
+use lemnos_slot_store::bays::{FIRMWARE_LIST, Info, Layout, parse_firmware_list};
 use lemnos_slot_store::twocopy::{self, Kind, SECTOR, Sector};
 
 /// The boot partition's files: each path (`/` between directories) with the name as the volume
@@ -38,18 +38,30 @@ pub fn collisions(tree: &Tree) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// The five payload roles of a bay set, in Lemnos's order: `lemnos_slot_store::bays::ROLES`, the one list.
-pub const BAY_PATHS: [&str; 5] = [
-    ROLES[0].path,
-    ROLES[1].path,
-    ROLES[2].path,
-    ROLES[3].path,
-    ROLES[4].path,
-];
-
-/// A bay set's committed record, as Lemnos decodes it: the slot, each role's stored length and
-/// SHA-256, and each firmware overlay the set holds (`bays::Info`).
+/// A bay set's committed record, as Lemnos decodes it (layout v6): the slot, each written file's
+/// stored length and SHA-256 prefix, and the list digest (`bays::Info`).
 pub type BayInfo = Info;
+
+/// The bay layout the boot partition's root `firmware-overlays.txt` declares, read with Lemnos's
+/// own parser: the device tree names, firmware overlays and files, the config digest and the form.
+/// Only the names are used; the sizes are each record's own.
+///
+/// # Errors
+///
+/// A partition without the file, or a file Lemnos's parser refuses.
+pub fn layout(tree: &Tree) -> Result<Layout, String> {
+    let (_, bytes) = find(tree, FIRMWARE_LIST).ok_or_else(|| {
+        format!("the boot partition has no {FIRMWARE_LIST} (a layout v6 image names its bay members there)")
+    })?;
+    let text = std::str::from_utf8(bytes).map_err(|_| format!("{FIRMWARE_LIST} is not text"))?;
+    let declared = parse_firmware_list(text)?;
+    let sector = SECTOR as u64;
+    Ok(Layout::new([sector; 5])?
+        .with_dtbs(&declared.dtbs)
+        .with_firmware(&declared.overlays, declared.config)
+        .with_files(&declared.files)
+        .with_form(declared.form))
+}
 
 /// Reads the whole file tree of a FAT boot partition image, names as the volume holds them.
 ///
@@ -88,7 +100,7 @@ fn walk<IO: ReadWriteSeek>(dir: Dir<'_, IO>, prefix: &str, tree: &mut Tree) -> R
 
 /// Reads a bay record file (two sectors, a copy in each) as Lemnos does: each sector through
 /// `twocopy::decode`, the valid `BAY_INFO` copy with the higher sequence, its payload through
-/// `bays::Info::decode` (the five roles, then any firmware overlays). `None` when neither copy is a
+/// `bays::Info::decode` (layout v6). `None` when neither copy is a
 /// valid bay record.
 #[must_use]
 pub fn parse_bayinfo(bytes: &[u8]) -> Option<BayInfo> {
@@ -113,19 +125,21 @@ pub fn parse_bayinfo(bytes: &[u8]) -> Option<BayInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lemnos_slot_store::bayfat::Region;
 
-    fn record(slot: &str, firmware: Vec<(String, u64, [u8; 32])>) -> Info {
-        Info {
-            slot: slot.into(),
-            files: [
-                (1, [1; 32]),
-                (2, [2; 32]),
-                (3, [3; 32]),
-                (4, [4; 32]),
-                (5, [5; 32]),
-            ],
-            firmware,
-        }
+    fn record(slot: &str, files: &[(&str, &[u8])]) -> Info {
+        let files: Vec<(String, Vec<u8>)> = files
+            .iter()
+            .map(|(p, b)| ((*p).to_string(), b.to_vec()))
+            .collect();
+        Info::committed(
+            Region {
+                start: 3,
+                clusters: 40,
+            },
+            slot,
+            &files,
+        )
     }
 
     fn file(copies: &[(u64, &Info)]) -> Vec<u8> {
@@ -140,10 +154,10 @@ mod tests {
 
     #[test]
     fn the_higher_valid_copy_wins_and_firmware_overlays_are_read() {
-        let old = record("slot-old", vec![]);
+        let old = record("slot-old", &[("kernel8.img", b"k")]);
         let new = record(
             "slot-new",
-            vec![("overlays/ramoops-pi5.dtbo".into(), 745, [9; 32])],
+            &[("kernel8.img", b"k2"), ("overlays/ramoops-pi5.dtbo", b"o")],
         );
         assert_eq!(
             parse_bayinfo(&file(&[(1, &old), (2, &new)])),

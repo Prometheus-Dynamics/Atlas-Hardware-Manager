@@ -39,6 +39,7 @@ use std::time::Duration;
 
 use atlas_bundle::inspect_bundle;
 use atlas_release::PublicKey;
+use lemnos_slot_store::bays;
 use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 
@@ -143,65 +144,91 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
     let bay = (0..BAY_SETS).find_map(|set| {
         let (_, record) = fat::find(&tree, &format!("slots/bay{set}/bayinfo.rec"))?;
         let info = fat::parse_bayinfo(record)?;
-        (info.slot == manifest.id).then_some((set, info))
+        (info.slot.as_deref() == Some(manifest.id.as_str())).then_some((set, info))
     });
+    // The bay's members, by name: the partition's own firmware-overlays.txt (Lemnos layout v6),
+    // which the record's lengths and hash prefixes follow in written order.
+    let layout = match fat::layout(&tree) {
+        Ok(layout) => Some(layout),
+        Err(problem) => {
+            refusals.push(format!("{problem}: nothing was sent"));
+            None
+        }
+    };
     // What each served file's bytes are: the tree's bytes, except a bay file, which is served at
     // its stored length (the bytes the manifest hashes), never padded to the bay's size.
     let mut served_bytes: BTreeMap<String, Vec<u8>> = tree.clone();
     let mut bay_set = 0;
-    match bay {
-        None => refusals.push(format!(
+    match (bay, layout) {
+        (None, _) => refusals.push(format!(
             "no bay set of the boot partition holds slot {:?} (a committed bayinfo.rec names it): nothing was sent",
             manifest.id
         )),
-        Some((set, info)) => {
+        (Some(_), None) => {}
+        (Some((set, info)), Some(layout)) => {
             bay_set = set;
-            // The bay's members, as its record lists them: the five roles, then each firmware
-            // overlay (Lemnos `bays::Info`). The bundle must list exactly these.
-            let members: Vec<(String, u64, [u8; 32])> = fat::BAY_PATHS
-                .iter()
-                .zip(info.files.iter())
-                .map(|(path, (len, hash))| ((*path).to_string(), *len, *hash))
-                .chain(info.firmware.iter().cloned())
-                .collect();
-            bay_members = members.iter().map(|(p, len, _)| (p.clone(), *len)).collect();
+            // The bundle lists the payloads (the five roles, then each firmware overlay and file);
+            // the set holds them as written (the device tree under each of the board's names, then
+            // the form's generated file).
+            let bundle_names = layout.paths();
             let listed: BTreeSet<&str> = manifest.boot.files.keys().map(String::as_str).collect();
-            let recorded: BTreeSet<&str> = members.iter().map(|(p, _, _)| p.as_str()).collect();
-            if listed != recorded {
+            let wanted: BTreeSet<&str> = bundle_names.iter().map(String::as_str).collect();
+            if listed != wanted {
                 refusals.push(format!(
-                    "the bundle's boot files are {listed:?}, but bay{set}'s record holds {recorded:?}: nothing was sent"
+                    "the bundle's boot files are {listed:?}, but the boot partition's firmware-overlays.txt makes {wanted:?}: nothing was sent"
                 ));
             }
-            for (path, len, record_hash) in &members {
-                let Some(bundle_sha) = manifest.boot.files.get(path) else {
-                    continue;
-                };
-                let wanted = format!("slots/bay{set}/{path}");
-                let Some((real, bytes)) = fat::find(&tree, &wanted) else {
+            let names = layout.names();
+            if names.len() != info.members.len() {
+                refusals.push(format!(
+                    "bay{set}'s record holds {} files and the boot partition's firmware-overlays.txt makes {}: nothing was sent",
+                    info.members.len(),
+                    names.len()
+                ));
+            } else {
+                let mut full: Vec<(String, u64, [u8; 32])> = Vec::new();
+                for ((path, source), (len, prefix)) in
+                    names.iter().zip(layout.sources()).zip(&info.members)
+                {
+                    let wanted = format!("slots/bay{set}/{path}");
+                    let Some((real, bytes)) = fat::find(&tree, &wanted) else {
+                        refusals.push(format!(
+                            "{path} is missing from bay{set} of the boot partition: nothing was sent"
+                        ));
+                        continue;
+                    };
+                    let Some(stored_bytes) = usize::try_from(*len).ok().and_then(|n| bytes.get(..n))
+                    else {
+                        refusals.push(format!(
+                            "{path} in bay{set} is shorter than its record's {len} bytes: nothing was sent"
+                        ));
+                        continue;
+                    };
+                    let digest: [u8; 32] = Sha256::digest(stored_bytes).into();
+                    if digest[..8] != prefix[..] {
+                        refusals.push(format!(
+                            "{path} in bay{set}: the file does not match the boot partition's own record: nothing was sent"
+                        ));
+                    }
+                    full.push((path.clone(), *len, digest));
+                    bay_members.push((path.clone(), *len));
+                    if let Some(bundle_sha) =
+                        source.and_then(|i| manifest.boot.files.get(&bundle_names[i]))
+                    {
+                        let actual = sha256_hex(stored_bytes);
+                        if &actual != bundle_sha {
+                            refusals.push(format!(
+                                "{path}: bundle SHA-256 {bundle_sha}, boot partition SHA-256 {actual}: refused, nothing was sent"
+                            ));
+                        }
+                    }
+                    served_bytes.insert(real.to_string(), stored_bytes.to_vec());
+                }
+                if full.len() == names.len() && bays::list_digest(&full) != info.digest {
                     refusals.push(format!(
-                        "{path} is missing from bay{set} of the boot partition (bundle SHA-256 {bundle_sha}): nothing was sent"
-                    ));
-                    continue;
-                };
-                let Some(stored_bytes) = usize::try_from(*len).ok().and_then(|n| bytes.get(..n))
-                else {
-                    refusals.push(format!(
-                        "{path} in bay{set} is shorter than its record's {len} bytes: nothing was sent"
-                    ));
-                    continue;
-                };
-                let actual = sha256_hex(stored_bytes);
-                if record_hash.iter().map(|b| format!("{b:02x}")).collect::<String>() != actual {
-                    refusals.push(format!(
-                        "{path} in bay{set}: the file does not match the boot partition's own record: nothing was sent"
+                        "bay{set}'s record digest differs from its files' list: nothing was sent"
                     ));
                 }
-                if &actual != bundle_sha {
-                    refusals.push(format!(
-                        "{path}: bundle SHA-256 {bundle_sha}, boot partition SHA-256 {actual}: refused, nothing was sent"
-                    ));
-                }
-                served_bytes.insert(real.to_string(), stored_bytes.to_vec());
             }
         }
     }

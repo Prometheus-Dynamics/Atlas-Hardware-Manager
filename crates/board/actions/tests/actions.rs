@@ -545,17 +545,12 @@ async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
     );
 }
 
-/// CHARACTERIZATION, not a guarantee. It asserts the known-bad outcome of today's Orion pin, so the
-/// hazard stays visible in the suite. Session 1 starts run A and nobody follows it; session 2
-/// starts run B with the same run number and stalls it. Following B should wait for B. Orion's stub
-/// router matches an attach on the caller's number alone, so it answers with A's result at once.
-/// No Atlas guard can see this for a generic job: the answer carries no run identity, and the
-/// session is the one B started on.
-///
-/// This test FLIPS when the Orion pin moves to a13d4030 (C53b: run handles, a bare attach refused
-/// when ambiguous). Then the follow waits for B, and this assertion must be changed to match.
+/// Session 1 starts run A and nobody follows it; session 2 starts run B with the same run number and
+/// stalls it. Following B waits for B: Atlas follows by B's run handle (Orion C53b, in the pin since
+/// d4010a45), so A's answer under the same number never comes back in B's place. (Until the pin
+/// carried run handles, this test asserted the hazard: the follow returned A's answer at once.)
 #[tokio::test]
-async fn until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer() {
+async fn a_same_session_follow_never_returns_an_older_runs_answer() {
     let rig = Rig::start("attach-characterize", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let self_test = named(&catalog, SELF_TEST);
@@ -598,16 +593,14 @@ async fn until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_
                 .map(|followed| followed.into_done().output)
         }
     });
-    until("the follow of B to answer (known-bad today)", || {
-        followed.is_finished()
-    })
-    .await;
-    let answer = followed.await.expect("the follow task ends");
-    assert_eq!(
-        answer.expect("today the answer is A's result, and it comes back at once"),
-        b"passed".to_vec(),
-        "the known-bad outcome: B's follow returned run A's answer"
+    // B is stalled: its follow does not end, and no answer of A's ends it.
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert!(
+        !followed.is_finished(),
+        "B's follow ended while B is stalled: {:?}",
+        followed.await
     );
+    followed.abort();
 }
 
 #[tokio::test]

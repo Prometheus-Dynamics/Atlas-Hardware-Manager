@@ -44,7 +44,10 @@ fragments = ["../../families/bcm2712/assets/linux.fragment", "kernel/raze.config
 # image gap). Built in-tree from the same tree as the dtb (Gaia emits BR2_LINUX_KERNEL_INTREE_DTSO_NAMES;
 # arch/arm64/boot/dts/overlays links to arm's at b005af66), installed into device-trees, fed to Lemnos's
 # boot-partition --firmware through Gaia's @firmware@.
-overlays = ["overlays/ramoops-pi5", "overlays/vc4-kms-v3d-pi5"]
+overlays = ["overlays/ramoops-pi5", "overlays/vc4-kms-v3d-pi5", "overlays/bcm2712d0"]
+# The firmware files each bay set carries (lemnos-board.toml [boot] firmware_files), built as device trees beside the
+# board's own (Gaia 073a2f6e: no extension; the main tree stays first, the one Buildroot boots) into @firmware@.
+extra_device_trees = ["overlays/overlay_map", "overlays/hat_map"]
 
 
 # The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the slot disk is.
@@ -107,6 +110,8 @@ size = "39845888"
 # Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
 [flash]
 methods = ["usb-boot"]
+# What the image is written to: the CM5's eMMC (Gaia's @medium@; slot.json's medium rides in pin move 2).
+medium = "emmc"
 
 # The board's boot firmware: the Raspberry Pi boot ROM, which reads config.txt, default.txt and trial.txt from the
 # boot partition and restarts into a slot by tryboot. Gaia reads it for the kernel contract (the mailbox and firmware

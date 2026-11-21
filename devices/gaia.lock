@@ -1,6 +1,11 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 073a2f6e (pin move 1, 2026-11-21, the coordinator's rev): Gaia next with the board key [kernel]
+# extra_device_trees (the Raze's overlay_map and hat_map into @firmware@); plans of boards without the key unchanged.
+# Moved to 129e07e7 (pin move 1, 2026-11-21, the coordinator's rev): Gaia next with the kernel-module key 4 -> 5 (cfe9dc22:
+# lemnos.ko built with no store path in it), and the arg tokens @build@ ("clean" or, under --dev-reuse, "dev-reuse") and
+# @medium@ (the board's [flash] medium), each keying a step only when an argument names it. Before: c7198359.
 # Moved to c7198359 (F3-3, 2026-11-21, the coordinator's rev): Gaia next with the Buildroot host seed made reproducible
 # (eef3b8de: the same key makes the same bytes in any store; 7d34b4bd: the host Python's packages compiled once,
 # hash-based pycs), the download pool shared across stores by sha256 (db9f61f1; f044cb45 names a link to nothing),
@@ -22,4 +27,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "c719835944648099996cb94564996eff566cf7b1"
+commit = "073a2f6eac25632f848100e6206ca63e1f6229c2"

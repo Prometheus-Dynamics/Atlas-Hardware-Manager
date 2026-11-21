@@ -8,7 +8,7 @@ use std::time::Duration;
 use atlas_session::{Handle, PROGRAM, Presence, Sessions};
 use orion::node::Enrollment;
 use orion::node::Node;
-use orion::{Address, Identity, Options, Orion};
+use orion::{Address, Identity, Options, Orion, Patience};
 
 use crate::Env;
 use crate::commands::Refusal;
@@ -60,6 +60,8 @@ pub async fn transport_key(address: &Address, key: &[u8; 32]) -> Result<[u8; 32]
             Options {
                 identity: Some(Identity::from_secret(&key)),
                 timeout: ANSWER_WAIT,
+                // One try: a tool that tells a person (Orion's default tries until welcomed).
+                patience: Patience::Once,
                 ..Options::default()
             },
         )
@@ -95,6 +97,8 @@ pub async fn enrol(
             Options {
                 identity: Some(Identity::from_secret(&secret)),
                 timeout: ANSWER_WAIT,
+                // One try: a tool that tells a person (Orion's default tries until welcomed).
+                patience: Patience::Once,
                 ..Options::default()
             },
         )?;

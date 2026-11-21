@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "7d91d6459bb20afe473143a9b559e2017109ec81"  # Lemnos 7d91d645 (next head, OWNER-PROBE-ACCESS), coordinator 2026-11-21, F3-1
+ref = "0d37cc55ffee6dacf348e3aff4e2c1ba90e2a33b"  # Lemnos 0d37cc55 (next, BAY-EXACT with BAY-CHECK and WDT-UNIT), coordinator 2026-11-21, pin move 1
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
