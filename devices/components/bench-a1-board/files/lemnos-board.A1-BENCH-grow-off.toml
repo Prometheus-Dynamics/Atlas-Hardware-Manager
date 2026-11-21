@@ -345,11 +345,15 @@ driver = "rp1-csi2"
 link = "cam0-fe"
 config = { device = "1f00110000.csi" }
 
-# 8 of 1280000 bytes, the raw frame of sensor mode 0 (1280x800 RAW10 packed: 1280 x 10 / 8 = 1600 bytes a line,
+# 9 of 1280000 bytes, the raw frame of sensor mode 0 (1280x800 RAW10 packed: 1280 x 10 / 8 = 1600 bytes a line,
 # 800 lines). VERIFIED ON A BOARD: the raw frames size of modes 0 and 1 (INPUTS, "Camera stream tables"). The other
 # streams below are COMPUTED, NOT RUN.
+# 9 buffers (coordinator's ruling 2026-11-20, F3-2; Lemnos notes/contract/Atlas.md "A10 addendum", HOLD-CONSUMER): Styx
+# as the consumer holds B - max(B/2, 2) = 5, its outlet keeps reserve max(max(B/2, 2), B - hold + 1) = 5, so its readers
+# together may keep 3 frames across a publish; HeliOS's capture path holds 2. At 8 they could keep 2 (none to spare),
+# at 6 only 1. 9 x 1280000 = 11.52 MB of linux,cma, 1.28 MB more than 8.
 [devices.streams.frames]
-buffers = 8
+buffers = 9
 buffer_bytes = 1280000
 memory = "dma-buf"
 heap = "linux,cma"
