@@ -20,7 +20,7 @@ mode = "0644"
 # usb-gadget device; scripts/check-lemnos-gadget.py enforces that pairing both ways.
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b210934dbad70926e07214875b100134d946640b"  # Lemnos b210934d (pr/RUNDIR-D1: c215f575 + the RUNDIR fix), coordinator 2026-11-20
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES), coordinator 2026-11-20
 
 # The image lemnos-ctl is built in, and the generator runs in (Gaia #100: a [generate] tool is built for the build
 # machine and run in the image its component's `root` source names). The same image lemnos-ctl's own component uses.

@@ -169,7 +169,7 @@ config = { timeout_s = 15 }
 # 8b10f491, 2026-11-20). This closes the 2026-11-13 flag on `boot = "/boot/firmware"` (a path Raze #2 never mounts).
 # First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
 # thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
-# continues ungrown). At the pinned Lemnos b210934d (grow code unchanged since c215f575) a grow pass never blocks the driver's start and a failed step is retried with a
+# continues ungrown). At the pinned Lemnos b78e5317 (grow code unchanged since c215f575) a grow pass never blocks the driver's start and a failed step is retried with a
 # capped backoff, never given up (drivers/system-slots/src/grow.rs header there). The timings below were taken before that.
 # Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
 # measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes

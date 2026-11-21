@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnos-orion, built from Lemnos b210934d (pr/RUNDIR-D1: next c215f575, the Raze image's final Lemnos rev, plus the RUNDIR fix, runtime_directory's mode before its chown; coordinator 2026-11-20; with Orion 671d29d).
+# One Lemnos cargo package: lemnos-orion, built from Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnos-orion --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos bridge to Orion, lemnos-orion (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b210934dbad70926e07214875b100134d946640b"  # Lemnos b210934d (pr/RUNDIR-D1: c215f575 + the RUNDIR fix), coordinator 2026-11-20
+ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES), coordinator 2026-11-20
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

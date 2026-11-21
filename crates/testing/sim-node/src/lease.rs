@@ -165,7 +165,7 @@ impl Leases {
 /// The note a caller's first reply after its lease ended carries, at the start of its detail (the
 /// bridge's `LEASE_ENDED_NOTE`, Lemnos M39-TCP). Matched by its prefix `lease-ended:`; the rest is
 /// free text. A typed reply field replaces the prefix later (M40).
-// LOCK: Lemnos c215f575 service/orion/src/calls.rs:446 (unchanged at the pinned b210934d), LEASE_ENDED_NOTE (the same text as at 31e0f736:421).
+// LOCK: Lemnos c215f575 service/orion/src/calls.rs:446 (unchanged at the pinned b78e5317), LEASE_ENDED_NOTE (the same text as at 31e0f736:421).
 pub const LEASE_ENDED_NOTE: &str = "lease-ended: holds released";
 
 /// A reply's detail with the note in front: the note alone when the detail is empty, else the note,

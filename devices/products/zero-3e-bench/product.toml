@@ -8,8 +8,8 @@
 # Access over the USB gadget on the OTG Type-C (serial-hash-v1 lemnos0 addressing), plus Ethernet DHCP and mDNS (Z1; the
 # coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
 #
-# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos b210934d (pr/RUNDIR-D1: next c215f575, the Raze image's final Lemnos rev, plus the RUNDIR fix, runtime_directory's mode before its chown; coordinator 2026-11-20; with Orion 671d29d).
-# The root Cargo.toml lemnos-slot-store rev is also b210934d, so the one-rev rule passes. The shared devices/components/lemnos*
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d).
+# The root Cargo.toml lemnos-slot-store rev is also b78e5317, so the one-rev rule passes. The shared devices/components/lemnos*
 # (the Raze's pin) are unchanged.
 # Gaia: as devices/gaia.lock pins it (Gaia next).
 version = 1
