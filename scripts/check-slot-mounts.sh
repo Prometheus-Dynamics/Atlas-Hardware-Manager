@@ -5,6 +5,14 @@
 #                     a root without it does not start ("can't move the data partition into the slot", build 9);
 #   /etc/machine-id   a regular file: slot-init bind-mounts the staged id over it; without it the boot goes on with
 #                     "MACHINE-ID REFUSED machine-id-target-missing" and a transient journald id.
+# And what Lemnos 7d91d645's slot-init refuses a slot without (SLOT-ROOT-PRECHECK, docs/slots.md "What a slot's root
+# must contain"; F3-1): lemnosd feeds the watchdog after slot-init, so a root that can't start it ends in a silent reset:
+#   /data             also EMPTY (the data partition is moved onto it);
+#   /usr/bin/lemnosd  an executable file;
+#   lemnosd.service   enabled: a *.wants/lemnosd.service link in /etc/systemd/system or /usr/lib/systemd/system to the
+#                     unit file, and the unit not masked (/etc/systemd/system/lemnosd.service -> /dev/null); or, under
+#                     BusyBox init, an executable /etc/init.d/S50lemnosd;
+#   user lemnos in /etc/passwd and group lemnos in /etc/group (lemnosd drops to them).
 # The board file in the root (/etc/lemnos/board.toml) must name /data as its system-slots `data`: lemnosd looks for
 # the partition there after the switch. Paths are resolved through links inside the root, as the slot sees them
 # (a merged-usr /sbin, /sbin/init -> ../lib/systemd/systemd).
@@ -62,6 +70,37 @@ def want(rel, kind, why):
 want("/sbin/init", "exec", "slot-init execs it after switch_root")
 want("/data", "dir", "slot-init moves the data partition onto it")
 want("/etc/machine-id", "file", "slot-init bind-mounts the machine id over it")
+d = resolve("/data")
+if d and os.path.isdir(d) and os.listdir(d):
+    bad.append(f"/data is not empty in the slot root ({', '.join(sorted(os.listdir(d))[:5])}): slot-init moves the data partition onto it")
+want("/usr/bin/lemnosd", "exec", "the unit starts it; Lemnos slot-init refuses a root without it")
+def enabled():
+    unit = None
+    for base in ("/etc/systemd/system", "/usr/lib/systemd/system"):
+        p = resolve(base)
+        if not p or not os.path.isdir(p): continue
+        for w in sorted(os.listdir(p)):
+            if not w.endswith(".wants"): continue
+            link = os.path.join(p, w, "lemnosd.service")
+            if os.path.islink(link):
+                t = os.readlink(link)
+                r = resolve(t if t.startswith("/") else os.path.relpath(os.path.join(os.path.dirname(link), t), root))
+                if r and os.path.isfile(r): unit = f"{base}/{w}/lemnosd.service"
+    masked = os.path.islink(os.path.join(root, "etc/systemd/system/lemnosd.service")) and \
+        os.readlink(os.path.join(root, "etc/systemd/system/lemnosd.service")) == "/dev/null"
+    if masked: return "masked (/etc/systemd/system/lemnosd.service -> /dev/null)"
+    if unit: return None
+    s50 = resolve("/etc/init.d/S50lemnosd")
+    if s50 and os.path.isfile(s50) and os.stat(s50).st_mode & 0o111: return None
+    return "not enabled (no *.wants/lemnosd.service link to the unit file, no executable /etc/init.d/S50lemnosd)"
+e = enabled()
+if e: bad.append(f"lemnosd.service is {e}: Lemnos slot-init refuses the slot")
+for table, name in (("/etc/passwd", "user"), ("/etc/group", "group")):
+    p = resolve(table)
+    names = set()
+    if p and os.path.isfile(p):
+        with open(p, encoding="utf-8", errors="replace") as fh: names = {l.split(":", 1)[0] for l in fh if ":" in l}
+    if "lemnos" not in names: bad.append(f"no {name} lemnos in {table}: lemnosd drops to it; Lemnos slot-init refuses the slot")
 board = resolve("/etc/lemnos/board.toml")
 if board and os.path.isfile(board):
     with open(board, "rb") as f: b = tomllib.load(f)
@@ -83,7 +122,7 @@ if etc_lemnos and os.path.isdir(etc_lemnos):
             want(f"/usr/share/lemnos/socs/{soc}.toml", "file", f"/etc/lemnos/{c} names soc {soc}: lemnosd checks the live tree against it")
 for x in bad: print(f"check-slot-mounts: BAD {erofs}: {x}")
 if bad: print(f"check-slot-mounts: FAILED ({len(bad)} finding(s))"); sys.exit(1)
-print("check-slot-mounts: ok: /sbin/init executable, /data a directory, /etc/machine-id a regular file" + (f", SoC description(s) for {', '.join(sorted(socs))}" if socs else ""))
+print("check-slot-mounts: ok: /sbin/init executable, /data an empty directory, /etc/machine-id a regular file, /usr/bin/lemnosd executable, lemnosd.service enabled, user and group lemnos" + (f", SoC description(s) for {', '.join(sorted(socs))}" if socs else ""))
 PY
   rm -rf "$tmp"
   return $rc
@@ -101,6 +140,11 @@ self_test() {
     printf x > "$r/usr/lib/systemd/systemd"; chmod 755 "$r/usr/lib/systemd/systemd"
     ln -s ../lib/systemd/systemd "$r/usr/sbin/init"
     mkdir "$r/data"; : > "$r/etc/machine-id"
+    mkdir -p "$r/usr/bin" "$r/usr/lib/systemd/system" "$r/etc/systemd/system/multi-user.target.wants"
+    printf x > "$r/usr/bin/lemnosd"; chmod 755 "$r/usr/bin/lemnosd"; printf '[Service]\n' > "$r/usr/lib/systemd/system/lemnosd.service"
+    ln -s /usr/lib/systemd/system/lemnosd.service "$r/etc/systemd/system/multi-user.target.wants/lemnosd.service"
+    printf 'root:x:0:0::/root:/bin/sh\nlemnos:x:900:900::/:/bin/false\n' > "$r/etc/passwd"
+    printf 'root:x:0:\nlemnos:x:900:\n' > "$r/etc/group"
     for a in "$@"; do case $a in
       no-data) rmdir "$r/data" ;;
       no-init) rm "$r/usr/sbin/init" ;;
@@ -108,6 +152,13 @@ self_test() {
       no-mid) rm "$r/etc/machine-id" ;;
       dir-mid) rm "$r/etc/machine-id"; mkdir "$r/etc/machine-id" ;;
       data=*) data=${a#data=} ;;
+      full-data) : > "$r/data/stray" ;;
+      no-lemnosd) rm "$r/usr/bin/lemnosd" ;;
+      not-enabled) rm "$r/etc/systemd/system/multi-user.target.wants/lemnosd.service" ;;
+      masked) ln -s /dev/null "$r/etc/systemd/system/lemnosd.service" ;;
+      s50) rm "$r/etc/systemd/system/multi-user.target.wants/lemnosd.service"; mkdir -p "$r/etc/init.d"; printf x > "$r/etc/init.d/S50lemnosd"; chmod 755 "$r/etc/init.d/S50lemnosd" ;;
+      no-user) printf 'root:x:0:0::/root:/bin/sh\n' > "$r/etc/passwd" ;;
+      no-group) printf 'root:x:0:\n' > "$r/etc/group" ;;
     esac; done
     printf '[board]\nsoc = "x-soc"\n[[devices]]\nid = "slots"\ndriver = "system-slots"\nconfig = { data = "%s" }\n' "$data" > "$r/etc/lemnos/board.toml"
     mkdir -p "$r/usr/share/lemnos/socs"; printf 'name = "x-soc"\n' > "$r/usr/share/lemnos/socs/x-soc.toml"
@@ -131,12 +182,20 @@ self_test() {
   mk elsewhere data=/srv/data; expect_fail elsewhere "other than /data"
   mk nosoc no-soc;            expect_fail nosoc "/usr/share/lemnos/socs/x-soc.toml is not a regular file"
   mk benchsoc bench-soc;      expect_fail benchsoc "/etc/lemnos/board.bench.toml names soc y-soc"
-  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path, and a board file (any /etc/lemnos/*.toml) whose soc has no /usr/share/lemnos/socs/<soc>.toml each fail; links resolve as the slot sees them)"
+  mk fulldata full-data;      expect_fail fulldata "/data is not empty"
+  mk nolemnosd no-lemnosd;    expect_fail nolemnosd "/usr/bin/lemnosd is not an executable file"
+  mk notenabled not-enabled;  expect_fail notenabled "lemnosd.service is not enabled"
+  mk masked masked;           expect_fail masked "lemnosd.service is masked"
+  mk nouser no-user;          expect_fail nouser "no user lemnos in /etc/passwd"
+  mk nogroup no-group;        expect_fail nogroup "no group lemnos in /etc/group"
+  mk s50 s50
+  check "$tmp/s50.erofs" > "$tmp/s50.log" 2>&1 || { cat "$tmp/s50.log" >&2; echo "check-slot-mounts: self-test: a BusyBox root with S50lemnosd failed" >&2; rc=1; }
+  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path, a board file (any /etc/lemnos/*.toml) whose soc has no /usr/share/lemnos/socs/<soc>.toml, a non-empty /data, no /usr/bin/lemnosd, lemnosd.service not enabled or masked, and no user or group lemnos each fail; a BusyBox S50lemnosd passes; links resolve as the slot sees them)"
   return $rc
 }
 
 case ${1:-} in
   --self-test) self_test ;;
-  -h|--help|"") sed -n '2,19p' "$0" ;;
+  -h|--help|"") sed -n '2,28p' "$0" ;;
   *) [[ $# -eq 1 ]] || { echo "usage: scripts/check-slot-mounts.sh EROFS" >&2; exit 2; }; check "$1" ;;
 esac

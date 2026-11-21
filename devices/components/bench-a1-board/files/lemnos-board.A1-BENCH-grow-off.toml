@@ -165,7 +165,7 @@ config = { timeout_s = 15 }
 # 8b10f491, 2026-11-20). This closes the 2026-11-13 flag on `boot = "/boot/firmware"` (a path Raze #2 never mounts).
 # First-boot data grow. From the Lemnos rev in the next pin pair: the resize runs off the slots driver's tick, in its own
 # thread, with progress and a named overrun state, and it is refused with a named reason on media above 256 GiB (boot
-# continues ungrown). At the pinned Lemnos b78e5317 (grow code unchanged since c215f575) a grow pass never blocks the driver's start and a failed step is retried with a
+# continues ungrown). At the pinned Lemnos 7d91d645 (grow code unchanged since c215f575) a grow pass never blocks the driver's start and a failed step is retried with a
 # capped backoff, never given up (drivers/system-slots/src/grow.rs header there). The timings below were taken before that.
 # Measured resize-call times (Lemnos GROW part 2, QEMU KVM on NVMe; LOWER BOUNDS, to be replaced by a real-media
 # measurement on SD/eMMC): 0.52 s at 15 GiB, 0.66 s at 64 GiB, 2.19 s at 512 GiB, 8.62 s at 2 TiB. SD/eMMC random writes
@@ -232,8 +232,9 @@ driver = "usb-gadget"
 uses = { function = "udc:1000480000.usb" }
 config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
 
-# The fan (coordinator's ruling 2026-11-20, D1 build 15): NO PWM fan. At the pinned Lemnos b78e5317, lemnosd's
-# pwm-channel-fan never binds under the real unit (ProtectKernelTunables=yes: the sysfs pwm export gets EROFS) and the
+# The fan (coordinator's ruling 2026-11-20, D1 build 15): NO PWM fan. At Lemnos b78e5317 and still at the pinned
+# 7d91d645, lemnosd's pwm-channel-fan never binds under the real unit (the sysfs pwm export is root-only; Lemnos
+# PWM-SYSFS-UNIT, coordinator 2026-11-21: /sys itself is rw in lemnosd's namespace, so the earlier EROFS reading was wrong) and the
 # image has no kernel fan fallback (raze.config: CONFIG_SENSORS_PWM_FAN is not set), while declaring the PWM made the
 # overlay mux GPIO45 to RP1 PWM1 with channel 3 never enabled: a stopped fan. So the fan line has no PWM: the firmware
 # drives GPIO45 high (the [[lines]] entry above) and `lemnos-ctl tree` holds it with a kernel gpio-hog, output-high,

@@ -18,7 +18,7 @@ description = "lemnos.ko, built against the image's kernel by Gaia's kernel-modu
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d + ROUTE-A-WRITES; the module is unchanged), coordinator 2026-11-20
+ref = "7d91d6459bb20afe473143a9b559e2017109ec81"  # Lemnos 7d91d645 (next head; the module changed since b78e5317: kernel/rs), coordinator 2026-11-21, F3-1
 subdir = "kernel"
 
 [build]

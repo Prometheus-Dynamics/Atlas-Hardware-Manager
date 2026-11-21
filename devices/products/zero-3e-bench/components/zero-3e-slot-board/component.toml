@@ -9,7 +9,7 @@ description = "ZERO 3E slot board: the Lemnos board file (U-Boot record), the ge
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d)
+ref = "7d91d6459bb20afe473143a9b559e2017109ec81"  # Lemnos 7d91d645 (next head, OWNER-PROBE-ACCESS: the daemon's slot and security writes work under its real unit; coordinator 2026-11-21, F3-1)
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
 [sources.root]
@@ -30,8 +30,9 @@ args = [
   "--modprobe", "@out@/modprobe.conf",
   "--cmdline", "@out@/cmdline.words",
   "--cmdline-slot", "@out@/cmdline-slot.words", "--slot", "@slot@",
+  "--security-unit", "@out@/security.service",
 ]
-outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words"]
+outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words", "security.service"]
 
 [generate.provides]
 board-overlay = "overlay.dts"
@@ -93,3 +94,33 @@ mode = "0644"
 from = { generated = "modprobe.conf" }
 to = "/etc/modprobe.d/lemnos.conf"
 mode = "0644"
+
+# F3-1 (Lemnos 7d91d645 OWNER-PROBE-ACCESS, coordinator 2026-11-21). The board file has a system-slots device and a
+# [security] table, so Lemnos's packaging contract (packaging/README.md, scripts/check-packaging-files.py) needs both
+# drop-ins below. slots.conf: ProtectSystem=strict leaves /data read-only to lemnosd, and the slot driver writes
+# /data/board/slots and /data/slots (data = /data in the board file, so the drop-in ships unchanged). Without it slot
+# management refuses every write (state-unwritable). security.conf: the switch's record dir and /run/board.
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/slots.conf" }
+to = "/etc/systemd/system/lemnosd.service.d/slots.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/security.conf" }
+to = "/etc/systemd/system/lemnosd.service.d/security.conf"
+mode = "0644"
+
+# The security render unit (`lemnos-ctl tree --security-unit`, from the board file's [security] table). Reason: it
+# makes /run/board (RuntimeDirectory, the daemon's user) and /var/lib/lemnos (StateDirectory) before lemnosd starts.
+# security.conf names /run/board without a `-`, so lemnosd cannot start where nothing made it. It also renders the
+# view /run/board/security. NOT added: the /etc/board -> /run/board link (packaging/README.md). Reason: the console gate
+# (raze-base-files console-allowed) reads /etc/board/security and keeps reading an absent view (console open, as on D1)
+# until the switch is ruled on separately; Gaia has no link form at our pin either.
+[[install]]
+from = { generated = "security.service" }
+to = "/usr/lib/systemd/system/lemnos-board-security.service"
+mode = "0644"
+
+[[services]]
+unit = "lemnos-board-security.service"
+enable = true

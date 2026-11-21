@@ -204,6 +204,12 @@ if "lemnosd.service" in names:
 # unit's commands, so the unit cannot make its own: the path exists in the image, or a unit ordered before it (its
 # After=, or the other unit's Before=) makes exactly that path in one of its Exec lines (install -d or mkdir). A path
 # with the `-` prefix (missing is allowed) is skipped; /data itself is the image's mount point.
+# One maker is not a unit: on a root whose board file has a system-slots device, Lemnos slot-init (the initramfs, root,
+# before switch_root) makes /data/board/slots and /data/slots and gives them to user lemnos (Lemnos 7d91d645
+# service/slot-init/src/boot.rs give_state_dirs, drivers/slot-store/src/owner.rs give_dir: create_dir_all, then lchown),
+# so lemnosd's slots.conf drop-in (ReadWritePaths=/data/board/slots /data/slots, no `-`) finds both (F3-1). slot-init
+# does that only on a boot whose boot records are ours; on another system's records it makes nothing, and lemnosd's
+# namespace then fails on a missing dir (reported to Lemnos 2026-11-21; route A is gone, so no Atlas image boots that way).
 def ordered_before(v, u, ukv):
     if any(s_ == "Unit" and k == "After" and v in val.split() for s_, k, val in ukv): return True
     vk, vt = unit_texts(v)
@@ -217,6 +223,16 @@ def makes(v, path):
             if s_ == "Service" and k.startswith("Exec") and tok.search(val) and (re.search(r"\binstall\b.*\s-d\b", val) or re.search(r"\bmkdir\b", val)):
                 return True
     return False
+slot_init_makes = set()
+_bf = rd("etc/lemnos/board.toml")
+if _bf:
+    try:
+        import tomllib
+        if any(d.get("driver") == "system-slots" and d.get("config", {}).get("data", "/data") == "/data"
+               for d in tomllib.loads(_bf).get("devices", [])):
+            slot_init_makes = {"/data/board/slots", "/data/slots"}
+    except Exception:
+        pass
 for n in sorted(names):
     kind, texts = unit_texts(n)
     if kind != "file": continue
@@ -228,6 +244,7 @@ for n in sorted(names):
             path = w.lstrip("+").split(":", 1)[0].rstrip("/")
             if path != "/data" and not path.startswith("/data/"): continue
             if path == "/data" or os.path.lexists(os.path.join(root, path.lstrip("/"))): continue
+            if n == "lemnosd.service" and path in slot_init_makes: continue
             if not any(v != n and ordered_before(v, n, kv) and makes(v, path) for v in sorted(names)):
                 bad.append(f"{n}: {k}={path} is set up before the unit's commands run, and no unit ordered before it makes "
                            f"{path} (its own ExecStartPre cannot: the namespace comes first)")
@@ -351,6 +368,10 @@ self_test() {
       nolink-declared) rm "$E/multi-user.target.wants/orion-node.service"; printf 'disable orion-node.service\n' > "$r/usr/lib/systemd/system-preset/10-x.preset" ;;
       unmask) rm "$E/masked.service" ;;
       rwp-self) printf '[Service]\nExecStartPre=+/bin/sh -c '"'"'install -d /data/z'"'"'\nReadWritePaths=/data/z\n' > "$E/orion-node.service.d/20-self.conf" ;;
+      slots-dropin|slots-dropin-noslots) mkdir -p "$E/lemnosd.service.d" "$r/etc/lemnos"
+        printf '[Service]\nReadWritePaths=/data/board/slots /data/slots\n' > "$E/lemnosd.service.d/slots.conf"
+        if [[ $a == slots-dropin ]]; then printf '[[devices]]\nid = "slots"\ndriver = "system-slots"\n' > "$r/etc/lemnos/board.toml"
+        else printf '[[devices]]\nid = "fan"\ndriver = "pwm-fan"\n' > "$r/etc/lemnos/board.toml"; fi ;;
       rwp-unordered) printf '[Unit]\nAfter=\n[Service]\nReadWritePaths=/data/y\n' > "$E/orion-node.service.d/10-state.conf" ;;
       nolemnos) sed -i '/^lemnos:/d' "$r/etc/passwd" "$r/etc/group"; sed -i '/lemnos/d' "$r/usr/lib/sysusers.d/x.conf" ;;
     esac; done
@@ -376,6 +397,9 @@ self_test() {
   mk wronggid wrong-gid;  expect_fail_p wronggid "data owner group orion: the root has gid 951, the pin is 901"
   mk unmasked unmask;     expect_fail_p unmasked "masked.service: os/units says masked, the root has it unmasked"
   mk rwpself rwp-self;           expect_fail rwpself "orion-node.service: ReadWritePaths=/data/z is set up before the unit's commands run, and no unit ordered before it makes /data/z"
+  mk slotsdropin slots-dropin
+  check "$tmp/slotsdropin.erofs" > "$tmp/slotsdropin.log" 2>&1 || { cat "$tmp/slotsdropin.log" >&2; echo "check-slot-users: self-test: lemnosd's slots.conf on a system-slots board failed (slot-init makes both dirs)" >&2; rc=1; }
+  mk slotsnoslots slots-dropin-noslots; expect_fail slotsnoslots "lemnosd.service: ReadWritePaths=/data/board/slots is set up before the unit's commands run"
   mk rwpunordered rwp-unordered; expect_fail rwpunordered "orion-node.service: ReadWritePaths=/data/y is set up before the unit's commands run, and no unit ordered before it makes /data/y"
   mk unitnolink nolink;   expect_fail_p unitnolink "orion-node.service: os/units says linked, but no enable link names it"
   mk dynline dyn-line;    expect_fail_p dynline "states id - for lemnos, the image ships 900"

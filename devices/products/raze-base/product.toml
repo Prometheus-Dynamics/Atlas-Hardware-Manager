@@ -11,8 +11,11 @@
 #
 # THE PINS: Gaia is pinned in devices/gaia.lock (6efa33ed since D1, DO 32 COMPONENT-ACCOUNTS: the components' declared users and enable links; 171ca25f before it, FAKEROOT-OUTPUT; 1c2b9dc9 before it; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-disk` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
-# Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1, coordinator 2026-11-20): next c215f575, the FINAL Lemnos rev declared 2026-11-18 (with Orion 671d29d), plus the RUNDIR fix (b210934d), plus ROUTE-A-WRITES (route A writes nothing under the other system's /data/board/slots).
-# It carries data-partition (M36f), HEALTH-TCP and boot-partition --add-to; its kernel module is unchanged since efcc2106.
+# Lemnos 7d91d645 (next head, coordinator 2026-11-21, F3-1): it adds OWNER-PROBE-ACCESS (slot-init gives the slots dirs
+# to the daemon's user; the slots.conf and security.conf drop-ins and the security render unit, all installed by
+# raze-lemnos-board), SLOT-ROOT-PRECHECK, UNIT-SECCOMP, SOCS-PER-BOARD and ROUTE-A-WRITES. Its kernel module changed since
+# b78e5317 (kernel/rs). lemnosd is built from Lemnos's own Cargo.lock, which links Orion 927f704a; the image's Orion is
+# 455a956e (devices/components/orion), the same kind of skew D1 ran with (b78e5317 linked 8e37a8a4).
 # The one-rev rule moves zero-3e-bench's Lemnos copies to it as well (one Lemnos rev in the tree).
 version = 1
 name = "raze-base"

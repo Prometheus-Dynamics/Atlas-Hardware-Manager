@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnosd, built from Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d) (Z2; this product's copy).
+# One Lemnos cargo package: lemnosd, built from Lemnos 7d91d645 (next head, OWNER-PROBE-ACCESS: the daemon's slot and security writes work under its real unit; coordinator 2026-11-21, F3-1) (Z2; this product's copy).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnosd --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos hardware daemon, lemnosd (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b78e5317a3d7151f3e2e923041e7169e79b0ff08"  # Lemnos b78e5317 (pr/ROUTE-A-WRITES-D1: b210934d, which is next c215f575 plus the RUNDIR fix, plus ROUTE-A-WRITES: route A writes nothing under the other system's /data/board/slots; coordinator 2026-11-20; with Orion 671d29d): the U-Boot slot form for bench boards before merge
+ref = "7d91d6459bb20afe473143a9b559e2017109ec81"  # Lemnos 7d91d645 (next head, OWNER-PROBE-ACCESS: the daemon's slot and security writes work under its real unit; coordinator 2026-11-21, F3-1): the U-Boot slot form for bench boards before merge
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
