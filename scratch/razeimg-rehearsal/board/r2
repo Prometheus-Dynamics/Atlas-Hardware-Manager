@@ -1,0 +1,6 @@
+#!/bin/bash
+# ssh to the board's 993 over the PC's USB link, host key pinned in a scratch known_hosts (verified over the board's
+# serial console first). Target and file come from the scratch env: R2_HOST (e.g. root@fe80::…%usb0), R2_KNOWN_HOSTS.
+: "${R2_HOST:?}" "${R2_KNOWN_HOSTS:?}"
+exec ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$R2_KNOWN_HOSTS" -o ConnectTimeout=8 \
+  -o ServerAliveInterval=10 "$R2_HOST" "$@"
