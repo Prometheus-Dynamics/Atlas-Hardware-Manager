@@ -73,8 +73,8 @@ pub struct CycleArgs {
 /// What `usb-boot` was asked for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UsbBootOptions {
-    /// The agent's `host:port` (plain http).
-    pub agent: String,
+    /// The agent's `host:port` (plain http). `None` with `--serve-dir`, which serves from this PC.
+    pub agent: Option<String>,
     /// The board's USB port on the agent's host, sysfs form (`3-1.1.4.1`).
     pub port: String,
     pub bundle: PathBuf,
@@ -88,6 +88,9 @@ pub struct UsbBootOptions {
     pub bay_exact: bool,
     /// `--control kernel-less`: a control run (needs `--bay-exact`).
     pub control: Option<crate::usb_boot::Control>,
+    /// `--serve-dir <dir>`: write the checked BAY-EXACT set and the Pi's second stage into a new
+    /// directory for Raspberry Pi's `rpiboot -d` on this PC, instead of sending it to an agent.
+    pub serve_dir: Option<PathBuf>,
 }
 
 /// Reads the arguments after the program name.
@@ -191,6 +194,7 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
     let mut dry_run = false;
     let mut bay_exact = false;
     let mut control = None;
+    let mut serve_dir = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let slot = match arg.as_str() {
@@ -222,6 +226,7 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
             "--pubkey" => &mut pubkey,
             "--bootfiles" => &mut bootfiles,
             "--timeout" => &mut timeout_s,
+            "--serve-dir" => &mut serve_dir,
             other => return Parsed::Usage(format!("usb-boot: unknown option {other:?}")),
         };
         match rest.next() {
@@ -234,8 +239,13 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
         Some(Ok(seconds)) => Some(seconds),
         Some(Err(_)) => return Parsed::Usage("--timeout takes whole seconds".into()),
     };
-    match (agent, port, bundle, boot_partition, pubkey) {
-        (Some(agent), Some(port), Some(bundle), Some(boot_partition), Some(pubkey)) => {
+    match (agent.is_some() || serve_dir.is_some(), port, bundle, boot_partition, pubkey) {
+        (true, Some(port), Some(bundle), Some(boot_partition), Some(pubkey)) => {
+            if agent.is_some() && serve_dir.is_some() {
+                return Parsed::Usage(
+                    "usb-boot takes --agent (serve through the agent) or --serve-dir (serve from this PC with rpiboot), not both".into(),
+                );
+            }
             Parsed::UsbBoot(UsbBootOptions {
                 agent,
                 port,
@@ -247,10 +257,11 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
                 dry_run,
                 bay_exact,
                 control,
+                serve_dir: serve_dir.map(PathBuf::from),
             })
         }
         _ => Parsed::Usage(
-            "usb-boot needs --agent, --port, --bundle, --boot-partition and --pubkey".into(),
+            "usb-boot needs --agent or --serve-dir, and --port, --bundle, --boot-partition and --pubkey".into(),
         ),
     }
 }

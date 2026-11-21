@@ -796,3 +796,104 @@ async fn the_control_refuses_a_partition_that_has_its_kernel_or_fails_otherwise(
     assert!(out.contains("fails other checks too"), "{out}");
     assert!(out.contains("ramoops"), "{out}");
 }
+
+// `--serve-dir`: the checked BAY-EXACT set written for Raspberry Pi's `rpiboot -d` on this PC.
+
+async fn serve_dir(case: &Case, dir: &Path, extra: &[&str]) -> (i32, String) {
+    let mut args: Vec<String> = vec![
+        "usb-boot".into(),
+        "--serve-dir".into(),
+        dir.display().to_string(),
+        "--port".into(),
+        "3-4.2.1.4.4.2".into(),
+        "--bundle".into(),
+        case.bundle.display().to_string(),
+        "--boot-partition".into(),
+        case.partition.display().to_string(),
+        "--pubkey".into(),
+        case.pubkey.display().to_string(),
+        "--bootfiles".into(),
+        case.bootfiles.display().to_string(),
+    ];
+    args.extend(extra.iter().map(|s| s.to_string()));
+    let env = Env::new(None);
+    let mut out = Vec::new();
+    let code = execute(&args, &env, &mut out).await;
+    (code, String::from_utf8(out).expect("text"))
+}
+
+#[tokio::test]
+async fn serve_dir_writes_the_image_the_outer_config_and_the_whole_stage() {
+    let boot = boot_with_firmware();
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    std::fs::write(case.bootfiles.join("bootmain"), b"bootmain bytes").expect("bootmain");
+    let image = std::fs::read(&case.partition).expect("the image");
+    let dir = case.bootfiles.parent().expect("scratch").join("serve");
+    let (code, out) = serve_dir(&case, &dir, &["--bay-exact"]).await;
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("rpiboot -v -d"), "{out}");
+    assert!(out.contains("-p 3-4.2.1.4.4.2"), "{out}");
+    assert!(std::fs::read(dir.join("boot.img")).expect("boot.img") == image);
+    assert_eq!(
+        std::fs::read(dir.join("config.txt")).expect("config"),
+        b"boot_ramdisk=1\n"
+    );
+    assert_eq!(
+        std::fs::read(dir.join("2712/bootcode5.bin")).expect("stage"),
+        SECOND_STAGE
+    );
+    assert_eq!(
+        std::fs::read(dir.join("2712/bootmain")).expect("bootmain"),
+        b"bootmain bytes"
+    );
+    assert!(
+        !dir.join("bootcode5.bin").exists(),
+        "the stage goes under 2712/ only"
+    );
+    let sums = std::fs::read_to_string(dir.join("SHA256SUMS")).expect("sums");
+    assert!(
+        sums.contains(&format!("{}  boot.img", sha(&image))),
+        "{sums}"
+    );
+    assert!(
+        sent(&case).is_empty(),
+        "nothing goes to an agent: {:?}",
+        sent_lines(&case)
+    );
+    // A second run never writes into an existing directory.
+    let (code, out) = serve_dir(&case, &dir, &["--bay-exact"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("must be new"), "{out}");
+}
+
+#[tokio::test]
+async fn serve_dir_refuses_an_eeprom_file_and_the_tree_form_and_writes_nothing() {
+    let boot = boot_with_firmware();
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let dir = case.bootfiles.parent().expect("scratch").join("serve");
+    let (code, out) = serve_dir(&case, &dir, &[]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("--serve-dir needs --bay-exact"), "{out}");
+    assert!(!dir.exists());
+    std::fs::write(case.bootfiles.join("recovery.bin"), b"eeprom updater").expect("recovery");
+    let (code, out) = serve_dir(&case, &dir, &["--bay-exact"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("recovery.bin, an EEPROM file"), "{out}");
+    assert!(!dir.exists());
+}
+
+#[tokio::test]
+async fn agent_and_serve_dir_together_are_refused() {
+    let boot = boot_with_firmware();
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let dir = case.bootfiles.parent().expect("scratch").join("serve");
+    let (code, out) = serve_dir(
+        &case,
+        &dir,
+        &["--bay-exact", "--agent", &case.agent.address],
+    )
+    .await;
+    assert_ne!(code, 0, "{out}");
+    assert!(out.contains("not both"), "{out}");
+    assert!(!dir.exists());
+}

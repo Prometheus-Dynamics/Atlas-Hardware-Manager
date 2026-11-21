@@ -21,6 +21,11 @@
 //! from the flasher files). `--control kernel-less` (BAY-EXACT only) serves a partition whose slot's
 //! bay lacks kernel8.img and passes every other check, for the bench's control run. The job's events
 //! are followed to `boot-end`.
+//!
+//! `--serve-dir <dir>` (BAY-EXACT only) serves from this PC instead of an agent: it writes the checked
+//! set into a new directory (boot.img, the outer config.txt, and the flasher folder's whole second
+//! stage under `2712/`, never an EEPROM file) with `SHA256SUMS`, and prints the `rpiboot -v -d`
+//! command, whose log names the stage it loaded and each file the Pi asked for.
 
 mod fat;
 mod http;
@@ -235,6 +240,21 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         ));
     }
 
+    if opts.serve_dir.is_some() && !opts.bay_exact {
+        refusals.push(
+            "--serve-dir needs --bay-exact (rpiboot serves boot.img with boot_ramdisk=1): nothing was written".into(),
+        );
+    }
+    // From this PC, rpiboot loads the Pi's whole second stage from <dir>/2712/: every file of the
+    // flasher folder. The EEPROM updater and EEPROM images are never among them (no EEPROM write).
+    let mut stage_files: Vec<(String, Vec<u8>)> = Vec::new();
+    if opts.serve_dir.is_some() {
+        match stage_folder(&bootfiles) {
+            Ok(files) => stage_files = files,
+            Err(problem) => refusals.push(problem),
+        }
+    }
+
     let form = match opts.control {
         None => {
             if !refusals.is_empty() {
@@ -325,7 +345,16 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
             },
         ]
     };
-    if let Some(bytes) = second_stage {
+    if opts.serve_dir.is_some() {
+        for (name, bytes) in stage_files {
+            files.push(Served {
+                path: format!("{STAGE_DIR}/{name}"),
+                sha256: sha256_hex(&bytes),
+                bytes,
+                role: format!("second stage, from {}", bootfiles.display()),
+            });
+        }
+    } else if let Some(bytes) = second_stage {
         files.push(Served {
             path: SECOND_STAGE.to_string(),
             sha256: sha256_hex(&bytes),
@@ -340,6 +369,99 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         form,
         files,
     })
+}
+
+/// The folder rpiboot reads a BCM2712's second stage from, under its `-d` directory.
+pub const STAGE_DIR: &str = "2712";
+
+/// Every regular file of the flasher folder, by name, sorted. Refuses the EEPROM updater and EEPROM
+/// images (`recovery.bin`, `pieeprom*`, `*.upd`, `*.sig`): serving `recovery.bin` would write the
+/// board's EEPROM.
+fn stage_folder(folder: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let entries = std::fs::read_dir(folder).map_err(|error| {
+        format!(
+            "the second stage folder {}: {error}: nothing was written",
+            folder.display()
+        )
+    })?;
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("{}: {error}: nothing was written", folder.display()))?;
+        if !entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let lower = name.to_ascii_lowercase();
+        if lower == "recovery.bin"
+            || lower.starts_with("pieeprom")
+            || lower.ends_with(".upd")
+            || lower.ends_with(".sig")
+        {
+            return Err(format!(
+                "the second stage folder {} holds {name}, an EEPROM file: it is never served (no EEPROM write): nothing was written",
+                folder.display()
+            ));
+        }
+        let bytes = std::fs::read(entry.path())
+            .map_err(|error| format!("{name}: {error}: nothing was written"))?;
+        files.push((name, bytes));
+    }
+    files.sort();
+    if !files.iter().any(|(name, _)| name == SECOND_STAGE) {
+        return Err(format!(
+            "the second stage folder {} has no {SECOND_STAGE}: nothing was written",
+            folder.display()
+        ));
+    }
+    Ok(files)
+}
+
+/// Writes the planned files into `dir`, which must not exist yet, plus `SHA256SUMS`, and prints the
+/// rpiboot command that serves them. Nothing is sent anywhere.
+fn write_serve_dir<W: Write>(plan: &Plan, dir: &std::path::Path, port: &str, out: &mut W) -> i32 {
+    if let Err(error) = std::fs::create_dir(dir) {
+        let _ = writeln!(
+            out,
+            "usb-boot REFUSED: {}: {error} (the serve directory must be new): nothing was written",
+            dir.display()
+        );
+        return 1;
+    }
+    let mut sums = String::new();
+    for file in &plan.files {
+        let path = dir.join(&file.path);
+        let written = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(&path, &file.bytes));
+        if let Err(error) = written {
+            let _ = writeln!(out, "usb-boot FAILED: writing {}: {error}", path.display());
+            return 1;
+        }
+        let _ = writeln!(sums, "{}  {}", file.sha256, file.path);
+    }
+    if let Err(error) = std::fs::write(dir.join("SHA256SUMS"), sums) {
+        let _ = writeln!(out, "usb-boot FAILED: writing SHA256SUMS: {error}");
+        return 1;
+    }
+    let _ = writeln!(
+        out,
+        "wrote {} files and SHA256SUMS to {}",
+        plan.files.len(),
+        dir.display()
+    );
+    let _ = writeln!(
+        out,
+        "serve from this PC with: rpiboot -v -d {} -p {port}",
+        dir.display()
+    );
+    let _ = writeln!(
+        out,
+        "  rpiboot logs the stage it loads (\"Loading: {}/{STAGE_DIR}/{SECOND_STAGE}\") and each file the Pi asks for (\"File read: <name>\")",
+        dir.display()
+    );
+    0
 }
 
 /// Re-hashes every served file's exact bytes against the hash it was planned with. A changed
@@ -456,7 +578,20 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// The plan as text, for the coordinator to read before any board contact.
 pub fn write_plan<W: Write>(plan: &Plan, opts: &UsbBootOptions, out: &mut W) {
     let _ = writeln!(out, "usb-boot plan");
-    let _ = writeln!(out, "  agent      {}", opts.agent);
+    match (&opts.agent, &opts.serve_dir) {
+        (Some(agent), _) => {
+            let _ = writeln!(out, "  agent      {agent}");
+        }
+        (None, Some(dir)) => {
+            let _ = writeln!(
+                out,
+                "  server     this PC: rpiboot -v -d {} -p {}",
+                dir.display(),
+                opts.port
+            );
+        }
+        (None, None) => {}
+    }
     let _ = writeln!(out, "  port       {}", opts.port);
     let _ = writeln!(
         out,
@@ -534,8 +669,14 @@ pub async fn run<W: Write>(opts: &UsbBootOptions, env: &Env, out: &mut W) -> i32
         let _ = writeln!(out, "dry run: nothing was sent");
         return 0;
     }
+    if let Some(dir) = &opts.serve_dir {
+        return write_serve_dir(&plan, dir, &opts.port, out);
+    }
+    let Some(agent) = opts.agent.clone() else {
+        let _ = writeln!(out, "usb-boot: no --agent and no --serve-dir");
+        return 2;
+    };
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let agent = opts.agent.clone();
     let port = opts.port.clone();
     let timeout_s = opts.timeout_s;
     let files: Vec<(String, Vec<u8>, String)> = plan
@@ -543,9 +684,10 @@ pub async fn run<W: Write>(opts: &UsbBootOptions, env: &Env, out: &mut W) -> i32
         .into_iter()
         .map(|file| (file.path, file.bytes, file.sha256))
         .collect();
+    let job_agent = agent.clone();
     tokio::task::spawn_blocking(move || {
         let sender = tx.clone();
-        let code = drive(&agent, &port, timeout_s, &files, &tx);
+        let code = drive(&job_agent, &port, timeout_s, &files, &tx);
         let _ = sender.send(Msg::Exit(code));
     });
     let mut job: Option<String> = None;
@@ -565,7 +707,7 @@ pub async fn run<W: Write>(opts: &UsbBootOptions, env: &Env, out: &mut W) -> i32
             () = notified(env) => {
                 let _ = writeln!(out, "usb-boot: Ctrl-C, cancelling the job");
                 if let Some(id) = &job {
-                    let agent = opts.agent.clone();
+                    let agent = agent.clone();
                     let path = format!("/v1/jobs/{id}");
                     let _ = tokio::task::spawn_blocking(move || {
                         http::request(&agent, "DELETE", &path, &[], &[])

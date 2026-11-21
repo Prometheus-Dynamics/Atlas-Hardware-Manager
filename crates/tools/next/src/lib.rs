@@ -62,14 +62,16 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               the slot cycle in one run: install, trial, a forced bad trial that falls
                               back by itself, confirm; one scorecard file says each step in plain words
                               (--json also writes <file>.json; --dry-run lists the steps and sends nothing)
-  usb-boot --agent <host:port> --port <3-1.1.4.1> --bundle <file> --boot-partition <file>
-           --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
+  usb-boot (--agent <host:port> | --serve-dir <new dir>) --port <usb path> --bundle <file>
+           --boot-partition <file> --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
            [--bay-exact] [--control kernel-less]
                               USB boot a board through the SystemCore agent with a built image's
                               boot files (never writes the eMMC; refuses before sending on any check).
                               --bay-exact serves the partition image byte for byte as boot.img
                               (boot_ramdisk=1); --control kernel-less serves a partition whose
-                              slot's bay lacks only kernel8.img, on purpose (with --bay-exact)
+                              slot's bay lacks only kernel8.img, on purpose (with --bay-exact);
+                              --serve-dir writes the checked BAY-EXACT set and the second stage
+                              (2712/) for `rpiboot -v -d <dir> -p <usb path>` on this PC
 
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory
