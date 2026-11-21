@@ -45,13 +45,11 @@ raze-orion-ssh = "../../components/raze-orion-ssh/component.toml"
 bench-comm-root = "../../components/bench-comm-root/component.toml"
 # Bench only: the trial dead-man, so a new slot booted beside dev 993 with no login comes back to 993 (route A).
 bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
-# Bench only: lemnosd on the A1 bench board file (grow_data = false), for the route (A) trial boots beside dev 993.
-bench-a1-board = "../../components/bench-a1-board/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman", "bench-a1-board"]
+components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"
