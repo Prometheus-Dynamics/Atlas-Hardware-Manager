@@ -1,6 +1,12 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to c7198359 (F3-3, 2026-11-21, the coordinator's rev): Gaia next with the Buildroot host seed made reproducible
+# (eef3b8de: the same key makes the same bytes in any store; 7d34b4bd: the host Python's packages compiled once,
+# hash-based pycs), the download pool shared across stores by sha256 (db9f61f1; f044cb45 names a link to nothing),
+# dev builds' EROFS in lz4hc kept on the bench (c7198359, its run record says build = "dev-reuse"), the QEMU runner's
+# seccomp line and the step timeline/slack work. Host seed key 6 and os-buildroot key 8: one full Buildroot rebuild. No
+# description format changes. Before: 6efa33ed.
 # Moved to 6efa33ed (D1, 2026-11-20): Gaia next with DO 32 COMPONENT-ACCOUNTS (gaia.tree.accounts and gaia.tree.services:
 # the components' [[users]], [[groups]] and [[services]] declarations make the root's accounts and enable links; a
 # fixed-id collision or a declared-enabled unit with no unit file or [Install] fails the build by name), the runner's
@@ -16,4 +22,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "6efa33edc8a2e8a4594e36fbdb6a488898cd7a2d"
+commit = "c719835944648099996cb94564996eff566cf7b1"

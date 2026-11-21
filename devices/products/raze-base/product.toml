@@ -9,7 +9,7 @@
 # Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
 # (orion-bin); the Raze's board file and the base files.
 #
-# THE PINS: Gaia is pinned in devices/gaia.lock (6efa33ed since D1, DO 32 COMPONENT-ACCOUNTS: the components' declared users and enable links; 171ca25f before it, FAKEROOT-OUTPUT; 1c2b9dc9 before it; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
+# THE PINS: Gaia is pinned in devices/gaia.lock (c7198359 since F3-3, the reproducible Buildroot host seed and the shared download pool; 6efa33ed before it, D1, DO 32 COMPONENT-ACCOUNTS: the components' declared users and enable links; 171ca25f before it, FAKEROOT-OUTPUT; 1c2b9dc9 before it; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-disk` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
 # Lemnos 7d91d645 (next head, coordinator 2026-11-21, F3-1): it adds OWNER-PROBE-ACCESS (slot-init gives the slots dirs
 # to the daemon's user; the slots.conf and security.conf drop-ins and the security render unit, all installed by

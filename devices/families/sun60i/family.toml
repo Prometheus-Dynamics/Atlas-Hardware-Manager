@@ -1,4 +1,9 @@
 # Planned, not built. Cannot build today: the TF-A, U-Boot and kernel patch series this family names are applied by nothing.
+# FIRST PRODUCT MUST SET CONFIG_ENV_MMC_USE_DT=y in assets/u-boot.fragment, or Gaia (c7198359, crates/nodes/disk/src/
+# env_place.rs) refuses the disk. Without it U-Boot falls back to its raw offsets when it finds no environment partition,
+# and U-Boot's env/Kconfig defaults for ARCH_SUNXI put CONFIG_ENV_OFFSET at 0xF0000 (inside the `u-boot` area at 32K) and
+# CONFIG_ENV_OFFSET_REDUND at 0x0 (over the partition table). The rk35xx family sets it and passes. Not changed here
+# untested (coordinator 2026-11-21): this family has no product, so nothing builds it yet.
 # Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux.
 #
 # CANDIDATE SOURCES, ALL UNVERIFIED, NEVER BOOTED ON BOARD (2026-11-13). Every pin below is a full

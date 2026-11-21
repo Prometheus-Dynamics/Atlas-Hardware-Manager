@@ -49,10 +49,12 @@ source = "tf-a"
 #
 # 128 KiB (PR B28; it was 64 KiB): the redundant environment is two copies in
 # this one partition, placed from its end (copy 0 at end - size, copy 1 below
-# it; env/mmc.c). With CONFIG_ENV_SIZE=0x8000 (u-boot.fragment) the two copies
-# need 64 KiB; the partition is twice that because a partition table cannot
-# change after a board's first flash and the config can, so the environment may
-# grow to 0x10000 per copy without a new layout. Cost: 64 KiB of the card.
+# it; env/mmc.c). With CONFIG_ENV_SIZE=0x10000 (u-boot.fragment) the two copies
+# fill the 128 KiB exactly (Gaia c7198359's env_place check: each copy fits). It
+# was sized at twice 2 x 0x8000 so the environment could grow to 0x10000 per copy
+# without a new layout, since a partition table cannot change after a board's
+# first flash; the fragment has since taken that room, so a larger environment
+# now needs a new layout.
 [[partitions]]
 name = "u-boot"
 role = "bootloader"
