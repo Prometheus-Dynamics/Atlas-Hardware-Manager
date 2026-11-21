@@ -2317,6 +2317,62 @@ if ! a1_out=$(a1_bench_board_rule "$root"); then
   while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$a1_out"
 fi
 
+# The fan owner rule (coordinator 2026-11-20, D1 build 15): a board must have one working fan owner. At the pinned
+# Lemnos rev, lemnosd's pwm-channel-fan never binds under the real unit (ProtectKernelTunables=yes: the sysfs pwm
+# export gets EROFS), so a Lemnos board file that declares one, in a board or a component, fails unless the board also
+# carries the kernel fallback: CONFIG_SENSORS_PWM_FAN=y or =m in one of its kernel configs (boards/<id>/kernel/*.config,
+# its family's assets/linux.fragment) AND a [boot] config_lines entry that enables a pwm-fan node (`cooling_fan` or a
+# dtoverlay whose name has "fan"). Without a PWM fan the fan line's [[lines]] boot = "high" is the owner: the firmware
+# drives it high and `lemnos-ctl tree` holds it with a kernel gpio-hog (full speed, by 993's raze-fan overlay: normal
+# polarity). A component's board file is checked against the board its [board] id names.
+fan_owner_rule() {  # <devices dir>
+  python3 -I - "$1" <<'PY'
+import glob, os, re, sys, tomllib
+dev = sys.argv[1]; rc = 0
+files = sorted(glob.glob(os.path.join(dev, "boards", "*", "lemnos-board.toml")) +
+               glob.glob(os.path.join(dev, "components", "*", "files", "lemnos-board*.toml")))
+for f in files:
+    d = tomllib.load(open(f, "rb"))
+    fans = [x.get("id", "?") for x in d.get("devices", []) if x.get("driver") == "pwm-channel-fan"]
+    if not fans:
+        continue
+    bid = d.get("board", {}).get("id", "")
+    bdir = os.path.join(dev, "boards", bid)
+    configs = glob.glob(os.path.join(bdir, "kernel", "*.config"))
+    btoml = os.path.join(bdir, "board.toml")
+    if os.path.isfile(btoml):
+        m = re.search(r'^extends = "([^"]+)"', open(btoml).read(), re.M)
+        if m:
+            configs.append(os.path.join(os.path.dirname(os.path.normpath(os.path.join(bdir, m.group(1)))), "assets", "linux.fragment"))
+    kernel = any(re.search(r"^CONFIG_SENSORS_PWM_FAN=[ym]$", open(c).read(), re.M) for c in configs if os.path.isfile(c))
+    lines = d.get("boot", {}).get("config_lines", [])
+    node = any("cooling_fan" in l or re.match(r"^dtoverlay=[^,]*fan", l) for l in lines)
+    if not (kernel and node):
+        miss = " and ".join(w for w, ok in (("no CONFIG_SENSORS_PWM_FAN=y|m in its kernel configs", kernel),
+                                            ("no config_lines entry enabling a pwm-fan node", node)) if not ok)
+        print(f"FAIL {os.path.relpath(f, dev)}: declares pwm-channel-fan {', '.join(fans)} but board {bid!r} has no kernel fan fallback ({miss}): lemnosd's PWM fan does not bind under the real unit at the pinned Lemnos rev, so the board would have no working fan owner")
+        rc = 1
+sys.exit(rc)
+PY
+}
+fan_owner_self_test() {
+  local tmp rc=0 f
+  tmp=$(mktemp -d); cp -a "$root" "$tmp/devices"
+  fan_owner_rule "$tmp/devices" >/dev/null || { rm -rf "$tmp"; return 1; }
+  f="$tmp/devices/boards/raze/lemnos-board.toml"
+  printf '\n[[devices]]\nid = "fan"\ndriver = "pwm-channel-fan"\nuses = { pwm = "pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3" }\n' >>"$f"
+  local out
+  if out=$(fan_owner_rule "$tmp/devices" 2>&1); then rc=1
+  elif [[ $out != *"declares pwm-channel-fan fan but board 'raze' has no kernel fan fallback"* ]]; then rc=1; fi
+  printf 'CONFIG_SENSORS_PWM_FAN=m\n' >>"$tmp/devices/boards/raze/kernel/raze.config"
+  sed -i 's/^config_lines = \["dtoverlay=vc4-kms-v3d-pi5", /config_lines = ["dtparam=cooling_fan=on", "dtoverlay=vc4-kms-v3d-pi5", /' "$f"
+  fan_owner_rule "$tmp/devices" >/dev/null || rc=1
+  rm -rf "$tmp"; return $rc
+}
+if ! fan_out=$(fan_owner_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$fan_out"
+fi
+
 # The named-toolchain rule (2026-11-18, raze-base's libgpiod v2): every Buildroot image's fragments name its toolchain
 # variant. A fragment that names none resolves against whatever the default is (Buildroot's internal toolchain with
 # 7.1 headers here; a Bootlin STABLE default elsewhere has 5.4), so the config-only build could pass on a default the
@@ -2623,6 +2679,7 @@ if [[ $root_given -eq 0 ]]; then
   st "self-check: the slot id rule no longer refuses an id that is not the version's" slot_id_rule_self_test
   st "self-check: the boot partition rule no longer refuses a boot_size that is not the board's" boot_size_rule_self_test
   st "self-check: the A1 bench board rule no longer refuses a bench file that drifted from the Raze's" a1_bench_board_self_test
+  st "self-check: the fan owner rule no longer refuses a PWM fan without a kernel fallback, or refuses one with it" fan_owner_self_test
   st "self-check: the named-toolchain rule no longer refuses a Buildroot image whose fragments name no toolchain" named_toolchain_self_test
   st "self-check: the post-build rule no longer refuses a post-build script that removes a file, a non-executable script or a hook script that is not a file" post_build_self_test
   st "self-check: the fixed-ids rule no longer refuses a user without a fixed uid or a declaration that differs from os/data-owners" fixed_ids_self_test

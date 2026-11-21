@@ -65,10 +65,6 @@ name = "i2c-1"
 controller = "i2c1"
 pins = "gpio10_11"   # dev: SDA GPIO10, SCL GPIO11 (the reference board's gpio2_3 is its own wiring, not the Raze's)
 
-[[hardware]]
-controller = "pwm1"
-pins = "gpio45"      # the fan's pulse output, RP1 GPIO45 (the reference and dev agree)
-
 # The camera and display connector's bus (the reference's entry, the map's i2c10 = RP1 I2C at 0x88000).
 # The Raze's sensor is on i2c-10 (verified on Raze #2 by Lemnos: runtime name i2c-10, alias i2c10).
 [[hardware]]
@@ -118,7 +114,7 @@ reason = "the camera power line: the base node /cam0_reg holds it (the reference
 [[lines]]
 line = "gpio:pinctrl-rp1:45"
 boot = "high"
-reason = "the fan header's line: full duty from power-on until Lemnos's fan driver takes the PWM (the reference's form; the Raze's fan is full duty until a valid temperature is read)"
+reason = "the fan header's line: held high, the fan at full speed (no PWM fan at this Lemnos rev: see the fan note)"
 
 # The system: identity, the slot store, and reboot.
 # The identity: the board's serial from the device tree (both agree). name and revision are the Raze's own
@@ -230,29 +226,23 @@ driver = "usb-gadget"
 uses = { function = "udc:1000480000.usb" }
 config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
 
-# The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). VERIFIED on Raze #2 (read by Lemnos,
-# 2026-11-13): channel 3 of the RP1 PWM at pwm@9c000, period 41566 ns. The reference's channel 1 was wrong. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
-# dev's 70 % floor ("a 70 % floor keeps air moving", dev's manifest). kick_ms = 500 is the reference's start kick.
-[[devices]]
-id = "fan"
-driver = "pwm-channel-fan"
-uses = { pwm = "pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3" }
-config = { frequency_hz = 24057, min_duty = 700, kick_ms = 500 }
+# The fan (coordinator's ruling 2026-11-20, D1 build 15): NO PWM fan. At the pinned Lemnos b78e5317, lemnosd's
+# pwm-channel-fan never binds under the real unit (ProtectKernelTunables=yes: the sysfs pwm export gets EROFS) and the
+# image has no kernel fan fallback (raze.config: CONFIG_SENSORS_PWM_FAN is not set), while declaring the PWM made the
+# overlay mux GPIO45 to RP1 PWM1 with channel 3 never enabled: a stopped fan. So the fan line has no PWM: the firmware
+# drives GPIO45 high (the [[lines]] entry above) and `lemnos-ctl tree` holds it with a kernel gpio-hog, output-high,
+# for the whole boot. High is full speed: dev's raze-fan overlay, which cools this board on 993, drives rp1_pwm1
+# channel 3 with NORMAL polarity (pwms = <&rp1_pwm1 3 41566 0>, levels 179..255 rising with the trips). The PWM fan
+# (RP1 PWM1 channel 3, pwm@9c000, period 41566 ns, VERIFIED on Raze #2 by Lemnos 2026-11-13; dev's 70 % floor) and
+# its fan-control come back with Lemnos's fix (PWM-SYSFS-UNIT) or a kernel pwm-fan fallback with the thermal zone, as on
+# 993 (scripts/check-devices.sh, the fan owner rule, refuses a PWM fan without one). The F3 port revisits it.
 
-# The board's temperature, and the fan control that runs the fan from it. The thermal zone is read by its
+# The board's temperature (read only; the trial's temperature checks read it). The thermal zone is read by its
 # sysfs path; dev matched the zone by its type (cpu-thermal) and zone0 is the reference's path: CHECK at G1.
 [[devices]]
 id = "cpu-thermal"
 driver = "thermal-zone"
 config = { path = "/sys/class/thermal/thermal_zone0" }
-
-# The curve is the reference's (dev had no Lemnos fan curve: its kernel governor cooled the board), so it is
-# not a Raze decision and is a G1 check. The floor is dev's 70 % (700), not the reference's 300.
-[[devices]]
-id = "fan-control"
-driver = "fan-control"
-uses = { fan = "fan", t0 = "cpu-thermal" }
-config = { curve_t0 = "30000:300,60000:600,75000:1000", floor = 700, slew_per_s = 50 }
 
 # The two USB port power switches (dev's gpio=16,20=op,dh, now the state-at-boot entries above), active high.
 # The reference has no USB power switches; dev's Raze does (USB-A on GPIO20, USB-C on GPIO16).
