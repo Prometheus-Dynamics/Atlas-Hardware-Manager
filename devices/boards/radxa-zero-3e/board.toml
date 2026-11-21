@@ -19,6 +19,8 @@ fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35x
 
 [bootloader]
 defconfig = "radxa-zero-3-rk3566"
+# The family's U-Boot fragment, then the RK3568 one: the fastboot buffer address (RK-FASTBOOT). The list replaces the family's.
+fragments = ["../../families/rk35xx/assets/u-boot.fragment", "../../families/rk35xx/assets/u-boot-rk3568.fragment"]
 
 # The ZERO 3E's own rkbin pin: f43a462e, the commit dev's working image used.
 [sources.rkbin]

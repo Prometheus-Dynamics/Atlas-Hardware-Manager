@@ -97,6 +97,12 @@ bg "device descriptions, then config-only" devices_then_config_only
 if [ -x scripts/check-kernel-fragments.sh ]; then
   bg "kernel fragments" step "kernel fragments (the check, then its self-test)" scripts/check-kernel-fragments.sh --self-test
 fi
+# Every product's board: its U-Boot configuration resolves with no empty hex/int value and every fragment line taken
+# (RK-FASTBOOT: 287e2195 left CONFIG_FASTBOOT_BUF_ADDR empty and U-Boot's syncconfig asked without end). Needs the
+# pinned U-Boot tree (fetched once, cached by the pin). The self-test runs the real check first.
+if [ -x scripts/check-uboot-fragments.sh ]; then
+  bg "u-boot fragments" step "u-boot fragments (the check, then its self-test)" scripts/check-uboot-fragments.sh --self-test
+fi
 
 # The workspace globs match nothing until the first crate lands.
 if compgen -G "crates/*/*/Cargo.toml" > /dev/null || compgen -G "apps/*/src-tauri/Cargo.toml" > /dev/null; then
@@ -126,6 +132,9 @@ fi
 join_bg "device descriptions, then config-only"
 if [ -x scripts/check-kernel-fragments.sh ]; then
   join_bg "kernel fragments"
+fi
+if [ -x scripts/check-uboot-fragments.sh ]; then
+  join_bg "u-boot fragments"
 fi
 
 # The Lemnos gadget drop-in (R1d): installed exactly where the installed board file has a usb-gadget device.
