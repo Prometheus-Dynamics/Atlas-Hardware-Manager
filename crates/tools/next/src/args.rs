@@ -84,6 +84,10 @@ pub struct UsbBootOptions {
     pub bootfiles: Option<PathBuf>,
     pub timeout_s: Option<u64>,
     pub dry_run: bool,
+    /// `--bay-exact`: serve the partition image byte for byte as `boot.img` (boot_ramdisk=1).
+    pub bay_exact: bool,
+    /// `--control kernel-less`: a control run (needs `--bay-exact`).
+    pub control: Option<crate::usb_boot::Control>,
 }
 
 /// Reads the arguments after the program name.
@@ -185,12 +189,30 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
     let mut bootfiles = None;
     let mut timeout_s = None;
     let mut dry_run = false;
+    let mut bay_exact = false;
+    let mut control = None;
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
         let slot = match arg.as_str() {
             "-h" | "--help" => return Parsed::Help,
             "--dry-run" => {
                 dry_run = true;
+                continue;
+            }
+            "--bay-exact" => {
+                bay_exact = true;
+                continue;
+            }
+            "--control" => {
+                match rest.next().map(String::as_str) {
+                    Some("kernel-less") => control = Some(crate::usb_boot::Control::KernelLess),
+                    Some(other) => {
+                        return Parsed::Usage(format!(
+                            "--control takes kernel-less (got {other:?})"
+                        ));
+                    }
+                    None => return Parsed::Usage("--control needs a value".into()),
+                }
                 continue;
             }
             "--agent" => &mut agent,
@@ -223,6 +245,8 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
                 bootfiles: bootfiles.map(PathBuf::from),
                 timeout_s,
                 dry_run,
+                bay_exact,
+                control,
             })
         }
         _ => Parsed::Usage(

@@ -616,3 +616,183 @@ async fn a_partition_with_no_bay_for_the_slot_is_refused() {
         sent(&case)
     );
 }
+
+// Lemnos 7d91d645's layout: the board's firmware overlays live in the bay (with its overlays/README),
+// the bay record lists them after the five roles, and config.txt loads ramoops with parameters.
+
+const RAMOOPS: &[u8] = b"ramoops overlay bytes";
+
+/// The bundle's boot files at 7d91d645: the five roles, then the firmware overlay.
+fn boot_with_firmware() -> Vec<(String, Vec<u8>)> {
+    let mut boot = boot_contents();
+    boot.push(("overlays/ramoops-pi5.dtbo".into(), RAMOOPS.to_vec()));
+    boot
+}
+
+/// A bay record as Lemnos encodes it (`bays::Info`, `twocopy::encode`), firmware overlays included.
+fn lemnos_bayinfo(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<u8> {
+    use lemnos_slot_store::bays::Info;
+    use lemnos_slot_store::twocopy::{self, Kind, SECTOR};
+    let entry = |path: &str| {
+        let (_, bytes) = boot.iter().find(|(p, _)| p == path).expect("a boot file");
+        (bytes.len() as u64, <[u8; 32]>::from(Sha256::digest(bytes)))
+    };
+    let info = Info {
+        slot: slot.into(),
+        files: std::array::from_fn(|i| entry(BAY_PATHS[i])),
+        firmware: boot
+            .iter()
+            .filter(|(p, _)| !BAY_PATHS.contains(&p.as_str()))
+            .map(|(p, _)| {
+                let (len, hash) = entry(p);
+                (p.clone(), len, hash)
+            })
+            .collect(),
+    };
+    let mut out = Vec::new();
+    for seq in [1u64, 2] {
+        let mut sector = [0u8; SECTOR];
+        twocopy::encode(Kind::BAY_INFO, seq, &info.encode(), &mut sector).expect("encoded");
+        out.extend_from_slice(&sector);
+    }
+    out
+}
+
+/// The 7d91d645 boot partition of `slot`: every bay member zero-padded after its stored bytes, the
+/// way Lemnos pads a bay (the Nov 20 halt's form), the overlay only in the bay.
+fn lemnos_partition(slot: &str, boot: &[(String, Vec<u8>)]) -> Vec<(String, Vec<u8>)> {
+    let mut files = vec![
+        (
+            "config.txt".to_string(),
+            b"kernel_watchdog_timeout=15\ninclude default.txt\ndtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000\n".to_vec(),
+        ),
+        ("default.txt".to_string(), b"os_prefix=slots/bay0/\n".to_vec()),
+        ("slots/bay0/bayinfo.rec".to_string(), lemnos_bayinfo(slot, boot)),
+        ("slots/bay0/overlays/README".to_string(), b"bay overlays\n".to_vec()),
+    ];
+    for (path, bytes) in boot {
+        let mut padded = bytes.clone();
+        padded.resize(bytes.len() + 4096, 0);
+        files.push((format!("slots/bay0/{path}"), padded));
+    }
+    files
+}
+
+fn case_with(boot: Vec<(String, Vec<u8>)>, partition_files: Vec<(String, Vec<u8>)>) -> Case {
+    let case = case(&SIGN_SEED, partition_files);
+    std::fs::write(&case.bundle, bundle_bytes(&SIGN_SEED, boot)).expect("bundle");
+    case
+}
+
+#[tokio::test]
+async fn the_7d91d645_layout_passes_in_both_forms() {
+    let boot = boot_with_firmware();
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let (code, out) = usb_boot(&case, &["--dry-run"]).await;
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("slots/bay0/overlays/ramoops-pi5.dtbo"),
+        "{out}"
+    );
+    let (code, out) = usb_boot(&case, &["--dry-run", "--bay-exact"]).await;
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("form       BAY-EXACT"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+}
+
+#[tokio::test]
+async fn a_bundle_overlay_the_bay_record_lacks_is_refused() {
+    let boot = boot_with_firmware();
+    // The partition's record holds the five roles only; the bundle also lists the overlay.
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot_contents()));
+    let (code, out) = usb_boot(&case, &["--dry-run"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("but bay0's record holds"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+}
+
+#[tokio::test]
+async fn bay_exact_uploads_the_image_byte_for_byte_with_the_ramdisk_config() {
+    let boot = boot_with_firmware();
+    let case = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let image = std::fs::read(&case.partition).expect("the image");
+    let (code, out) = usb_boot(&case, &["--bay-exact"]).await;
+    assert_eq!(code, 0, "{out}");
+    let requests = sent(&case);
+    let puts: std::collections::BTreeMap<String, Vec<u8>> = requests
+        .iter()
+        .filter(|r| r.method == "PUT")
+        .map(|r| {
+            (
+                r.path
+                    .strip_prefix("/v1/boot-only/files/")
+                    .expect("path")
+                    .to_string(),
+                r.body.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        puts.keys().cloned().collect::<Vec<_>>(),
+        vec!["boot.img", "bootcode5.bin", "config.txt"]
+    );
+    assert!(
+        puts["boot.img"] == image,
+        "boot.img is the partition image byte for byte"
+    );
+    assert_eq!(puts["config.txt"], b"boot_ramdisk=1\n");
+    assert_eq!(puts["bootcode5.bin"], SECOND_STAGE);
+}
+
+#[tokio::test]
+async fn a_kernel_less_partition_is_refused_by_name_unless_it_is_the_control() {
+    let boot = boot_with_firmware();
+    let mut files = lemnos_partition("slot-a", &boot);
+    files.retain(|(p, _)| p != "slots/bay0/kernel8.img");
+    let case = case_with(boot.clone(), files);
+    // Step 0(a): refused by name, nothing sent.
+    let (code, out) = usb_boot(&case, &["--bay-exact"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("kernel8.img is missing from bay0"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+    // The control needs the BAY-EXACT form.
+    let (code, out) = usb_boot(&case, &["--control", "kernel-less"]).await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("needs --bay-exact"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+    // As the control it is served, and labelled.
+    let (code, out) = usb_boot(
+        &case,
+        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
+    )
+    .await;
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("CONTROL kernel-less"), "{out}");
+    assert!(sent(&case).is_empty(), "{:?}", sent_lines(&case));
+}
+
+#[tokio::test]
+async fn the_control_refuses_a_partition_that_has_its_kernel_or_fails_otherwise() {
+    let boot = boot_with_firmware();
+    let whole = case_with(boot.clone(), lemnos_partition("slot-a", &boot));
+    let (code, out) = usb_boot(
+        &whole,
+        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
+    )
+    .await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("and it has it"), "{out}");
+    // Kernel-less AND without the ramoops line: the control does not cover the second fault.
+    let mut files = lemnos_partition("slot-a", &boot);
+    files.retain(|(p, _)| p != "slots/bay0/kernel8.img");
+    files[0].1 = b"include default.txt\n".to_vec();
+    let both = case_with(boot, files);
+    let (code, out) = usb_boot(
+        &both,
+        &["--dry-run", "--bay-exact", "--control", "kernel-less"],
+    )
+    .await;
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("fails other checks too"), "{out}");
+    assert!(out.contains("ramoops"), "{out}");
+}

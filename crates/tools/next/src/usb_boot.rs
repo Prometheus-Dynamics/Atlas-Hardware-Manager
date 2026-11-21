@@ -5,16 +5,22 @@
 //!
 //! 1. the slot bundle's signature verifies with the given public key, and its manifest is read;
 //! 2. the boot partition (a FAT image from `lemnos-ctl boot-partition`) holds a bay set whose
-//!    committed record names the bundle's slot, and every boot file in the manifest is in that bay
-//!    with the same SHA-256 (of the stored bytes, the record's length);
-//! 3. the partition's `config.txt` (or a file it includes) carries `dtoverlay=ramoops-pi5`, and
-//!    `overlays/ramoops-pi5.dtbo` is in the tree: without them link 1 cannot be judged, because
-//!    its proof is the board's pstore;
-//! 4. every file of the partition's tree can be named to the agent (the boot-only API serves
-//!    names and `overlays/<name>`).
+//!    committed record (read with Lemnos's own readers) names the bundle's slot; the bundle lists
+//!    exactly that record's members (the five roles, then its firmware overlays), and each is in
+//!    the bay with the record's and the bundle's SHA-256 (of the stored bytes, the record's length);
+//! 3. the partition's `config.txt` (or a file it includes) loads the ramoops overlay
+//!    (`dtoverlay=ramoops-pi5`, parameters allowed), and the overlay is where the firmware reads
+//!    it (the root's `overlays/`, or the slot's bay with its `overlays/README`): without them
+//!    link 1 cannot be judged, because its proof is the board's pstore;
+//! 4. in the tree form, every file of the partition's tree can be named to the agent.
 //!
-//! The served set is the partition's own file tree as it is, plus `bootcode5.bin` (the Pi's
-//! second stage, from the flasher files). The job's events are followed to `boot-end`.
+//! Two forms. The tree form serves the partition's own file tree by name, bay files at their stored
+//! length. The BAY-EXACT form (`--bay-exact`) serves the partition image byte for byte as
+//! `boot.img` with an outer `config.txt` of `boot_ramdisk=1`, so the second stage's own FAT reader
+//! walks the image as built, padding included. Both add `bootcode5.bin` (the Pi's second stage,
+//! from the flasher files). `--control kernel-less` (BAY-EXACT only) serves a partition whose slot's
+//! bay lacks kernel8.img and passes every other check, for the bench's control run. The job's events
+//! are followed to `boot-end`.
 
 mod fat;
 mod http;
@@ -63,8 +69,33 @@ pub struct Plan {
     pub slot: String,
     pub board: String,
     pub bay: String,
+    pub form: Form,
     pub files: Vec<Served>,
 }
+
+/// How the boot partition is served.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    /// The partition's file tree by name, bay files at their stored length.
+    Tree,
+    /// The partition image byte for byte as `boot.img`, with an outer `boot_ramdisk=1` config.txt.
+    BayExact,
+    /// As `BayExact`, a control whose slot's bay lacks kernel8.img on purpose.
+    KernelLess,
+}
+
+/// A control run: a partition served although it fails one named check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Control {
+    /// The slot's bay lacks kernel8.img; every other check passes. The firmware's not-found for it
+    /// must show in the job's events.
+    KernelLess,
+}
+
+/// The BAY-EXACT form's file names: the image, loaded by the second stage as a FAT ramdisk.
+pub const BAY_EXACT_IMAGE: &str = "boot.img";
+/// The BAY-EXACT form's outer config.txt.
+pub const BAY_EXACT_CONFIG: &str = "boot_ramdisk=1\n";
 
 /// Checks everything before anything is sent. `Err` carries every refusal, each in plain words.
 ///
@@ -87,20 +118,16 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
             opts.boot_partition.display()
         )]
     })?;
-    let tree = fat::read_tree(image).map_err(|error| vec![format!("{error}: nothing was sent")])?;
+    let tree = fat::read_tree(image.clone())
+        .map_err(|error| vec![format!("{error}: nothing was sent")])?;
 
     let mut refusals = Vec::new();
+    // The bay files a kernel-less control may lack, and nothing else: see `Control::KernelLess`.
+    let mut missing_kernel = false;
     for group in fat::collisions(&tree) {
         refusals.push(format!(
             "{} collide ignoring case on the boot partition (the firmware's requests would match both): nothing was sent",
             group.join(" and ")
-        ));
-    }
-    let listed: BTreeSet<&str> = manifest.boot.files.keys().map(String::as_str).collect();
-    let stored: BTreeSet<&str> = fat::BAY_PATHS.into_iter().collect();
-    if listed != stored {
-        refusals.push(format!(
-            "the bundle's boot files are {listed:?}, not the five the boot partition stores: nothing was sent"
         ));
     }
 
@@ -121,19 +148,36 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         )),
         Some((set, info)) => {
             bay_set = set;
-            for (path, bundle_sha) in &manifest.boot.files {
-                let Some(index) = fat::BAY_PATHS.iter().position(|p| p == path) else {
+            // The bay's members, as its record lists them: the five roles, then each firmware
+            // overlay (Lemnos `bays::Info`). The bundle must list exactly these.
+            let members: Vec<(String, u64, [u8; 32])> = fat::BAY_PATHS
+                .iter()
+                .zip(info.files.iter())
+                .map(|(path, (len, hash))| ((*path).to_string(), *len, *hash))
+                .chain(info.firmware.iter().cloned())
+                .collect();
+            let listed: BTreeSet<&str> = manifest.boot.files.keys().map(String::as_str).collect();
+            let recorded: BTreeSet<&str> = members.iter().map(|(p, _, _)| p.as_str()).collect();
+            if listed != recorded {
+                refusals.push(format!(
+                    "the bundle's boot files are {listed:?}, but bay{set}'s record holds {recorded:?}: nothing was sent"
+                ));
+            }
+            for (path, len, record_hash) in &members {
+                let Some(bundle_sha) = manifest.boot.files.get(path) else {
                     continue;
                 };
-                let (len, record_hash) = info.files[index];
                 let wanted = format!("slots/bay{set}/{path}");
                 let Some((real, bytes)) = fat::find(&tree, &wanted) else {
+                    if path == fat::BAY_PATHS[0] {
+                        missing_kernel = true;
+                    }
                     refusals.push(format!(
                         "{path} is missing from bay{set} of the boot partition (bundle SHA-256 {bundle_sha}): nothing was sent"
                     ));
                     continue;
                 };
-                let Some(stored_bytes) = usize::try_from(len).ok().and_then(|n| bytes.get(..n))
+                let Some(stored_bytes) = usize::try_from(*len).ok().and_then(|n| bytes.get(..n))
                 else {
                     refusals.push(format!(
                         "{path} in bay{set} is shorter than its record's {len} bytes: nothing was sent"
@@ -156,15 +200,18 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         }
     }
 
-    refusals.extend(ramoops_refusals(&tree));
+    refusals.extend(ramoops_refusals(&tree, bay_set));
 
-    // The agent takes one to four segments, each a valid name.
-    let unservable: Vec<&String> = tree.keys().filter(|path| !servable(path)).collect();
-    if !unservable.is_empty() {
-        refusals.push(format!(
-            "the agent's boot-only API cannot take these paths (one to four valid name segments): {}: nothing was sent",
-            unservable.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
-        ));
+    // The agent takes one to four segments, each a valid name. Only the tree form names the
+    // partition's own paths to it; the BAY-EXACT form sends three fixed names.
+    if !opts.bay_exact {
+        let unservable: Vec<&String> = tree.keys().filter(|path| !servable(path)).collect();
+        if !unservable.is_empty() {
+            refusals.push(format!(
+                "the agent's boot-only API cannot take these paths (one to four valid name segments): {}: nothing was sent",
+                unservable.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
+            ));
+        }
     }
 
     let bootfiles = opts
@@ -188,28 +235,96 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         ));
     }
 
-    if !refusals.is_empty() {
-        return Err(refusals);
-    }
-    let mut files: Vec<Served> = served_bytes
-        .into_iter()
-        .map(|(path, bytes)| {
-            let role = if path
-                .to_ascii_lowercase()
-                .starts_with(&format!("slots/bay{bay_set}/"))
-            {
-                format!("slot {} bay{bay_set} (boot partition)", manifest.id)
-            } else {
-                "boot partition tree".to_string()
-            };
-            Served {
-                sha256: sha256_hex(&bytes),
-                path,
-                bytes,
-                role,
+    let form = match opts.control {
+        None => {
+            if !refusals.is_empty() {
+                return Err(refusals);
             }
-        })
-        .collect();
+            if opts.bay_exact {
+                Form::BayExact
+            } else {
+                Form::Tree
+            }
+        }
+        Some(Control::KernelLess) => {
+            // A control serves a partition that must fail in exactly one known way: its slot's
+            // bay lacks kernel8.img and every other check passes. Anything else is refused.
+            if !opts.bay_exact {
+                return Err(vec![
+                    "--control kernel-less needs --bay-exact (the control serves the partition image as it is): nothing was sent".into(),
+                ]);
+            }
+            let kernel_line =
+                |r: &String| r.starts_with(&format!("{} is missing from bay", fat::BAY_PATHS[0]));
+            let other: Vec<String> = refusals
+                .iter()
+                .filter(|r| !kernel_line(r))
+                .cloned()
+                .collect();
+            if !missing_kernel || !other.is_empty() {
+                let mut out = vec![format!(
+                    "--control kernel-less: the partition must lack only {} in its slot's bay, and it {}: nothing was sent",
+                    fat::BAY_PATHS[0],
+                    if missing_kernel {
+                        "fails other checks too"
+                    } else {
+                        "has it"
+                    }
+                )];
+                out.extend(other);
+                return Err(out);
+            }
+            Form::KernelLess
+        }
+    };
+
+    let mut files: Vec<Served> = if form == Form::Tree {
+        served_bytes
+            .into_iter()
+            .map(|(path, bytes)| {
+                let role = if path
+                    .to_ascii_lowercase()
+                    .starts_with(&format!("slots/bay{bay_set}/"))
+                {
+                    format!("slot {} bay{bay_set} (boot partition)", manifest.id)
+                } else {
+                    "boot partition tree".to_string()
+                };
+                Served {
+                    sha256: sha256_hex(&bytes),
+                    path,
+                    bytes,
+                    role,
+                }
+            })
+            .collect()
+    } else {
+        // BAY-EXACT: the partition image byte for byte as `boot.img`, which the second stage loads
+        // as a FAT ramdisk (`boot_ramdisk=1`, the flasher's proven form), so the firmware's own FAT
+        // reader walks the real image, padding and all. The outer config.txt holds only that line.
+        let outer = BAY_EXACT_CONFIG.as_bytes().to_vec();
+        vec![
+            Served {
+                path: BAY_EXACT_IMAGE.to_string(),
+                sha256: sha256_hex(&image),
+                bytes: image,
+                role: format!(
+                    "the boot partition image as built, {}",
+                    if form == Form::KernelLess {
+                        "CONTROL: its slot's bay has no kernel8.img"
+                    } else {
+                        "loaded as a ramdisk"
+                    }
+                ),
+            },
+            Served {
+                path: "config.txt".to_string(),
+                sha256: sha256_hex(&outer),
+                bytes: outer,
+                role: "outer config: boot_ramdisk=1".to_string(),
+            },
+        ]
+    };
     if let Some(bytes) = second_stage {
         files.push(Served {
             path: SECOND_STAGE.to_string(),
@@ -222,6 +337,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         slot: manifest.id,
         board: manifest.board,
         bay: format!("bay{bay_set}"),
+        form,
         files,
     })
 }
@@ -246,24 +362,37 @@ pub fn verify_served(files: &[Served]) -> Result<(), Vec<String>> {
     if bad.is_empty() { Ok(()) } else { Err(bad) }
 }
 
-/// The ramoops refusals: `config.txt`, or a file it includes, must carry the ramoops line, and
-/// the overlay must be in the tree. Nothing is added to fix them.
-fn ramoops_refusals(tree: &fat::Tree) -> Vec<String> {
+/// The ramoops refusals: `config.txt`, or a file it includes, must load the ramoops overlay
+/// (`dtoverlay=ramoops-pi5`, with or without parameters), and the overlay must be where the firmware
+/// looks for it: `overlays/` at the root, or the slot's bay `slots/bay<N>/overlays/` when that holds
+/// `overlays/README` (os_prefix applies to overlays only then; Lemnos's generated config.txt and
+/// `bays::firmware_path`). Nothing is added to fix them.
+fn ramoops_refusals(tree: &fat::Tree, bay_set: usize) -> Vec<String> {
     let mut found = false;
     let mut seen = BTreeSet::new();
     visit_config(tree, "config.txt", &mut found, &mut seen, 0);
     let mut refusals = Vec::new();
     if !found {
         refusals.push(format!(
-            "config.txt (or a file it includes) has no {RAMOOPS_LINE:?}: link 1 can't be judged without the board's pstore: nothing was sent"
+            "config.txt (or a file it includes) has no {RAMOOPS_LINE:?} line: link 1 can't be judged without the board's pstore: nothing was sent"
         ));
     }
-    if fat::find(tree, RAMOOPS_OVERLAY).is_none() {
+    let in_bay = fat::find(tree, &format!("slots/bay{bay_set}/{RAMOOPS_OVERLAY}")).is_some()
+        && fat::find(tree, &format!("slots/bay{bay_set}/overlays/README")).is_some();
+    if fat::find(tree, RAMOOPS_OVERLAY).is_none() && !in_bay {
         refusals.push(format!(
-            "{RAMOOPS_OVERLAY} is not in the boot partition: link 1 can't be judged without the board's pstore: nothing was sent"
+            "{RAMOOPS_OVERLAY} is in neither the boot partition's root nor bay{bay_set} (with its overlays/README): link 1 can't be judged without the board's pstore: nothing was sent"
         ));
     }
     refusals
+}
+
+/// Whether a config line loads the ramoops overlay: the bare line or one with parameters.
+fn loads_ramoops(line: &str) -> bool {
+    line == RAMOOPS_LINE
+        || line
+            .strip_prefix(RAMOOPS_LINE)
+            .is_some_and(|rest| rest.starts_with(','))
 }
 
 fn visit_config(
@@ -281,7 +410,7 @@ fn visit_config(
     };
     for line in String::from_utf8_lossy(bytes).lines() {
         let line = line.trim();
-        if line == RAMOOPS_LINE {
+        if loads_ramoops(line) {
             *found = true;
         }
         if let Some(include) = line.strip_prefix("include ") {
@@ -334,6 +463,12 @@ pub fn write_plan<W: Write>(plan: &Plan, opts: &UsbBootOptions, out: &mut W) {
         "  slot       {} (board {}, bay {})",
         plan.slot, plan.board, plan.bay
     );
+    let form = match plan.form {
+        Form::Tree => "tree: the partition's files by name, bay files at their stored length",
+        Form::BayExact => "BAY-EXACT: the partition image as boot.img, boot_ramdisk=1",
+        Form::KernelLess => "CONTROL kernel-less (BAY-EXACT): its slot's bay has no kernel8.img",
+    };
+    let _ = writeln!(out, "  form       {form}");
     let _ = writeln!(
         out,
         "  files      {} (eMMC is never written)",
@@ -355,7 +490,7 @@ pub fn write_plan<W: Write>(plan: &Plan, opts: &UsbBootOptions, out: &mut W) {
     }
     let _ = writeln!(
         out,
-        "  ramoops    ok: {RAMOOPS_LINE} and {RAMOOPS_OVERLAY} present"
+        "  ramoops    ok: {RAMOOPS_LINE} loaded and the overlay present"
     );
 }
 
@@ -629,10 +764,31 @@ mod tests {
             format!("{RAMOOPS_LINE}\n").into_bytes(),
         );
         tree.insert(RAMOOPS_OVERLAY.into(), vec![1]);
-        assert!(ramoops_refusals(&tree).is_empty());
+        assert!(ramoops_refusals(&tree, 0).is_empty());
         tree.remove(RAMOOPS_OVERLAY);
         tree.insert("default.txt".into(), b"# nothing\n".to_vec());
-        assert_eq!(ramoops_refusals(&tree).len(), 2);
+        assert_eq!(ramoops_refusals(&tree, 0).len(), 2);
+    }
+
+    #[test]
+    fn ramoops_with_parameters_and_in_the_bay_is_found() {
+        // Lemnos 7d91d645's generated config.txt and bay layout.
+        let mut tree = fat::Tree::new();
+        tree.insert(
+            "config.txt".into(),
+            b"dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000\nos_prefix=slots/bay0/\n".to_vec(),
+        );
+        tree.insert(format!("slots/bay0/{RAMOOPS_OVERLAY}"), vec![1]);
+        tree.insert("slots/bay0/overlays/README".into(), vec![2]);
+        assert!(ramoops_refusals(&tree, 0).is_empty());
+        // Another bay's overlay is not the slot's.
+        assert_eq!(ramoops_refusals(&tree, 1).len(), 1);
+        // Without the README the firmware reads the root's overlays, which has none.
+        tree.remove("slots/bay0/overlays/README");
+        assert_eq!(ramoops_refusals(&tree, 0).len(), 1);
+        // A different overlay that only starts with the name is not ramoops.
+        assert!(!loads_ramoops("dtoverlay=ramoops-pi5x"));
+        assert!(loads_ramoops("dtoverlay=ramoops-pi5"));
     }
 
     #[test]

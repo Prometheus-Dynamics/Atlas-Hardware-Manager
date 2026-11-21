@@ -64,8 +64,12 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               (--json also writes <file>.json; --dry-run lists the steps and sends nothing)
   usb-boot --agent <host:port> --port <3-1.1.4.1> --bundle <file> --boot-partition <file>
            --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
+           [--bay-exact] [--control kernel-less]
                               USB boot a board through the SystemCore agent with a built image's
-                              boot files (never writes the eMMC; refuses before sending on any check)
+                              boot files (never writes the eMMC; refuses before sending on any check).
+                              --bay-exact serves the partition image byte for byte as boot.img
+                              (boot_ramdisk=1); --control kernel-less serves a partition whose
+                              slot's bay lacks only kernel8.img, on purpose (with --bay-exact)
 
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory

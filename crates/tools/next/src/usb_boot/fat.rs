@@ -1,13 +1,14 @@
-//! The boot partition, read and never written: its whole file tree (read through `fatfs`, names
-//! lower-cased, FAT being case-blind), and a bay set's committed record (`bayinfo.rec`, the
-//! two-copy format of `lemnos_slot_store::twocopy`, read the same way: the valid copy with the
-//! higher sequence).
+//! The boot partition, read and never written: its whole file tree (read through `fatfs`, names as
+//! the volume holds them, looked up ignoring case, FAT being case-blind), and a bay set's committed
+//! record (`bayinfo.rec`), read with Lemnos's own readers (`twocopy::decode`, `bays::Info::decode`)
+//! so the record's form can't drift from the writer's.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
 use fatfs::{Dir, FileSystem, FsOptions, ReadWriteSeek};
-use lemnos_slot_store::bays::ROLES;
+use lemnos_slot_store::bays::{Info, ROLES};
+use lemnos_slot_store::twocopy::{self, Kind, SECTOR, Sector};
 
 /// The boot partition's files: each path (`/` between directories) with the name as the volume
 /// holds it, to the file's bytes. Names are never rewritten; lookups are case-insensitive.
@@ -37,11 +38,6 @@ pub fn collisions(tree: &Tree) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// The bay record's kind byte (Lemnos `Kind::BAY_INFO`).
-const BAY_INFO_KIND: u8 = 6;
-const SECTOR: usize = 512;
-const CRC_AT: usize = 508;
-const HEADER: usize = 18;
 /// The five payload roles of a bay set, in Lemnos's order: `lemnos_slot_store::bays::ROLES`, the one list.
 pub const BAY_PATHS: [&str; 5] = [
     ROLES[0].path,
@@ -51,13 +47,9 @@ pub const BAY_PATHS: [&str; 5] = [
     ROLES[4].path,
 ];
 
-/// A bay set's committed record: the slot in it and each payload's stored length and SHA-256.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BayInfo {
-    pub slot: String,
-    /// In [`BAY_PATHS`] order: (stored length, SHA-256 of the stored bytes).
-    pub files: Vec<(u64, [u8; 32])>,
-}
+/// A bay set's committed record, as Lemnos decodes it: the slot, each role's stored length and
+/// SHA-256, and each firmware overlay the set holds (`bays::Info`).
+pub type BayInfo = Info;
 
 /// Reads the whole file tree of a FAT boot partition image, names as the volume holds them.
 ///
@@ -94,68 +86,72 @@ fn walk<IO: ReadWriteSeek>(dir: Dir<'_, IO>, prefix: &str, tree: &mut Tree) -> R
     Ok(())
 }
 
-/// The CRC-32 (IEEE, reflected) of `bytes`, as the two-copy records use.
-#[must_use]
-pub fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xFFFF_FFFFu32;
-    for &byte in bytes {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            let mask = (crc & 1).wrapping_neg();
-            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
-        }
-    }
-    !crc
-}
-
-/// Reads a bay record file (1024 bytes, two sectors): the valid copy with the higher sequence,
-/// decoded. `None` when neither copy is a valid bay record.
+/// Reads a bay record file (two sectors, a copy in each) as Lemnos does: each sector through
+/// `twocopy::decode`, the valid `BAY_INFO` copy with the higher sequence, its payload through
+/// `bays::Info::decode` (the five roles, then any firmware overlays). `None` when neither copy is a
+/// valid bay record.
 #[must_use]
 pub fn parse_bayinfo(bytes: &[u8]) -> Option<BayInfo> {
     let mut best: Option<(u64, &[u8])> = None;
-    for at in [0, SECTOR] {
-        let Some(copy) = bytes.get(at..at + SECTOR) else {
+    for chunk in bytes.chunks(SECTOR).take(2) {
+        let Ok(sector) = <&Sector>::try_from(chunk) else {
             break;
         };
-        if &copy[0..4] != b"LMRC" || copy[4] != 1 || copy[5] != BAY_INFO_KIND {
+        let Some(copy) = twocopy::decode(sector) else {
+            continue;
+        };
+        if copy.kind != Kind::BAY_INFO {
             continue;
         }
-        let crc = u32::from_le_bytes(copy[CRC_AT..CRC_AT + 4].try_into().ok()?);
-        if crc != crc32(&copy[..CRC_AT]) {
-            continue;
-        }
-        let sequence = u64::from_le_bytes(copy[8..16].try_into().ok()?);
-        let len = usize::from(u16::from_le_bytes(copy[16..18].try_into().ok()?));
-        let payload = copy.get(HEADER..HEADER + len)?;
-        if best.is_none_or(|(seen, _)| sequence > seen) {
-            best = Some((sequence, payload));
+        if best.is_none_or(|(seen, _)| copy.seq > seen) {
+            best = Some((copy.seq, copy.payload));
         }
     }
-    let (_, payload) = best?;
-    decode_payload(payload)
-}
-
-fn decode_payload(payload: &[u8]) -> Option<BayInfo> {
-    let (&n, rest) = payload.split_first()?;
-    let n = usize::from(n);
-    let slot = std::str::from_utf8(rest.get(..n)?).ok()?.to_string();
-    let mut at = n;
-    let mut files = Vec::with_capacity(BAY_PATHS.len());
-    for _ in BAY_PATHS {
-        let len = u64::from_le_bytes(rest.get(at..at + 8)?.try_into().ok()?);
-        let hash: [u8; 32] = rest.get(at + 8..at + 40)?.try_into().ok()?;
-        files.push((len, hash));
-        at += 40;
-    }
-    (at == rest.len()).then_some(BayInfo { slot, files })
+    Info::decode(best?.1)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn record(slot: &str, firmware: Vec<(String, u64, [u8; 32])>) -> Info {
+        Info {
+            slot: slot.into(),
+            files: [
+                (1, [1; 32]),
+                (2, [2; 32]),
+                (3, [3; 32]),
+                (4, [4; 32]),
+                (5, [5; 32]),
+            ],
+            firmware,
+        }
+    }
+
+    fn file(copies: &[(u64, &Info)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (seq, info) in copies {
+            let mut sector: Sector = [0; SECTOR];
+            twocopy::encode(Kind::BAY_INFO, *seq, &info.encode(), &mut sector).expect("encoded");
+            out.extend_from_slice(&sector);
+        }
+        out
+    }
+
     #[test]
-    fn crc32_matches_the_ieee_check_value() {
-        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+    fn the_higher_valid_copy_wins_and_firmware_overlays_are_read() {
+        let old = record("slot-old", vec![]);
+        let new = record(
+            "slot-new",
+            vec![("overlays/ramoops-pi5.dtbo".into(), 745, [9; 32])],
+        );
+        assert_eq!(
+            parse_bayinfo(&file(&[(1, &old), (2, &new)])),
+            Some(new.clone())
+        );
+        let mut torn = file(&[(3, &old), (2, &new)]);
+        torn[10] ^= 1;
+        assert_eq!(parse_bayinfo(&torn), Some(new));
+        assert_eq!(parse_bayinfo(&[0; 1024]), None);
     }
 }
