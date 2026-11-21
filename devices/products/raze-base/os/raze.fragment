@@ -105,6 +105,16 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # Buildroot defaults it to y; on Gaia's allnoconfig base it is off unless a fragment says so, hence this line.
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
 
+# -- System call filters (F3-5) ------------------------------------------------------------------------
+# libseccomp in the root, so systemd is built with seccomp (Buildroot package/systemd/systemd.mk: -Dseccomp=enabled and
+# the libseccomp dependency when this is y) and the units' SystemCallFilter= is enforced. Without it systemd logs a line
+# and runs the unit unfiltered. The units that set filters: lemnosd and its gadget drop-in, lemnos-orion and
+# lemnos-board-security (Lemnos UNIT-SECCOMP), orion-node (Orion), and systemd's own journald, udevd and networkd.
+# The groups they name are the same in this image's systemd 258.7 as in the 259 Lemnos checked against (@system-service
+# 395 calls, @setuid 14, @chown 7, compared 2026-11-21). The kernel has CONFIG_SECCOMP and CONFIG_SECCOMP_FILTER
+# (the defconfig's). scripts/check-slot-seccomp.sh holds both after every build.
+BR2_PACKAGE_LIBSECCOMP=y
+
 # -- The bus daemons (PR B41) -------------------------------------------------------------------------
 # Off: systemd-resolved, systemd-timesyncd, systemd-hostnamed and systemd-timedated. Reasons:
 #   - nothing on the image uses the bus (the scan of the built root: libdbus-1 is linked only by dbus's own tools;

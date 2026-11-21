@@ -126,6 +126,9 @@ echo "build-product: built products/$pname ($((SECONDS - start)) s)"
 # What Lemnos slot-init needs in the slot root (scripts/check-slot-mounts.sh): /sbin/init, /data, /etc/machine-id; and
 # the users, fixed ids and enable links its units and declarations need (scripts/check-slot-users.sh), after every full
 # build that makes an EROFS root. The checks read the root from this build's run record.
+# Whether its units' system call filters are enforced (scripts/check-slot-seccomp.sh): systemd linked with libseccomp
+# and the kernel's CONFIG_SECCOMP and CONFIG_SECCOMP_FILTER, read from the kernel the build made (a Buildroot step's
+# `kernel` output: its one Image.gz or Image).
 stripped=$(dirname "$product")/os/setid-stripped
 if [[ -z $until_step ]]; then
   found=$(python3 -I - "$product" "$(dirname "$GAIA_STORE")/runs" "$GAIA_STORE" <<'PY'
@@ -146,17 +149,25 @@ def path(ref):
 erofs = [s["outputs"] for s in run["steps"] if s["step"] == "gaia.fs.erofs"]
 if not erofs: sys.exit(0)  # no slot root in this product: nothing to check
 if len(erofs) != 1 or len(images) != 1: sys.exit(f"{rec}: {len(erofs)} EROFS steps in {len(images)} images: the slot checks read one image's EROFS")
-print(path(erofs[0]["image"]), path(erofs[0]["setid"]), images[0], sep="\n")
+kernels = []
+for s in run["steps"]:
+    if s["step"] != "gaia.os.buildroot" or "kernel" not in s.get("outputs", {}): continue
+    d = path(s["outputs"]["kernel"])
+    kernels += [os.path.join(d, n) for n in ("Image.gz", "Image") if os.path.isfile(os.path.join(d, n))][:1]
+if len(kernels) > 1: sys.exit(f"{rec}: {len(kernels)} Buildroot steps made a kernel: the seccomp check reads the one the slot boots")
+print(path(erofs[0]["image"]), path(erofs[0]["setid"]), images[0], kernels[0] if kernels else "-", sep="\n")
 PY
 ) || die "the slot checks could not find this build's EROFS root (see above)"
   if [[ -n $found ]]; then
-    { read -r erofs; read -r setid; read -r image; } <<<"$found"
+    { read -r erofs; read -r setid; read -r image; read -r kernel; } <<<"$found"
     "$repo/scripts/check-slot-mounts.sh" "$erofs" || die "FAILED products/$pname: the slot root lacks a mount point (above)"
     "$repo/scripts/check-slot-users.sh" "$erofs" "$product" || die "FAILED products/$pname: the slot root's users, ids or enable links are not what its units and declarations need (above)"
     if [[ -f $stripped ]]; then
       "$repo/scripts/check-slot-setid.sh" "$erofs" "$setid" "$product" "$image" "$stripped" \
         || die "FAILED products/$pname: the slot root's set-id bits differ from keep_setid and $stripped (above)"
     fi
+    "$repo/scripts/check-slot-seccomp.sh" "$erofs" "$kernel" \
+      || die "FAILED products/$pname: the slot's system call filters would not be enforced (above)"
   fi
 fi
 
