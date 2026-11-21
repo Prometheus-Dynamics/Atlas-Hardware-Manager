@@ -6,8 +6,8 @@
 #
 # THIS SCRIPT REMOVES NOTHING (scripts/check-devices.sh refuses a post-build script that does): makedevs runs after
 # it and fails on any file a package's permissions table names that is gone (the D1 build, 2026-11-18:
-# dbus-daemon-launch-helper). A removal belongs after makedevs: a post-fakeroot script (its changes reach the slot
-# since Gaia 171ca25f, FAKEROOT-OUTPUT).
+# dbus-daemon-launch-helper). Removals are in os/post-fakeroot.sh, after makedevs and preset-all (its changes reach the
+# slot since Gaia 171ca25f, FAKEROOT-OUTPUT).
 #
 # NETWORK-ONLINE: systemd-networkd.service carries Also=systemd-networkd-wait-online.service in its [Install] section,
 # so preset-all links the wait-online unit whatever a preset says: a `disable` line in a lower-numbered preset file does

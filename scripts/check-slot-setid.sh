@@ -22,10 +22,6 @@
 #   - a keep_setid path is not setuid/setgid in the EROFS as SETID says, or is not a set-id file of the input;
 #   - a STRIPPED path still carries a setuid/setgid bit in the EROFS, is not a set-id file of the input, or has no reason;
 #   - any other file in the EROFS carries a setuid/setgid bit;
-#   - the D-Bus launch helper (usr/libexec/dbus-daemon-launch-helper) is on the stripped list, and a system-services
-#     file (/usr/share, /usr/local/share, /lib, /etc dbus-1/system-services) would need it: one with neither
-#     SystemdService= (systemd activates it) nor Exec=/bin/false (nothing to launch). The file is named: that service
-#     is launched by the helper, which no longer runs as root (coordinator 2026-11-20).
 set -euo pipefail
 
 check() {  # <erofs> <setid report> <product.toml> <image> <stripped>
@@ -92,25 +88,9 @@ for top, dirs, files in os.walk(root):
         if os.path.islink(full): continue
         if os.lstat(full).st_mode & SETID and rel not in keep:
             bad.append(f"{rel}: carries setid bits in the EROFS but is not in keep_setid")
-HELPER = "usr/libexec/dbus-daemon-launch-helper"
-services = 0
-if canon(HELPER) in strip:
-    for d in ("usr/share/dbus-1/system-services", "usr/local/share/dbus-1/system-services", "lib/dbus-1/system-services", "etc/dbus-1/system-services"):
-        dd = os.path.join(root, canon(d + "/x").rsplit("/", 1)[0])
-        if not os.path.isdir(dd): continue
-        for name in sorted(os.listdir(dd)):
-            f = os.path.join(dd, name)
-            if not name.endswith(".service") or not os.path.isfile(f): continue
-            services += 1
-            keys = {}
-            for line in open(f, errors="replace"):
-                if "=" in line and not line.lstrip().startswith(("#", ";", "[")):
-                    k, v = line.split("=", 1); keys[k.strip()] = v.strip()
-            if not keys.get("SystemdService") and keys.get("Exec") != "/bin/false":
-                bad.append(f"{os.path.relpath(f, root)}: a system-services file with no SystemdService= and Exec={keys.get('Exec', '')!r}: the launch helper would start it, and {HELPER} is stripped")
 for b in bad: print(f"check-slot-setid: BAD {b}")
 if bad: print(f"check-slot-setid: FAILED ({len(bad)} finding(s))"); sys.exit(1)
-print(f"check-slot-setid: ok: {len(table)} setid entr{'y' if len(table) == 1 else 'ies'} in the input tree: {len(keep)} kept, {len(table) - len(keep)} stripped by decision" + (f"; {services} system-services file(s), none needs the stripped launch helper" if canon(HELPER) in strip else ""))
+print(f"check-slot-setid: ok: {len(table)} setid entr{'y' if len(table) == 1 else 'ies'} in the input tree: {len(keep)} kept, {len(table) - len(keep)} stripped by decision")
 PY
   rm -rf "$tmp"
   return $rc
@@ -151,28 +131,7 @@ self_test() {
   if check "$tmp/pass.erofs" "$tmp/bad.txt" "$tmp/product.toml" img "$tmp/stripped" > "$tmp/bad.log" 2>&1 || ! grep -q "not a line of Gaia's setid report" "$tmp/bad.log"; then
     echo "check-slot-setid: self-test: an unreadable report was not refused" >&2; rc=1
   fi
-  # The launch helper stripped: a system-services file needs SystemdService= or Exec=/bin/false.
-  printf 'kept    /usr/bin/su 4755\ncleared /usr/bin/busybox 4755 -> 0755\ncleared /usr/libexec/dbus-daemon-launch-helper 4750 -> 0750\n' > "$tmp/setid-h.txt"
-  printf 'bin/busybox  a reason\nusr/libexec/dbus-daemon-launch-helper  activation goes through systemd\n' > "$tmp/stripped-h"
-  mkh() {  # <name> <service file body>
-    mkdir -p "$tmp/$1/usr/bin" "$tmp/$1/usr/libexec" "$tmp/$1/usr/share/dbus-1/system-services"; ln -sfn usr/bin "$tmp/$1/bin"
-    printf x > "$tmp/$1/usr/bin/su"; printf x > "$tmp/$1/usr/bin/busybox"; printf x > "$tmp/$1/usr/libexec/dbus-daemon-launch-helper"
-    chmod 4755 "$tmp/$1/usr/bin/su"; chmod 755 "$tmp/$1/usr/bin/busybox"; chmod 750 "$tmp/$1/usr/libexec/dbus-daemon-launch-helper"
-    printf '[D-BUS Service]\nName=a.b\nExec=/bin/false\nSystemdService=dbus-a.b.service\n' > "$tmp/$1/usr/share/dbus-1/system-services/a.b.service"
-    printf '[D-BUS Service]\nName=c.d\nExec=/bin/false\nUser=root\n' > "$tmp/$1/usr/share/dbus-1/system-services/c.d.service"
-    [[ -n $2 ]] && printf '%b' "$2" > "$tmp/$1/usr/share/dbus-1/system-services/e.f.service"
-    mkfs.erofs "$tmp/$1.erofs" "$tmp/$1" >/dev/null 2>&1
-  }
-  mkh hpass ""
-  check "$tmp/hpass.erofs" "$tmp/setid-h.txt" "$tmp/product.toml" img "$tmp/stripped-h" > "$tmp/hpass.log" 2>&1 \
-    || { cat "$tmp/hpass.log" >&2; echo "check-slot-setid: self-test: services with SystemdService= or Exec=/bin/false failed" >&2; rc=1; }
-  mkh hneed '[D-BUS Service]\nName=e.f\nExec=/usr/bin/e-f-daemon\nUser=root\n'
-  if check "$tmp/hneed.erofs" "$tmp/setid-h.txt" "$tmp/product.toml" img "$tmp/stripped-h" > "$tmp/hneed.log" 2>&1; then
-    echo "check-slot-setid: self-test: a service the stripped helper would launch passed" >&2; rc=1
-  elif ! grep -q "usr/share/dbus-1/system-services/e.f.service: a system-services file with no SystemdService=" "$tmp/hneed.log"; then
-    echo "check-slot-setid: self-test: hneed failed without naming e.f.service" >&2; cat "$tmp/hneed.log" >&2; rc=1
-  fi
-  [[ $rc -eq 0 ]] && echo "check-slot-setid: self-test: passed (a kept bit that goes missing, a stripped bit that leaks, an undecided setid entry, a reasonless line, a stale line and an unreadable report each fail; bin/ resolves to usr/bin/; with the launch helper stripped, a system-services file with neither SystemdService= nor Exec=/bin/false fails by name)"
+  [[ $rc -eq 0 ]] && echo "check-slot-setid: self-test: passed (a kept bit that goes missing, a stripped bit that leaks, an undecided setid entry, a reasonless line, a stale line and an unreadable report each fail; bin/ resolves to usr/bin/)"
   return $rc
 }
 

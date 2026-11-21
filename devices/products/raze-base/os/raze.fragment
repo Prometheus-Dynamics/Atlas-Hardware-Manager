@@ -115,8 +115,9 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 #   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
 # Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
 # turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
-# D1 SHIPS DBUS, as 993 does (coordinator's ruling C, 2026-11-19). The trim and its checks are parked on branch
-# save/D1-dbus-trim (cbf1b1f4): a follow-up after D1, now that a post-fakeroot change reaches the slot (171ca25f).
+# os/post-fakeroot.sh removes dbus from the root and fails the build if anything still needs it (F3-4, back from
+# save/D1-dbus-trim cbf1b1f4; D1 shipped dbus under ruling C, 2026-11-19, because a post-fakeroot change did not reach
+# the slot then; it does since Gaia 171ca25f).
 # BR2_PACKAGE_SYSTEMD_RESOLVED is not set
 # BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
 # BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
@@ -125,6 +126,10 @@ BR2_PACKAGE_SYSTEMD_NETWORKD=y
 # The post-build script: the wait-online mask (os/post-build.sh; B41 had the dbus removal here). Buildroot runs it as
 # `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
 BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
+# The dbus removal and its checks (os/post-fakeroot.sh): after makedevs and preset-all, inside the rootfs step's fakeroot
+# script, so no package's permissions table names a file already gone (the D1 build failed when the removal was a
+# post-build step: makedevs on dbus-daemon-launch-helper). post-build.sh removes nothing (check-devices holds it so).
+BR2_ROOTFS_POST_FAKEROOT_SCRIPT="@here@/post-fakeroot.sh"
 # Gaia ships what Buildroot's fakeroot stage made (FAKEROOT-OUTPUT, pinned since 171ca25f: the rootfs output is
 # rootfs.tar, crates/nodes/os-buildroot/src/lib.rs:903-913), so mkusers, preset-all, the device tables and a
 # post-fakeroot script all reach the slot. Atlas's components are merged into the root AFTER that stage

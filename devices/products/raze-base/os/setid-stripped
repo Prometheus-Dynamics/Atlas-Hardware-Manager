@@ -2,10 +2,5 @@
 # its reason. scripts/check-slot-setid.sh holds the slot's EROFS to it; scripts/build-product.sh runs it after a build.
 # Approved by the coordinator 2026-11-19 (D1): both lines.
 bin/busybox  FEATURE_SUID is off, so a setuid busybox runs every applet as root; login runs from agetty as root; ping is root-only after the strip and nothing non-root runs it
-# Present only while the slot ships dbus (ruling C, 2026-11-19). When the dbus trim returns (after D1), the helper leaves
-# the input tree and check-slot-setid refuses this line as stale, so it is removed then.
-# Held by scripts/check-slot-setid.sh (coordinator 2026-11-20): while this line is here, every system-services file on
-# the root must carry SystemdService= (systemd activates it) or Exec=/bin/false (nothing to launch); one that would be
-# launched by the helper fails the build by name. Build 13's root: org.freedesktop.network1 (SystemdService=) and
-# org.freedesktop.systemd1 (Exec=/bin/false), nothing else.
-usr/libexec/dbus-daemon-launch-helper  system-bus activation goes through systemd (network1 has SystemdService=, systemd1 is Exec=/bin/false): no service on the image is launched by the helper
+# usr/libexec/dbus-daemon-launch-helper is not listed: os/post-fakeroot.sh removes it with dbus (F3-4), so a helper that
+# reaches the slot is an undecided set-id entry and fails the build. That is the check that the trim reached the slot.
