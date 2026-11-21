@@ -1,0 +1,12 @@
+# RK3566 and RK3568 (U-Boot's ROCKCHIP_RK3568): the fastboot download buffer (RK-FASTBOOT).
+# The family fragment turns the fastboot gadget on (the Lemnos boot path's flashing offer). U-Boot v2026.10 gives
+# FASTBOOT_BUF_ADDR no default on this SoC (drivers/fastboot/Kconfig:52-62 lists RK3036/3188/322x/3288/3328/3399/3368
+# only), and no RK3568 defconfig sets it: the 8 of 30 with the gadget all turn fastboot off
+# (radxa-zero-3-rk3566_defconfig:46). Left empty, U-Boot's syncconfig asks for it without end and the build never
+# finishes (287e2195).
+# The value: the board's own load address, CONFIG_SYS_LOAD_ADDR=0xc00800 (radxa-zero-3-rk3566_defconfig:10), where the
+# RK35xx board that ships the gadget puts its buffer (khadas-edge2-rk3588s_defconfig:11,53). DRAM starts at 0
+# (include/configs/rk3568_common.h, CFG_SYS_SDRAM_BASE). The size stays U-Boot's Rockchip default, 0x8000000. The boot
+# script runs from a copy (common/cli.c run_command_list, memdup_nul), so a download over scriptaddr (0xc00000) does not
+# touch it. UNVERIFIED on a board.
+CONFIG_FASTBOOT_BUF_ADDR=0xc00800

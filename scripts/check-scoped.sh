@@ -18,10 +18,12 @@
 #   any .rs file             cargo fmt --all --check (the gate's step; it takes about a second).
 #   devices/                 check-devices.sh (the whole tree: its checks are cross-file) and, when a product, board,
 #                            family or component changed, check-config-only.sh.
-#   devices/boards/B/        check-kernel-fragments.sh --only B (the real check for that board; no self-test).
-#   devices/families/F/      check-kernel-fragments.sh for every board (a family is shared).
+#   devices/boards/B/        check-kernel-fragments.sh --only B and check-uboot-fragments.sh --only B (the real
+#                            checks for that board; no self-tests).
+#   devices/families/F/      check-kernel-fragments.sh and check-uboot-fragments.sh for every board (a family is
+#                            shared: a family fragment changes every product of it, RK-FASTBOOT).
 #   scripts/                 nothing scoped: the script says to run the full gate (a check itself changed).
-# Left to the full gate: the device and kernel self-tests, the portable classification and the grep guards.
+# Left to the full gate: the device, kernel and U-Boot self-tests, the portable classification and the grep guards.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -29,7 +31,7 @@ dry=0 base=origin/next
 for a in "$@"; do
   case $a in
     --dry-run) dry=1 ;;
-    -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,27p' "$0"; exit 0 ;;
     *) base=$a ;;
   esac
 done
@@ -115,11 +117,13 @@ fi
 [[ $config_only -eq 1 ]] && devices_lane+=("scripts/check-config-only.sh")
 if [[ $all_kernels -eq 1 ]]; then
   kernel_lane+=("scripts/check-kernel-fragments.sh")
+  [[ -x scripts/check-uboot-fragments.sh ]] && kernel_lane+=("scripts/check-uboot-fragments.sh")
 else
   for b in "${boards[@]+"${boards[@]}"}"; do
     # The kernel check resolves a board whose board.toml extends a family (the app-only board directories do not).
     if grep -qs '^extends' "devices/boards/$b/board.toml"; then
       kernel_lane+=("scripts/check-kernel-fragments.sh --only $b")
+      [[ -x scripts/check-uboot-fragments.sh ]] && kernel_lane+=("scripts/check-uboot-fragments.sh --only $b")
     fi
   done
 fi

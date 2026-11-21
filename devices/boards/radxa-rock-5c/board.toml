@@ -25,6 +25,8 @@ fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35x
 # checked). Gaia strips the `_defconfig` suffix.
 [bootloader]
 defconfig = "rock-5c-rk3588s"
+# The family's U-Boot fragment, then the RK3588 one: the fastboot buffer address (RK-FASTBOOT). The list replaces the family's.
+fragments = ["../../families/rk35xx/assets/u-boot.fragment", "../../families/rk35xx/assets/u-boot-rk3588.fragment"]
 
 # The 5C's own rkbin pin: f43a462e, the commit dev pinned for this board
 # (dev's fetch.lock; Gaia's ROCK 5C build uses the same Buildroot pin). The
