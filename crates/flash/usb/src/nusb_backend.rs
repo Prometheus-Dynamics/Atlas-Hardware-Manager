@@ -55,7 +55,20 @@ impl Default for NusbBus {
 /// `1-2.3`: the bus and port path.
 fn location_of(info: &DeviceInfo) -> String {
     let ports: Vec<String> = info.port_chain().iter().map(u8::to_string).collect();
-    format!("{}-{}", info.bus_id(), ports.join("."))
+    format!("{}-{}", bus_number(info.bus_id()), ports.join("."))
+}
+
+/// The bus as the port path names it. nusb gives Linux's bus as the
+/// zero-padded `busnum` of usbfs (`003`), but sysfs, `lsusb -t` and every
+/// port path name it `3`; a numeric bus is written without its padding. A
+/// bus that is not a number (another OS's) is kept as it is.
+fn bus_number(bus: &str) -> &str {
+    if !bus.is_empty() && bus.bytes().all(|byte| byte.is_ascii_digit()) {
+        let trimmed = bus.trim_start_matches('0');
+        if trimmed.is_empty() { "0" } else { trimmed }
+    } else {
+        bus
+    }
 }
 
 fn summary(info: &DeviceInfo) -> DeviceSummary {
@@ -614,5 +627,22 @@ impl Stream for NusbEvents {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bus_number;
+
+    /// Raze #2 on 2026-11-22: nusb listed its bus as `003`, and port
+    /// `3-4.2.1.4.4.2` never matched.
+    #[test]
+    fn a_padded_linux_bus_is_named_as_sysfs_names_it() {
+        assert_eq!(bus_number("003"), "3");
+        assert_eq!(bus_number("012"), "12");
+        assert_eq!(bus_number("3"), "3");
+        assert_eq!(bus_number("000"), "0");
+        assert_eq!(bus_number("usb-root"), "usb-root");
+        assert_eq!(bus_number(""), "");
     }
 }

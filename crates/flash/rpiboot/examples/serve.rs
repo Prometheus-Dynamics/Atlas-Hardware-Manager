@@ -57,6 +57,27 @@ fn line(event: &BootEvent) -> String {
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("--list") {
+        // What the bus lists, as `boot_device` sees it.
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build();
+        let Ok(runtime) = runtime else {
+            return std::process::ExitCode::FAILURE;
+        };
+        match runtime.block_on(atlas_usb::UsbBus::devices(&NusbBus::new())) {
+            Ok(devices) => {
+                for device in devices {
+                    println!("{device:?}");
+                }
+                return std::process::ExitCode::SUCCESS;
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                return std::process::ExitCode::FAILURE;
+            }
+        }
+    }
     let (Some(port), Some(rom), Some(chip), Some(folder)) = (
         args.first(),
         args.get(1).and_then(|text| id(text)),
