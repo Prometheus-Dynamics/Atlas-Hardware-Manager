@@ -126,8 +126,8 @@ export const DEMO = {
   radio: { name: "field-radio", id: "frc-radio:9999" },
   running: { name: "bench-a", id: "simulated:0123456789abcdef" },
   bootRom: { name: "bench-b", id: "rockchip-maskrom:usb-1-3" },
-  recovery: { name: "bench-c", id: "simulated:SIM-REC-1" },
-  offline: { name: "old-bench", id: "simulated:SIM-OLD-1" },
+  recovery: { name: "bench-c", id: "sim-bench:SIM-REC-1" },
+  offline: { name: "old-bench", id: "sim-bench:SIM-OLD-1" },
   disk: { name: "SD card 64 GB", id: "removable-disk:SIM-CARD-1" },
 } as const;
 

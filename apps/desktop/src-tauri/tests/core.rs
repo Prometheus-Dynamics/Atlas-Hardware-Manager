@@ -58,8 +58,8 @@ fn presence(core: &Core, id: &str) -> Option<String> {
 }
 
 const NODE: &str = "simulated:0123456789abcdef";
-const OLD: &str = "simulated:SIM-OLD-1";
-const RECOVERY: &str = "simulated:SIM-REC-1";
+const OLD: &str = "sim-bench:SIM-OLD-1";
+const RECOVERY: &str = "sim-bench:SIM-REC-1";
 
 fn online(core: &Core) -> usize {
     devices(core)
@@ -209,7 +209,11 @@ async fn every_driver_reports_its_simulated_device_and_a_board_on_two_links_is_o
         presence(core, NODE).as_deref() == Some("online")
     })
     .await;
-    assert_eq!(devices(&core).len(), 7);
+    let ids: Vec<String> = devices(&core)
+        .iter()
+        .map(|device| device["id"].to_string())
+        .collect();
+    assert_eq!(ids.len(), 7, "{ids:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -351,7 +355,7 @@ async fn an_open_board_is_read_through_its_session_and_a_closed_one_is_not() {
 async fn a_device_that_is_not_an_orion_node_has_nothing_to_read_and_refuses_board_calls() {
     let dir = tempfile::tempdir().unwrap();
     let core = Core::open(options(dir.path())).await;
-    let id = "simulated:SIM-REC-1";
+    let id = "sim-bench:SIM-REC-1";
     until(&core, |core| presence(core, id).is_some()).await;
     atlas_app::call::call(&core, "board.open", json!({ "id": id }))
         .await

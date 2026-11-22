@@ -174,7 +174,7 @@ async function openDisk(page: Page) {
 
 test("a card: the erase is confirmed in place, then written and read back", async ({ app, bridge }) => {
   await openDisk(app);
-  await expect(app.locator("header.top .chip.info")).toHaveText("sim-card selected");
+  await expect(app.locator("header.top .chip.info")).toHaveText("sdb selected");
   const foot = app.locator("[data-foot]");
   await expect(foot).toContainText("Choose a first-flash image to write.");
   await chooseImage(app, bridge);
@@ -185,7 +185,7 @@ test("a card: the erase is confirmed in place, then written and read back", asyn
   const table = await app.locator(`[data-disk="${DEMO.disk.id}"]`).boundingBox();
   await foot.getByRole("button", { name: "Erase and write…" }).click();
   await expect(foot).toHaveAttribute("data-foot", "confirm");
-  await expect(foot.locator(".q")).toHaveText("Erase sim-card (SD card 64 GB) and write demo-os-2026.11.2.img? This cannot be undone.");
+  await expect(foot.locator(".q")).toHaveText("Erase sdb (SD card 64 GB) and write demo-os-2026.11.2.img? This cannot be undone.");
   expect(await foot.boundingBox()).toEqual(before);
   expect(await app.locator(`[data-disk="${DEMO.disk.id}"]`).boundingBox()).toEqual(table);
   await foot.getByRole("button", { name: "Cancel" }).click();
@@ -208,10 +208,10 @@ test("with two disks the person chooses which, and the question names the chosen
   await expect(stick).not.toHaveClass(/sel/);
   await stick.click();
   await expect(stick).toHaveClass(/sel/);
-  await expect(app.locator("header.top .chip.info")).toHaveText("sim-stick selected");
+  await expect(app.locator("header.top .chip.info")).toHaveText("sdc selected");
   await chooseImage(app, bridge);
   await app.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
-  await expect(app.locator("[data-foot] .q")).toContainText("Erase sim-stick (USB stick 16 GB)");
+  await expect(app.locator("[data-foot] .q")).toContainText("Erase sdc (USB stick 16 GB)");
   // Choosing the other disk withdraws the question: it was about the first one.
   await app.locator(`[data-disk="${DEMO.disk.id}"]`).click();
   await expect(app.locator("[data-foot]")).toHaveAttribute("data-foot", "idle");

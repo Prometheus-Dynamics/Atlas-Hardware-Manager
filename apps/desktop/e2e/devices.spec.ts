@@ -51,9 +51,10 @@ test("every state is one row, under its group, with its words and its links", as
   await expect(app.locator(".tr.dev button")).toHaveCount(1);
 
   await expect(row(app, DEMO.recovery).locator(".chip.warn")).toHaveText("Recovery");
+  await expect(cells(row(app, DEMO.recovery)).nth(2).locator(".chip.neu")).toHaveText(["USB 1-6"]);
 
   const disk = row(app, DEMO.disk);
-  await expect(cells(disk).nth(0)).toHaveText("SD card 64 GB sim-card");
+  await expect(cells(disk).nth(0)).toHaveText("SD card 64 GB sdb");
   await expect(disk.locator(".chip.info").first()).toHaveText("Removable disk");
   await expect(cells(disk).nth(2).locator(".chip.neu")).toHaveText(["card reader"]);
 
@@ -61,7 +62,7 @@ test("every state is one row, under its group, with its words and its links", as
   const offline = row(app, DEMO.offline);
   await expect(offline).toHaveClass(/dim/);
   await expect(offline.locator(".chip.off")).toHaveText("Offline");
-  await expect(cells(offline).nth(2)).toHaveText("last simulated");
+  await expect(cells(offline).nth(2)).toHaveText("last USB 1-4 · 10.42.1.9");
   await expect(cells(offline).nth(2).locator(".chip")).toHaveCount(0);
   await expect(cells(offline).nth(4)).toHaveText(/^\d\d:\d\d$/);
   await expect(cells(offline).nth(0)).toHaveText("old-bench demo-os 2026.10.20");
@@ -81,7 +82,7 @@ test("a row opens its record's screen, and Flash opens the flash flow for that b
     [DEMO.controller, /#\/systemcore\/systemcore%3A9999$/],
     [DEMO.disk, /#\/disk\/removable-disk%3ASIM-CARD-1$/],
     [DEMO.bootRom, /#\/flash\/rockchip-maskrom%3Ausb-1-3$/],
-    [DEMO.offline, /#\/board\/simulated%3ASIM-OLD-1$/],
+    [DEMO.offline, /#\/board\/sim-bench%3ASIM-OLD-1$/],
   ];
   for (const [record, url] of opens) {
     await cells(row(app, record)).nth(0).click();
