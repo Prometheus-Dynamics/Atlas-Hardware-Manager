@@ -4,7 +4,7 @@
   import Icon from "../ui/Icon.svelte";
   import { app, inventory } from "../stores/app.svelte";
   import { href, route } from "../stores/route.svelte";
-  import { nameOf, pageOf, stateOf } from "../devices/state";
+  import { argOf, nameOf, pageOf, stateOf } from "../devices/state";
   import { tree } from "../devices/tree";
 
   const groups = $derived(tree(inventory()));
@@ -32,8 +32,8 @@
       {@const state = stateOf(entry.device)}
       <a
         class="nav"
-        class:on={on(entry.page, entry.device.id)}
-        href={href(entry.page, entry.device.id)}
+        class:on={entry.page !== "robot" && on(entry.page, entry.device.id)}
+        href={href(entry.page, argOf(entry.device))}
         style="--d:{2 + entry.depth}"
       >
         <span class="dot {state.dot}"></span><span class="t">{nameOf(entry.device)}</span>

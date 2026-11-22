@@ -14,7 +14,7 @@ test("the simulated devices arrive by events and fill the tree", async ({ app })
   await expect(side.locator("a.nav .dot.acc")).toHaveCount(1); // the board in its boot ROM
   // The robot, its controller under it, then the boards on this computer.
   await expect(side.locator("a.nav .t")).toHaveText([
-    "All devices", "Practice field", "sc-practice", "bench-a", "bench-b", "bench-c", "old-bench", "SD card 64 GB", "Flash a board", "Settings",
+    "All devices", "Practice field", "sc-practice", "field-radio", "bench-a", "bench-b", "bench-c", "old-bench", "SD card 64 GB", "Flash a board", "Settings",
   ]);
 });
 
@@ -54,7 +54,7 @@ test("it opens with the last known inventory before any scan answers", async ({ 
   const second = await startBridge(dataDir);
   // What the core holds the moment it has opened, before the page asks: everything it knew.
   const snapshot = (await second.call("snapshot")) as { topics: { inventory: { devices: { presence: string }[] } } };
-  expect(snapshot.topics.inventory.devices).toHaveLength(6);
+  expect(snapshot.topics.inventory.devices).toHaveLength(7);
   await page.goto(second.url);
   await demoSettled(page);
   await page.close();

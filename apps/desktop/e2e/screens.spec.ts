@@ -45,14 +45,46 @@ async function diskReady(page: Page, bridge: Bridge) {
   await expect(page.locator("[data-disk]")).toHaveCount(1);
 }
 
+const ROBOT = `#/robot/${encodeURIComponent("Practice field")}`;
+const SYSTEMCORE = `#/systemcore/${encodeURIComponent(DEMO.controller.id)}`;
+
 export const SCREENS: Screen[] = [
+  {
+    name: "robot",
+    hash: ROBOT,
+    mockup: "robot.html",
+    ready: async (page) => {
+      await demoSettled(page);
+      await expect(page.locator("[data-robot-device]")).toHaveCount(2);
+    },
+  },
+  {
+    name: "robot-quiet",
+    hash: ROBOT,
+    ready: async (page, bridge) => {
+      await demoSettled(page);
+      test.setTimeout(90_000);
+      await bridge.call("sim.set_online", { id: DEMO.radio.id, online: false });
+      // The robot drivers keep a connect's answer for twenty seconds.
+      await expect(page.locator(`[data-robot-device="${DEMO.radio.id}"] .chip.off`)).toBeVisible({ timeout: 40_000 });
+    },
+  },
+  {
+    name: "systemcore",
+    hash: SYSTEMCORE,
+    mockup: "systemcore.html",
+    ready: async (page) => {
+      await demoSettled(page);
+      await expect(page.locator('[data-panel="device"] dd').first()).toHaveText("SystemCore");
+    },
+  },
   {
     name: "devices",
     hash: "#/devices",
     mockup: "devices.html",
     ready: async (page) => {
       await demoSettled(page);
-      await expect(page.locator(".tr.dev")).toHaveCount(6);
+      await expect(page.locator(".tr.dev")).toHaveCount(7);
     },
   },
   {

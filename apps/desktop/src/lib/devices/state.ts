@@ -31,12 +31,20 @@ export function stateOf(device: Device): StateWord {
   }
 }
 
-/** Where a device's row or tree entry leads. */
-export function pageOf(device: Device): "board" | "flash" | "disk" | "systemcore" {
+/** Where a device's row or tree entry leads. A robot's own device has no screen of its own: it
+ *  is a row on its robot's screen. */
+export function pageOf(device: Device): "board" | "flash" | "disk" | "systemcore" | "robot" {
   if (device.role === "controller") return "systemcore";
+  if (device.identity.state === "robot-device" && device.robot !== null) return "robot";
   if (device.presence === "online" && device.identity.state === "boot-rom") return "flash";
   if (device.identity.state === "removable-disk") return "disk";
   return "board";
+}
+
+/** What the route of [`pageOf`] is opened with: the robot's name for a robot's screen, else
+ *  the device's id. */
+export function argOf(device: Device): string {
+  return pageOf(device) === "robot" ? (device.robot ?? "") : device.id;
 }
 
 /** Whether the row offers Flash now: a board waiting in its boot ROM that the driver can write. */

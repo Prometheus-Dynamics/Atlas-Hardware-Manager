@@ -162,6 +162,9 @@ struct Inner {
     sessions: Option<Arc<atlas_session::Sessions>>,
     boards: crate::board::Boards,
     flashes: crate::flash::Flashes,
+    /// What nothing-opened-yet falls back to, and what a test reads.
+    remembered: Arc<crate::open::Remembered>,
+    opener: Mutex<Option<Arc<dyn crate::open::Opener>>>,
     #[cfg(feature = "sim")]
     sim: Option<crate::sim::World>,
 }
@@ -321,6 +324,8 @@ impl Core {
                 sessions,
                 boards,
                 flashes,
+                remembered: Arc::new(crate::open::Remembered::default()),
+                opener: Mutex::new(None),
                 #[cfg(feature = "sim")]
                 sim,
             }),
@@ -386,6 +391,25 @@ impl Core {
     #[must_use]
     pub fn boards(&self) -> &crate::board::Boards {
         &self.inner.boards
+    }
+
+    /// What opens a folder or a page outside the app: the window's, else one that only
+    /// remembers what was asked.
+    #[must_use]
+    pub fn opener(&self) -> Arc<dyn crate::open::Opener> {
+        lock(&self.inner.opener)
+            .clone()
+            .unwrap_or_else(|| self.inner.remembered.clone())
+    }
+
+    pub fn set_opener(&self, opener: Arc<dyn crate::open::Opener>) {
+        *lock(&self.inner.opener) = Some(opener);
+    }
+
+    /// What was asked to be opened where there is no window.
+    #[must_use]
+    pub fn opened(&self) -> Vec<String> {
+        self.inner.remembered.asked()
     }
 
     /// Publishes the inventory again: something beside the records changed (a board's default
@@ -582,8 +606,15 @@ impl Core {
                     (identity.link.clone(), identity.address.clone()),
                     identity.key.clone(),
                 );
-                let outcome =
-                    lock(&self.inner.inventory).observe(identity, kind, capabilities, now_ms());
+                let key = identity.key.clone();
+                let outcome = {
+                    let mut inventory = lock(&self.inner.inventory);
+                    let outcome = inventory.observe(identity, kind, capabilities, now_ms());
+                    // A robot's own device joins the robot of its team.
+                    let key = inventory.resolve(&key);
+                    crate::robot::place(&mut inventory, &key, now_ms());
+                    outcome
+                };
                 // An answer is rare (a device is asked who it is when it appears and then about
                 // once a minute), and even one that changes nothing else moves when each link
                 // last answered, which is what the list shows a record's links by.

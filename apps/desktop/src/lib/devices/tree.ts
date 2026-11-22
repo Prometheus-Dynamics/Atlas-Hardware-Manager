@@ -9,7 +9,7 @@ export type RobotEntry = {
   device: Device;
   /** 0 for the robot's own devices, 1 for a board reached through one of them. */
   depth: number;
-  page: "board" | "flash" | "disk" | "systemcore";
+  page: "board" | "flash" | "disk" | "systemcore" | "robot";
 };
 
 export type RobotGroup = { name: string; entries: RobotEntry[] };
@@ -38,7 +38,8 @@ export function tree(inventory: Inventory): Groups {
   const robots: RobotGroup[] = [];
   const names = new Set([...inventory.robots.map((robot) => robot.name), ...devices.flatMap((d) => (d.robot ? [d.robot] : []))]);
   for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
-    const members = devices.filter((device) => device.robot === name);
+    // The controller first, then the robot's other devices by name.
+    const members = devices.filter((device) => device.robot === name).sort((a, b) => Number(b.role === "controller") - Number(a.role === "controller"));
     const entries: RobotEntry[] = [];
     const behind = (parent: Device) => members.filter((device) => gatewayOf(device) === parent.id);
     for (const device of members.filter((member) => gatewayOf(member) === undefined || !members.some((m) => m.id === gatewayOf(member)))) {

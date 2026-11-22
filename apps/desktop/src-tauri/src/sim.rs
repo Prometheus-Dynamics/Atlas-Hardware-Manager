@@ -31,7 +31,7 @@ use atlas_driver_disk::DiskDriver;
 use atlas_driver_rockchip::RockchipDriver;
 use atlas_inventory::Robot;
 use atlas_mock::{MockDevice, MockFleet, SIM_FAMILY, SIM_LINK};
-use atlas_robot::{Answer, Reach, SYSTEMCORE_FAMILY};
+use atlas_robot::{Answer, RADIO_FAMILY, Reach, SYSTEMCORE_FAMILY};
 use atlas_rockchip::sim::{Fault, SimRockchip};
 use atlas_session::{RealPause, Seed, Sessions};
 use atlas_sim_node::socket::NodeDir;
@@ -92,20 +92,52 @@ impl Scene {
 #[derive(Debug)]
 pub struct SimNet {
     controller_up: AtomicBool,
+    radio_up: AtomicBool,
+}
+
+/// Where the simulated robot's radio answers, and what its status page says.
+const RADIO: Ipv4Addr = Ipv4Addr::new(10, 99, 99, 1);
+const RADIO_WEB: (u16, &str) = (80, "/status");
+
+fn radio_status() -> String {
+    serde_json::json!({
+        "mode": "ROBOT_RADIO",
+        "channel": "53",
+        "teamNumber": TEAM,
+        "status": "ACTIVE",
+        "version": "SIM-RADIO_1.2.0",
+        "networkStatus6": {
+            "ssid": TEAM.to_string(), "isEnabled": true, "isLinked": true,
+            "signalDbm": -58, "connectionQuality": "good"
+        },
+        "networkStatus24": { "ssid": TEAM.to_string(), "isEnabled": false }
+    })
+    .to_string()
 }
 
 #[async_trait]
 impl Reach for SimNet {
     async fn get(&self, ip: Ipv4Addr, port: u16, path: &str) -> Option<Answer> {
-        (self.open(ip, port).await && path == CONTROLLER_API.1).then(|| Answer {
+        if !self.open(ip, port).await {
+            return None;
+        }
+        let body = if ip == CONTROLLER && path == CONTROLLER_API.1 {
+            format!(r#"{{"team":"{TEAM}","team_number":{TEAM}}}"#)
+        } else if ip == RADIO && path == RADIO_WEB.1 {
+            radio_status()
+        } else {
+            return None;
+        };
+        Some(Answer {
             status: 200,
             server: None,
-            body: format!(r#"{{"team":"{TEAM}","team_number":{TEAM}}}"#),
+            body,
         })
     }
 
     async fn open(&self, ip: Ipv4Addr, port: u16) -> bool {
-        self.controller_up.load(Ordering::Relaxed) && ip == CONTROLLER && port == CONTROLLER_API.0
+        (self.controller_up.load(Ordering::Relaxed) && ip == CONTROLLER && port == CONTROLLER_API.0)
+            || (self.radio_up.load(Ordering::Relaxed) && ip == RADIO && port == RADIO_WEB.0)
     }
 
     async fn resolve(&self, _name: &str) -> Vec<Ipv4Addr> {
@@ -564,6 +596,7 @@ impl World {
         // The robot drivers on a made-up robot network.
         let net = Arc::new(SimNet {
             controller_up: AtomicBool::new(demo),
+            radio_up: AtomicBool::new(demo),
         });
         for driver in atlas_robot::drivers(net.clone(), Arc::new(teams.clone())) {
             parts.registry.register(driver);
@@ -630,6 +663,11 @@ impl World {
             tag(
                 format!("{SYSTEMCORE_FAMILY}:{TEAM}"),
                 Some("sc-practice"),
+                Some(ROBOT),
+            ),
+            tag(
+                format!("{RADIO_FAMILY}:{TEAM}"),
+                Some("field-radio"),
                 Some(ROBOT),
             ),
         ]
@@ -736,6 +774,10 @@ impl World {
         }
         if id == format!("{SYSTEMCORE_FAMILY}:{TEAM}") {
             inner.net.controller_up.store(online, Ordering::Relaxed);
+            return Ok(());
+        }
+        if id == format!("{RADIO_FAMILY}:{TEAM}") {
+            inner.net.radio_up.store(online, Ordering::Relaxed);
             return Ok(());
         }
         if id == format!("{}:SIM-CARD-1", atlas_driver_disk::FAMILY) {
@@ -1039,6 +1081,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             }
             Ok(Value::Null)
         }
+        // What the app was asked to open outside itself (a folder, a page), where there is no
+        // window to open it.
+        "sim.opened" => Ok(serde_json::json!(core.opened())),
         "sim.ids" => {
             serde_json::to_value(world.ids()).map_err(|error| CallError(error.to_string()))
         }

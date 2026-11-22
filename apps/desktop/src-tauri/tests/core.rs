@@ -68,11 +68,11 @@ fn online(core: &Core) -> usize {
         .count()
 }
 
-/// The demo world as it settles: six records, the old board unplugged once it was seen.
+/// The demo world as it settles: seven records, the old board unplugged once it was seen.
 async fn settled(core: &Core) {
     until(core, |core| {
-        devices(core).len() == 6
-            && online(core) == 5
+        devices(core).len() == 7
+            && online(core) == 6
             && presence(core, OLD).as_deref() == Some("offline")
     })
     .await;
@@ -107,7 +107,7 @@ async fn the_scan_fills_the_inventory_and_a_device_that_leaves_goes_offline_and_
     })
     .await;
     // The others are untouched: one device leaving never takes its neighbours with it.
-    assert_eq!(online(&core), 4);
+    assert_eq!(online(&core), 5);
     let activity = core.topics()["inventory"]["activity"].clone();
     assert_eq!(activity[0]["level"], "warn", "{activity}");
     assert_eq!(activity[0]["device"], RECOVERY);
@@ -209,7 +209,7 @@ async fn every_driver_reports_its_simulated_device_and_a_board_on_two_links_is_o
         presence(core, NODE).as_deref() == Some("online")
     })
     .await;
-    assert_eq!(devices(&core).len(), 6);
+    assert_eq!(devices(&core).len(), 7);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -239,8 +239,8 @@ async fn it_opens_with_the_last_known_inventory_before_the_scan_has_answered() {
     let core = Core::open(options(dir.path())).await;
     // No await between open and this read: every record it knew is there before any driver has
     // answered. The inventory's own rule is that nothing is online until a scan sees it again.
-    assert_eq!(devices(&core).len(), 6);
-    until(&core, |core| online(core) == 5).await;
+    assert_eq!(devices(&core).len(), 7);
+    until(&core, |core| online(core) == 6).await;
     // A record is never called gone because the scan listed its address before asking who is
     // there: no "not seen" line was written in this run for a board that is plugged in.
     until(&core, |core| {

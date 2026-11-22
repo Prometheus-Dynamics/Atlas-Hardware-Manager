@@ -58,6 +58,7 @@ pub fn options_from_env() -> Options {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let core = tauri::async_runtime::block_on(Core::open(options_from_env()));
             let mut updates = core.subscribe();
@@ -82,6 +83,7 @@ pub fn run() {
             });
             core.boards()
                 .set_picker(std::sync::Arc::new(Dialog(app.handle().clone())));
+            core.set_opener(std::sync::Arc::new(SystemOpener));
             app.manage(core);
             Ok(())
         })
@@ -130,5 +132,20 @@ impl crate::board::Picker for Dialog {
             .add_filter(title, extensions)
             .blocking_pick_file()
             .and_then(|file| file.into_path().ok())
+    }
+}
+
+/// The system's own program for a folder or an address, asked from the core (the page gets no
+/// such permission of its own).
+struct SystemOpener;
+
+impl crate::open::Opener for SystemOpener {
+    fn open(&self, target: &str) -> Result<(), String> {
+        let opened = if target.starts_with("http://") || target.starts_with("https://") {
+            tauri_plugin_opener::open_url(target, None::<&str>)
+        } else {
+            tauri_plugin_opener::open_path(target, None::<&str>)
+        };
+        opened.map_err(|error| format!("{target} could not be opened: {error}"))
     }
 }

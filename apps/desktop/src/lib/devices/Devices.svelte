@@ -9,7 +9,7 @@
   import { app, breadcrumb, inventory, scan } from "../stores/app.svelte";
   import { go, href } from "../stores/route.svelte";
   import { count, eventTime, when } from "../ui/format";
-  import { canFlash, kindOf, nameOf, pageOf, reachedBy, stateOf } from "./state";
+  import { argOf, canFlash, kindOf, nameOf, pageOf, reachedBy, stateOf } from "./state";
   import { tree } from "./tree";
 
   const COLUMNS = "grid-template-columns: minmax(0,1.5fr) 196px minmax(0,1.3fr) 84px 64px";
@@ -62,7 +62,7 @@
   });
 
   function open(device: Device) {
-    go(pageOf(device), device.id);
+    go(pageOf(device), argOf(device));
   }
 
   function flash(event: MouseEvent, device: Device) {

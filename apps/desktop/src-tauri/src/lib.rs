@@ -21,7 +21,9 @@ pub mod call;
 pub mod core;
 pub mod drivers;
 pub mod flash;
+pub mod open;
 pub mod paths;
+pub mod robot;
 pub mod settings;
 #[cfg(feature = "sim")]
 pub mod sim;

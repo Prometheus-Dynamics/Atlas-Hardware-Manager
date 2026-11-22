@@ -11,14 +11,14 @@ const title = (page: Page) => page.locator("header.top h1");
 
 async function listSettled(page: Page) {
   await demoSettled(page);
-  await expect(page.locator(".tr.dev")).toHaveCount(6);
+  await expect(page.locator(".tr.dev")).toHaveCount(7);
 }
 
 test("every state is one row, under its group, with its words and its links", async ({ app }) => {
   await listSettled(app);
   await expect(title(app)).toHaveText("Devices");
   await expect(app.locator(".tr.h > div")).toHaveText(COLUMNS);
-  await expect(app.locator(".ph .chip.neu")).toHaveText("6 records");
+  await expect(app.locator(".ph .chip.neu")).toHaveText("7 records");
   await expect(app.locator(".ph .chip.info")).toHaveText("Scanning USB and network");
   await expect(app.locator(".tr.g")).toHaveText([
     "Practice field · robot (its devices are read-only)",
@@ -27,7 +27,7 @@ test("every state is one row, under its group, with its words and its links", as
     "Offline",
   ]);
   // Rows in the order of the list: the robot's controller, the boards by name, the disk, the offline board.
-  await expect(app.locator(".tr.dev b")).toHaveText(["sc-practice", "bench-a", "bench-b", "bench-c", "SD card 64 GB", "old-bench"]);
+  await expect(app.locator(".tr.dev b")).toHaveText(["sc-practice", "field-radio", "bench-a", "bench-b", "bench-c", "SD card 64 GB", "old-bench"]);
 
   // The running board: one record with both of its links as chips.
   const running = row(app, DEMO.running);
@@ -101,11 +101,11 @@ test("a board that is unplugged moves to Offline in place, says so in the events
   await bridge.call("sim.set_online", { id: DEMO.running.id, online: false });
   await expect(board.locator(".chip.off")).toHaveText("Offline");
   await expect(cells(board).nth(2)).toHaveText(/^last /);
-  await expect(app.locator(".tr.dev b")).toHaveText(["sc-practice", "bench-b", "bench-c", "SD card 64 GB", "bench-a", "old-bench"]);
+  await expect(app.locator(".tr.dev b")).toHaveText(["sc-practice", "field-radio", "bench-b", "bench-c", "SD card 64 GB", "bench-a", "old-bench"]);
   const first = app.locator(".lines .ln").first();
   await expect(first.locator("span").nth(1)).toHaveText("warn");
   await expect(first.locator("span").nth(2)).toHaveText("bench-a: not seen on any link");
-  await expect(app.locator(".ph .chip.neu")).toHaveText("6 records");
+  await expect(app.locator(".ph .chip.neu")).toHaveText("7 records");
 
   await bridge.call("sim.set_online", { id: DEMO.running.id, online: true });
   await expect(board.locator(".chip.ok")).toHaveText("Running");

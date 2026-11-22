@@ -5,6 +5,8 @@
   import Board from "./lib/board/Board.svelte";
   import Flash from "./lib/flash/Flash.svelte";
   import Disk from "./lib/flash/Disk.svelte";
+  import Robot from "./lib/robot/Robot.svelte";
+  import Systemcore from "./lib/robot/Systemcore.svelte";
   import NotBuilt from "./lib/shell/NotBuilt.svelte";
   import { route } from "./lib/stores/route.svelte";
 </script>
@@ -19,8 +21,10 @@
     <Flash id={route.arg} />
   {:else if route.page === "disk"}
     <Disk id={route.arg} />
-  {:else if route.page === "robot" || route.page === "systemcore"}
-    <NotBuilt title="Robot" crumb="Devices /" item="F6" />
+  {:else if route.page === "robot"}
+    <Robot name={route.arg} />
+  {:else if route.page === "systemcore"}
+    <Systemcore id={route.arg} />
   {:else}
     <NotBuilt title="Settings" crumb="Atlas /" item="F7" />
   {/if}

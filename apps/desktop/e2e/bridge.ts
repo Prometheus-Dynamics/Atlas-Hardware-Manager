@@ -123,6 +123,7 @@ export const SIZES = [
 /** The demo world's records by the name each is shown under, and the id a call names it by. */
 export const DEMO = {
   controller: { name: "sc-practice", id: "systemcore:9999" },
+  radio: { name: "field-radio", id: "frc-radio:9999" },
   running: { name: "bench-a", id: "simulated:0123456789abcdef" },
   bootRom: { name: "bench-b", id: "rockchip-maskrom:usb-1-3" },
   recovery: { name: "bench-c", id: "simulated:SIM-REC-1" },
@@ -134,7 +135,7 @@ export const DEMO = {
  *  board gone offline. */
 export async function demoSettled(page: Page) {
   const side = page.locator("aside.side");
-  await expect(side.locator("a.nav .dot")).toHaveCount(6);
+  await expect(side.locator("a.nav .dot")).toHaveCount(7);
   await expect(side.locator(".sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
   for (const record of Object.values(DEMO)) await expect(side.getByText(record.name, { exact: true })).toBeVisible();
 }
