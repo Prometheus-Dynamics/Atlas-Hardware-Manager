@@ -4,6 +4,14 @@
 # is on because a line says so. The kernel is the board's (boards/raze/kernel), not this file's.
 # F8?: the option names are Buildroot's; Gaia's coming "every requested line survives" check is the test.
 
+# -- The toolchain ------------------------------------------------------------------------------------
+# Named, never left to a default (check-devices). raze-base's choice (products/raze-base/os/raze.fragment): Bootlin's
+# aarch64 glibc BLEEDING-EDGE, the version Buildroot 2026.08 (d5180309) pins. The Lemnos and Orion programs here are
+# the same Rust builds as raze-base's, which run on build10 against that libc; one toolchain for both images.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y
+
 # -- Init ----------------------------------------------------------------------------------------------
 # BusyBox init, not systemd: Gaia's skeleton rcS runs the init scripts in order: Orion's S40orion-comm and
 # S41orion-node, then Lemnos's S49lemnos-restart, S50lemnosd and S51lemnos-orion. The same privilege path and watchdog rule as the units (Lemnos

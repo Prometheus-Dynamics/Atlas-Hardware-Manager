@@ -10,7 +10,7 @@
 #   - Every Lemnos part is at Lemnos next da86d0b3 and Orion at next 3f60576c (flasher-* components), confirmed for
 #     this work only. The Raze product's pins do not move.
 #
-# Recipe: Gaia's initramfs-boot (at Atlas's Gaia pin 9efa797f): the built tree as a plain newc archive. What it does
+# Recipe: Gaia's initramfs-boot (at Atlas's Gaia pin, devices/gaia.lock): the built tree as a plain newc archive. What it does
 # not give is the Pi's boot.img (a FAT of kernel8.img, the dtbs, overlays/, this initramfs, config.txt with
 # boot_ramdisk's ramdisk lines, and cmdline.txt) with the outer config.txt beside it. Gaia is writing that recipe;
 # until then the flasher's boot set cannot be built.

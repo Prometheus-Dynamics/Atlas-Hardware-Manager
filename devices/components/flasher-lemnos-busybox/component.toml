@@ -46,19 +46,24 @@ from = { source = "src", path = "socs/bcm2712-rp1.toml" }
 to = "/usr/share/lemnos/socs/bcm2712-rp1.toml"
 mode = "0644"
 
-# The ids are the image's choice; nothing keys on them. orion is flasher-orion's group (gid 901), which the
+# Fixed ids (check-devices: a user that can own files has one), the same as raze-base's (components/lemnos: lemnos
+# 900, lemnos-orion 903), so the two images agree on owners. orion is flasher-orion's group (gid 901), which the
 # bridge joins for the comm core's socket.
 [[groups]]
 name = "lemnos"
+gid = 900
 
 [[groups]]
 name = "lemnos-orion"
+gid = 903
 
 [[users]]
 name = "lemnos"
+uid = 900
 group = "lemnos"
 
 [[users]]
 name = "lemnos-orion"
+uid = 903
 group = "lemnos-orion"
 groups = ["lemnos", "orion"]
