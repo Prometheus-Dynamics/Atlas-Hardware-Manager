@@ -24,6 +24,12 @@ impl PublicKey {
     }
 }
 
+impl PublicKey {
+    pub(crate) fn from_verifying(key: VerifyingKey) -> Self {
+        Self(key)
+    }
+}
+
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{KEY_PREFIX}{}", to_hex(self.0.as_bytes()))

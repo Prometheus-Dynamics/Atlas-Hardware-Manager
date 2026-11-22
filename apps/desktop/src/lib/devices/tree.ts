@@ -1,0 +1,58 @@
+// The inventory as the tree and the list group it (docs/mockups/devices.html): a robot with its
+// own devices and the boards behind its controller, the boards on this computer, removable
+// disks, and what is offline. One record per board, whatever links it is seen on.
+
+import type { Device, Inventory } from "../api/types";
+import { nameOf, pageOf } from "./state";
+
+export type RobotEntry = {
+  device: Device;
+  /** 0 for the robot's own devices, 1 for a board reached through one of them. */
+  depth: number;
+  page: "board" | "flash" | "disk" | "systemcore" | "robot";
+};
+
+export type RobotGroup = { name: string; entries: RobotEntry[] };
+
+export type Groups = {
+  robots: RobotGroup[];
+  /** Online boards that are in no robot. */
+  boards: Device[];
+  disks: Device[];
+  offline: Device[];
+};
+
+const byName = (a: Device, b: Device) => nameOf(a).localeCompare(nameOf(b)) || a.id.localeCompare(b.id);
+
+/** The device a record is reached through, when its followed link is a gateway. */
+export function gatewayOf(device: Device): string | undefined {
+  const followed = device.links.find((sighting) => sighting.link === device.identity.link);
+  if (followed?.kind.kind !== "gateway") return undefined;
+  const via = followed.kind.via as { family?: string; serial?: string; node?: string };
+  return via.family !== undefined ? `${via.family}:${via.serial}` : via.node;
+}
+
+export function tree(inventory: Inventory): Groups {
+  const devices = [...inventory.devices].sort(byName);
+  const online = devices.filter((device) => device.presence === "online");
+  const robots: RobotGroup[] = [];
+  const names = new Set([...inventory.robots.map((robot) => robot.name), ...devices.flatMap((d) => (d.robot ? [d.robot] : []))]);
+  for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
+    // The controller first, then the robot's other devices by name.
+    const members = devices.filter((device) => device.robot === name).sort((a, b) => Number(b.role === "controller") - Number(a.role === "controller"));
+    const entries: RobotEntry[] = [];
+    const behind = (parent: Device) => members.filter((device) => gatewayOf(device) === parent.id);
+    for (const device of members.filter((member) => gatewayOf(member) === undefined || !members.some((m) => m.id === gatewayOf(member)))) {
+      entries.push({ device, depth: 0, page: pageOf(device) });
+      for (const child of behind(device)) entries.push({ device: child, depth: 1, page: pageOf(child) });
+    }
+    robots.push({ name, entries });
+  }
+  const loose = online.filter((device) => device.robot === null);
+  return {
+    robots,
+    boards: loose.filter((device) => device.identity.state !== "removable-disk"),
+    disks: loose.filter((device) => device.identity.state === "removable-disk"),
+    offline: devices.filter((device) => device.presence === "offline" && device.robot === null),
+  };
+}

@@ -51,6 +51,20 @@ impl MockDevice {
             online: true,
         }
     }
+
+    /// The same device, with the name it stores (what a board's own hostname or label is).
+    #[must_use]
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// The same device, with one more named version, or that version replaced.
+    #[must_use]
+    pub fn with_version(mut self, name: impl Into<String>, version: impl Into<String>) -> Self {
+        self.versions.insert(name.into(), version.into());
+        self
+    }
 }
 
 /// One device in every state, for the UI.
@@ -117,6 +131,34 @@ impl MockFleet {
             fleet.lock().insert(device.key.clone(), device);
         }
         fleet
+    }
+
+    /// A fleet of exactly these devices (none is an empty link). A device given twice is kept
+    /// once, as it was given last.
+    #[must_use]
+    pub fn of(devices: impl IntoIterator<Item = MockDevice>) -> Self {
+        let fleet = Self::default();
+        for device in devices {
+            fleet.put(device);
+        }
+        fleet
+    }
+
+    /// Plugs a device in, or replaces the one with its key. The next scan finds it.
+    pub fn put(&self, device: MockDevice) {
+        self.lock().insert(device.key.clone(), device);
+    }
+
+    /// Unplugs a device for good: it is no longer part of the fleet. Returns it, or `None` for an
+    /// unknown device.
+    pub fn remove(&self, key: &DeviceKey) -> Option<MockDevice> {
+        self.lock().remove(key)
+    }
+
+    /// Every device, by key, online or not.
+    #[must_use]
+    pub fn devices(&self) -> Vec<MockDevice> {
+        self.lock().values().cloned().collect()
     }
 
     fn lock(&self) -> MutexGuard<'_, BTreeMap<DeviceKey, MockDevice>> {

@@ -287,6 +287,55 @@ async fn a_failing_step_is_retried_until_it_succeeds() {
 }
 
 #[tokio::test]
+async fn a_job_waiting_to_retry_runs_now_when_resumed_and_a_paused_one_waits_until_then() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let calls = log();
+    // A wait no test would sit through: the job only goes on because it is told to.
+    let timing = JobTiming {
+        step_timeout: Duration::from_secs(60),
+        backoff: Backoff {
+            first: Duration::from_secs(3600),
+            cap: Duration::from_secs(3600),
+        },
+    };
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Kind::arc("flaky-kind", true, None, 2, &calls)],
+        events.clone(),
+        timing,
+        DeviceHolds::new(),
+    )
+    .await
+    .unwrap();
+    let id = jobs
+        .submit("flaky-kind", DeviceClaim::none(), steps(&["only"]))
+        .await
+        .unwrap();
+    let retrying = |job: &JobRecord| matches!(job.status, JobStatus::Retrying { attempt: 1, .. });
+    wait_for_job(&mut rx, id, retrying).await;
+
+    // Retry now: the hour is not waited for. The second try fails too.
+    assert!(jobs.resume(id));
+    wait_for_job(&mut rx, id, |job| {
+        matches!(job.status, JobStatus::Retrying { attempt: 2, .. })
+    })
+    .await;
+    assert_eq!(calls.lock().unwrap().len(), 2);
+
+    // The manual off, taken while it waits: nothing runs until it is resumed.
+    assert!(jobs.pause(id));
+    wait_for_job(&mut rx, id, |job| job.status == JobStatus::Paused).await;
+    assert_eq!(calls.lock().unwrap().len(), 2);
+    assert!(jobs.resume(id));
+    wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
+    assert_eq!(calls.lock().unwrap().len(), 3);
+    assert!(!jobs.resume(id), "a finished job has nothing to resume");
+    jobs.shutdown();
+}
+
+#[tokio::test]
 async fn submit_refuses_an_unknown_kind_and_an_empty_job() {
     let dir = tempfile::tempdir().unwrap();
     let events = Events::new(256);

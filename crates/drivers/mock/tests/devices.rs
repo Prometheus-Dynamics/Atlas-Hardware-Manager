@@ -1,8 +1,8 @@
 //! The simulated devices, one in every state, through the driver contract.
 
 use atlas_driver::Driver;
-use atlas_mock::MockFleet;
 use atlas_mock::device::{grants_for, one_in_every_state};
+use atlas_mock::{MockDevice, MockFleet, SIM_FAMILY};
 use atlas_types::{CapabilityKind, DeviceKey, DeviceState, Link, LinkId, LinkKind};
 
 fn sim_link() -> Link {
@@ -93,4 +93,50 @@ fn every_state_has_a_device_and_its_grants_show_in_that_state() {
     assert!(shown.contains(&CapabilityKind::Update));
     assert!(grants_for(DeviceState::Recovery).contains(&CapabilityKind::Recover));
     assert!(grants_for(DeviceState::BootRom).contains(&CapabilityKind::Flash));
+}
+
+#[tokio::test]
+async fn a_fleet_of_named_devices_is_found_by_name_and_follows_what_is_plugged_in() {
+    let key = |serial: &'static str| DeviceKey::from_static(SIM_FAMILY, serial);
+    let fleet = MockFleet::of([
+        MockDevice::new("SIM-A", DeviceState::Running)
+            .named("bench-a")
+            .with_version("os", "2.0.0"),
+        MockDevice::new("SIM-B", DeviceState::Recovery),
+    ]);
+    let driver = fleet.driver();
+    let found = driver.discover(&sim_link()).await.unwrap();
+    assert_eq!(found.len(), 2);
+    let first = driver.identify(&found[0]).await.unwrap();
+    assert_eq!(first.name.as_deref(), Some("bench-a"));
+    assert_eq!(first.primary_version(), Some("2.0.0"));
+    // A device with no name reports none: it is not given an empty one.
+    assert_eq!(driver.identify(&found[1]).await.unwrap().name, None);
+
+    // Plugging one in and unplugging another is what the next scan finds.
+    fleet.put(MockDevice::new("SIM-C", DeviceState::BootRom).named("bench-c"));
+    assert_eq!(
+        fleet.remove(&key("SIM-B")).map(|device| device.state),
+        Some(DeviceState::Recovery)
+    );
+    assert_eq!(fleet.remove(&key("SIM-B")), None);
+    let serials: Vec<String> = driver
+        .discover(&sim_link())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|candidate| candidate.address)
+        .collect();
+    assert_eq!(serials, ["SIM-A", "SIM-C"]);
+    assert_eq!(fleet.devices().len(), 2);
+
+    // An empty fleet is an empty link, not an error.
+    assert!(
+        MockFleet::of([])
+            .driver()
+            .discover(&sim_link())
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }

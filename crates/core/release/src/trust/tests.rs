@@ -193,3 +193,36 @@ fn civil_dates_round_trip() {
     assert_eq!(civil_from_days(20_392), (2025, 10, 31));
     assert_eq!(civil_from_days(-1), (1969, 12, 31));
 }
+
+#[test]
+fn the_trusted_keys_verify_manifests_except_expired_ones_and_dev_ones_when_production_is_asked() {
+    assert_eq!(
+        fixture_ring("production", "2099-01-01")
+            .manifest_keys(true)
+            .len(),
+        1
+    );
+    assert_eq!(
+        fixture_ring("dev", "2099-01-01").manifest_keys(false).len(),
+        1
+    );
+    assert!(
+        fixture_ring("dev", "2099-01-01")
+            .manifest_keys(true)
+            .is_empty()
+    );
+    assert!(
+        fixture_ring("production", "2026-01-01")
+            .manifest_keys(false)
+            .is_empty()
+    );
+    // The key is the minisign key's own ed25519 key: the last 32 of its 42 bytes.
+    let ring = fixture_ring("production", "2099-01-01");
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(ring.keys[0].public_key.trim())
+        .unwrap();
+    assert_eq!(
+        ring.manifest_keys(true)[0].to_string(),
+        format!("ed25519:{}", crate::hash::to_hex(&raw[10..]))
+    );
+}

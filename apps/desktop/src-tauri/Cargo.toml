@@ -1,0 +1,87 @@
+[package]
+name = "atlas-app"
+description = "The Atlas desktop app: a Tauri window over the Atlas core. Every command is async; state reaches the UI by events."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "atlas_app"
+
+[[bin]]
+name = "atlas-app"
+path = "src/main.rs"
+
+# The UI bridge: the same calls and events as the window, served on 127.0.0.1 to a browser, with
+# the simulated devices only. It is how the click tests (scripts/ui-gate.sh) reach the real core.
+# It is never part of a bundle: it needs the `sim` feature, which no bundle is built with.
+[[bin]]
+name = "atlas-ui-bridge"
+path = "src/bin/ui_bridge.rs"
+required-features = ["sim"]
+
+[features]
+default = []
+# The simulated devices and the UI bridge. For development and the UI gate only.
+sim = [
+    "dep:atlas-mock",
+    "dep:atlas-sim-node",
+    "dep:atlas-driver-rockchip",
+    "dep:tiny_http",
+    "dep:base64",
+    "dep:sha2",
+]
+# The UI is embedded in the binary instead of read from the dev server. `cargo tauri build` sets
+# it; a plain `cargo build` needs it named to get a window that runs on its own.
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+atlas-driver = { path = "../../../crates/core/driver" }
+atlas-inventory = { path = "../../../crates/core/inventory" }
+atlas-jobs = { path = "../../../crates/core/jobs" }
+atlas-release = { path = "../../../crates/core/release" }
+atlas-log = { path = "../../../crates/core/log" }
+atlas-types = { path = "../../../crates/core/types" }
+atlas-board = { path = "../../../crates/drivers/board" }
+atlas-catalog = { path = "../../../crates/core/catalog" }
+atlas-driver-disk = { path = "../../../crates/drivers/disk" }
+atlas-robot = { path = "../../../crates/drivers/robot" }
+atlas-session = { path = "../../../crates/board/session" }
+atlas-actions = { path = "../../../crates/board/actions" }
+atlas-board-slots = { path = "../../../crates/drivers/board-slots" }
+atlas-slots = { path = "../../../crates/core/slots" }
+atlas-topics = { path = "../../../crates/board/topics" }
+orion = { workspace = true }
+# The flash flow: the image reader, the Rockchip boot ROM loader on a USB bus, the disk writer.
+async-trait = "0.1"
+atlas-disk = { path = "../../../crates/flash/disk" }
+atlas-image = { path = "../../../crates/flash/image" }
+atlas-rockchip = { path = "../../../crates/flash/rockchip" }
+atlas-usb = { path = "../../../crates/flash/usb" }
+tauri-plugin-dialog = "2"
+# Opens a folder in the file manager and a robot device's own page in the browser.
+tauri-plugin-opener = "2"
+# The simulated devices (feature `sim`): the mock fleet, the simulated Orion node, the simulated
+# USB bus under the real boot ROM driver, and a made-up disk list under the real disk driver.
+atlas-mock = { path = "../../../crates/drivers/mock", optional = true }
+atlas-sim-node = { path = "../../../crates/testing/sim-node", optional = true }
+atlas-driver-rockchip = { path = "../../../crates/drivers/rockchip", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tiny_http = { version = "0.12", optional = true }
+# The simulated release feed: a minisign-form key for the trusted list, and its installer's hash.
+base64 = { version = "0.22", optional = true }
+sha2 = { version = "0.11", optional = true }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

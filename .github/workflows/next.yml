@@ -75,6 +75,14 @@ jobs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends
           flex bison gcc-aarch64-linux-gnu
           cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
+          libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev librsvg2-dev
+      # The app (F2): Tauri builds against WebKitGTK (the packages above), and the UI gate (scripts/ui-gate.sh) builds
+      # the UI with bun and runs its click tests in Playwright's headless Chromium, which it fetches on first use and
+      # whose shared libraries `playwright install-deps` adds. bun is pinned to the version the lockfile was written by.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: cd apps/desktop && bun install --frozen-lockfile && sudo env "PATH=$PATH" node node_modules/@playwright/test/cli.js install-deps chromium
       # scripts/check-config-only.sh runs `gaia build --config-only` for every product: Gaia's content store (the kernel
       # sources each family fetches, about 2.3 GiB per family) is kept here, keyed on the devices tree's source pins, so a
       # store that was fetched once is not fetched again. Saved even when a later step fails (see the save step).

@@ -13,12 +13,13 @@ use crate::{
 };
 
 mod download;
+pub(crate) use download::fetch_file;
 
 /// Unpinned local images kept in the list; older ones drop off (the files
 /// themselves are never touched).
 const KEEP_LOCAL: usize = 5;
 /// The largest release index Atlas will read.
-const INDEX_LIMIT: usize = 8 * 1024 * 1024;
+pub(crate) const INDEX_LIMIT: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
