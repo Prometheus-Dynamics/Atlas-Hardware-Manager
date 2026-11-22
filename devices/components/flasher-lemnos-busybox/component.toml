@@ -2,11 +2,10 @@
 # Lemnos's packaging/files.txt (da86d0b3) marks busybox, orion, always and soc: the three init scripts, the
 # environment files, the bcm2712 SoC map, and the users. It supersedes B9's unlanded lemnos-busybox (b0bf0101).
 #
+# init/mdev.conf.fragment (files.txt: append to /etc/mdev.conf) is a fragment of the assembled /etc/mdev.conf (Gaia
+# F12, [[fragments]] below), first in the product's order, before the board's rules and the OS's file.
+#
 # Not installed, and why:
-#   - init/mdev.conf.fragment (files.txt: append to /etc/mdev.conf). A component cannot append to a file the
-#     OS owns: this is Gaia's field wanted (Gaia docs/prs/F12.md, "a file assembled from several owners").
-#     Until Gaia has it, mdev gives lemnosd's device nodes no group lemnos, and the daemon cannot open them.
-#     That BLOCKS the flasher (docs/prs/D6.md).
 #   - The systemd, udev and kmod files: the image has none of the three.
 version = 1
 name = "flasher-lemnos-busybox"
@@ -67,3 +66,8 @@ name = "lemnos-orion"
 uid = 903
 group = "lemnos-orion"
 groups = ["lemnos", "orion"]
+
+# Lemnos's packaged mdev rules (the device kinds lemnosd opens, group lemnos 0660): first in /etc/mdev.conf.
+[[fragments]]
+from = { source = "src", path = "packaging/init/mdev.conf.fragment" }
+to = "/etc/mdev.conf"

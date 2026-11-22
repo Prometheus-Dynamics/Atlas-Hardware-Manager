@@ -21,7 +21,8 @@ BR2_INIT_BUSYBOX=y
 # Lemnos script runs.
 BR2_ROOTFS_SKELETON_DEFAULT=y
 # mdev runs at boot (mdev -s) and on hotplug: the device nodes lemnosd opens. Its rules are Lemnos's
-# mdev.conf fragment, which a component cannot append yet (Gaia F12; see components/flasher-lemnos-busybox).
+# mdev.conf fragment and the board's generated rules, before Buildroot's own file: the product's assembled
+# /etc/mdev.conf (Gaia F12).
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
 # The applets: os/busybox.fragment, beside this file, with the reason for each.
 BR2_PACKAGE_BUSYBOX=y

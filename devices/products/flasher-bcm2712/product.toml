@@ -10,10 +10,10 @@
 #   - Every Lemnos part is at Lemnos next da86d0b3 and Orion at next 3f60576c (flasher-* components), confirmed for
 #     this work only. The Raze product's pins do not move.
 #
-# Recipe: Gaia's initramfs-boot (at Atlas's Gaia pin, devices/gaia.lock): the built tree as a plain newc archive. What it does
-# not give is the Pi's boot.img (a FAT of kernel8.img, the dtbs, overlays/, this initramfs, config.txt with
-# boot_ramdisk's ramdisk lines, and cmdline.txt) with the outer config.txt beside it. Gaia is writing that recipe;
-# until then the flasher's boot set cannot be built.
+# Recipe: Gaia's rpi-ramdisk-boot-generated (Gaia bb98a262, devices/gaia.lock). It makes the set a Pi's EEPROM asks
+# for in a USB boot with boot_ramdisk=1: an outer config.txt holding only boot_ramdisk=1, beside boot.img, a FAT16 of
+# kernel8.img, this tree as a newc initramfs, the device trees below, the board overlay raze-flasher-board generates
+# (compiled and checked as slot-boot does), config.txt and cmdline.txt. Output `boot` is that directory.
 #
 # The board's kernel (boards/raze/kernel, unchanged here) already builds in everything the flasher needs:
 # USB_CONFIGFS, USB_CONFIGFS_F_FS, USB_CONFIGFS_NCM, I2C_CHARDEV, I2C_DESIGNWARE_PLATFORM and RP1_PIO are =y on next.
@@ -44,4 +44,45 @@ name = "flasher-bcm2712"
 board = "../../boards/raze/board.toml"
 components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
-recipe = "initramfs-boot"
+recipe = "rpi-ramdisk-boot-generated"
+
+# /etc/mdev.conf from its three owners (Gaia F12, docs/assembled-files.md). mdev acts on the FIRST rule that matches,
+# so the specific rules go first and Buildroot's own file (catch-alls such as ttyS[0-9]*) last: Lemnos's packaged
+# rules, then the board's own nodes (generated from the board file), then the OS's.
+[[images.assembled]]
+path = "/etc/mdev.conf"
+order = ["flasher-lemnos-busybox", "raze-flasher-board", "os"]
+
+# The boot settings (recipes/rpi-ramdisk-boot-generated.toml), each with its reason:
+#  board_overlay  where the generated overlay goes; config.txt's dtoverlay=lemnos-board names it.
+#  device_trees   out of the Raze kernel build's flat device-tree output (Gaia, 2026-11-22: six files): the board's
+#                 tree, bcm2712d0.dtbo (the firmware applies it on a D0 chip), the firmware's two maps, and ramoops-pi5.
+#                 The same files, byte for byte, as the RAM stage that booted Raze #2. Not taken: vc4-kms-v3d-pi5.
+#  config         boot.img's config.txt:
+#                   arm_64bit, kernel, initramfs  the kernel and this tree, by the names the recipe gives them.
+#                   kernel_watchdog_timeout=15    the firmware arms the SoC watchdog, as build10 does; lemnosd's
+#                                                 hw-watchdog keepalive (the board file, 15 s) feeds it. A flasher that
+#                                                 hangs resets, and the board then boots its eMMC (failure rule: the
+#                                                 board recovers by itself).
+#                   dtoverlay=lemnos-board        the board overlay: the CM5's USB controller as a peripheral (the gadget).
+#                   gpio=45=op,dh                 the fan line held high: the flasher's board file has no fan device,
+#                                                 so the fan runs full while it writes (build10 holds the same line).
+#                   dtoverlay=ramoops-pi5,...    crash logs kept in RAM across a reset, build10's sizes: a flasher that
+#                                                 panics leaves its log for the next boot to read.
+#                 Not carried from the Raze's config: vc4-kms-v3d (no display here). No dwc2: the overlay's fragment@7
+#                 makes the controller a peripheral.
+#  cmdline        the Raze's kernel base words (boards/raze/board.toml [kernel] cmdline: the hash table sizes) and
+#                 panic=5 (the Raze's: a panic restarts in 5 s, then the eMMC boots). rdinit is the initramfs's /init.
+[images.settings]
+board_overlay = "overlays/lemnos-board.dtbo"
+device_trees = "bcm2712-rpi-cm5-cm5io.dtb bcm2712d0.dtbo=overlays/bcm2712d0.dtbo hat_map.dtb=overlays/hat_map.dtb overlay_map.dtb=overlays/overlay_map.dtb ramoops-pi5.dtbo=overlays/ramoops-pi5.dtbo"
+config = """
+arm_64bit=1
+kernel=kernel8.img
+initramfs initramfs.cpio followkernel
+kernel_watchdog_timeout=15
+dtoverlay=lemnos-board
+dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000
+gpio=45=op,dh
+"""
+cmdline = "dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entries=1024 rdinit=/init panic=5"

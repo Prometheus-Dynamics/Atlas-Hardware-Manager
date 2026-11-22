@@ -1,6 +1,11 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to bb98a262 (D6, 2026-11-22, the coordinator's rev): Gaia next with recipe rpi-ramdisk-boot (987984b3), assembled
+# files (7a5bbb16, F12: components' fragments of /etc/mdev.conf in the product's order) and rpi-ramdisk-boot-generated
+# (the generator's board overlay in boot.img), for the bcm2712 flasher. No existing node changed (new nodes
+# gaia.tree.select, gaia.tree.text, gaia.tree.assemble; slot-boot's recipe untouched), and raze-base's plan is the same
+# as under 15dcf093 (docs/prs/D6.md, "The Gaia pin at bb98a262"). Before: 15dcf093.
 # Moved to 15dcf093 (pin move 4, 2026-11-22, the coordinator's rev): Gaia next with the EROFS root directory made
 # root's, 0755 (15dcf09; the tar had no root entry, so / was the builder's 1000:1001 0777; gaia.fs.erofs key 6), plus two
 # K230-only commits (d122a58, 4ebf698). Before: 073a2f6e.
@@ -30,4 +35,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "15dcf093dd74ee39515732bfd83ea7ee3638e491"
+commit = "bb98a262e669d03eaf39629753c70920e4dda6e6"

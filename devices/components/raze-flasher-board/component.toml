@@ -8,7 +8,38 @@
 # verifies (outcome 0), and an unsigned one is accepted as not checked (outcome 1) while the security switch is off.
 version = 1
 name = "raze-flasher-board"
-description = "the Raze's flasher board file (Lemnos bcm2712-flasher.toml with the Raze's id) and its key list"
+description = "the Raze's flasher board file (Lemnos bcm2712-flasher.toml with the Raze's id), its key list, and the board overlay and mdev rules lemnos-ctl generates from it"
+
+# lemnos-ctl, at the flasher's one Lemnos rev (the other flasher components' rev: flasher-lemnosd).
+[sources.lemnos]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"  # Lemnos next, FLASH-ANSWERS
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+# The board's own overlay and mdev rules, generated from the flasher board file by the tool that reads it, the way
+# raze-base gets its overlay (raze-lemnos-board): one `lemnos-ctl tree` run. No @slot@: the flasher makes no slot,
+# and Gaia's rpi-ramdisk-boot-generated has no slot setting.
+#   overlay.dts  the board overlay, the role board-overlay. Gaia compiles it (dtc -@, Lemnos's contracts/overlay-dtc.toml)
+#                and checks it with fdtoverlay on the board's device tree, as slot-boot does, then places it in boot.img
+#                as overlays/lemnos-board.dtbo; config.txt loads it (dtoverlay=lemnos-board). Its fragment@7 sets the
+#                CM5's USB controller to peripheral, which is what gives the flasher its gadget (udc 1000480000.usb).
+#   mdev.conf    the board's own device nodes (the ones its board file names) as mdev rules, the BusyBox counterpart of
+#                the udev rules: a fragment of /etc/mdev.conf, after Lemnos's packaged rules (the product's order).
+[generate]
+description = "flasher-lemnos"
+tool = { source = "lemnos", package = "lemnos-ctl" }
+args = ["tree", "--socs", "@source@/socs", "@description@", "-o", "@out@/overlay.dts", "--mdev", "@out@/mdev.conf"]
+outputs = ["overlay.dts", "mdev.conf"]
+
+[generate.provides]
+board-overlay = "overlay.dts"
+
+[[fragments]]
+from = { generated = "mdev.conf" }
+to = "/etc/mdev.conf"
 
 [[install]]
 from = { description = "flasher-lemnos" }

@@ -62,6 +62,17 @@ kind = "download"
 url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 digest = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
 
+[source."raze-flasher-board.lemnos"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+
+[source."raze-flasher-board.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
 [source."raze.linux"]
 kind = "git"
 url = "https://github.com/raspberrypi/linux.git"
