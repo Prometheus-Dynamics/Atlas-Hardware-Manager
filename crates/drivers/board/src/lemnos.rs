@@ -36,33 +36,52 @@ pub fn from_probe(outcome: Outcome, detail: &str) -> LemnosState {
     }
 }
 
+/// What one probe found: the state, and whether it is final. A final state is kept for the connection;
+/// a state that is not final (the device is not answering yet, or the search did not finish) is asked
+/// again on the next read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Probe {
+    /// The state the probe means.
+    pub state: LemnosState,
+    /// Whether the state is final: `Answering`, a revision mismatch, or a board with no such contract
+    /// from a complete answer.
+    pub settled: bool,
+}
+
 /// Asks Lemnos its read-only question: `system.slots/1`'s `list`, on the device that carries that
 /// contract (the names are Lemnos's, not a board's). A node with no
 /// such device is not answering, and nothing is sent. A session that breaks during it is an error;
-/// any other failure is Lemnos not answering, with the reason.
-pub fn probe(orion: &Orion, session: u64) -> Result<LemnosState, orion::Error> {
+/// any other failure is Lemnos not answering, with the reason, and is not final.
+///
+/// # Errors
+///
+/// [`orion::Error`] when the session is gone.
+pub fn probe(orion: &Orion, session: u64) -> Result<Probe, orion::Error> {
     let resource = match lemnos::resource_for(orion, session, lemnos::SLOTS)? {
         lemnos::Lookup::Found(resource) => resource,
+        // A complete answer: no device carries the contract. That is final.
         lemnos::Lookup::NoContract => {
-            return Ok(LemnosState::NotAnswering {
-                reason: format!("this board has no {}", lemnos::SLOTS),
+            return Ok(Probe {
+                state: LemnosState::NotAnswering {
+                    reason: format!("this board has no {}", lemnos::SLOTS),
+                },
+                settled: true,
             });
         }
-        lemnos::Lookup::Unanswered(reason) => {
-            return Ok(LemnosState::NotAnswering {
-                reason: reason.to_string(),
-            });
-        }
+        lemnos::Lookup::NotYet(reason) => return Ok(not_yet(reason)),
+        lemnos::Lookup::Unanswered(reason) => return Ok(not_yet(reason.to_string())),
         lemnos::Lookup::NoDevices => {
-            return Ok(LemnosState::NotAnswering {
-                reason: "this board lists no Lemnos devices: Lemnos is up but has published none"
-                    .into(),
-            });
+            return Ok(not_yet(
+                "this board lists no Lemnos devices: Lemnos is up but has published none".into(),
+            ));
         }
     };
     let Ok(call) = lemnos::method_call(&resource, lemnos::SLOTS, "list", b"") else {
-        return Ok(LemnosState::NotAnswering {
-            reason: format!("this board has no {}", lemnos::SLOTS),
+        return Ok(Probe {
+            state: LemnosState::NotAnswering {
+                reason: format!("this board has no {}", lemnos::SLOTS),
+            },
+            settled: true,
         });
     };
     let answered = orion
@@ -77,13 +96,22 @@ pub fn probe(orion: &Orion, session: u64) -> Result<LemnosState, orion::Error> {
     let finished = match answered {
         Ok(finished) => finished,
         Err(error) if error.is_lost() => return Err(error),
-        Err(error) => {
-            return Ok(LemnosState::NotAnswering {
-                reason: error.to_string(),
-            });
-        }
+        Err(error) => return Ok(not_yet(error.to_string())),
     };
-    Ok(from_probe(finished.outcome, &finished.detail))
+    let state = from_probe(finished.outcome, &finished.detail);
+    let settled = matches!(
+        state,
+        LemnosState::Answering | LemnosState::RevisionMismatch { .. }
+    );
+    Ok(Probe { state, settled })
+}
+
+/// A probe that is not final: Lemnos is not answering yet, with the reason.
+fn not_yet(reason: String) -> Probe {
+    Probe {
+        state: LemnosState::NotAnswering { reason },
+        settled: false,
+    }
 }
 
 /// Whether the hello document carries a fact that says the node runs Lemnos.

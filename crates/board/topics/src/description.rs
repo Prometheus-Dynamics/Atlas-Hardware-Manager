@@ -222,9 +222,17 @@ pub enum DescriptionState {
     Described(Box<Description>),
     /// The board answered, and the text is refused: why.
     Unreadable(Refusal),
-    /// The board did not give a description (refused the call, or the device is not running):
-    /// its refusal, in its words.
+    /// The board did not give a description (the device is off): its refusal, in its words.
     NotAvailable(String),
+    /// The board did not answer its description yet (refused it while on, or busy). It is asked again on
+    /// a backoff by the reader itself, and shown as not answering yet for as long as that lasts; `since` is
+    /// when the first refusal of this stretch came.
+    NotYet {
+        /// When this stretch of refusals began.
+        since: std::time::Instant,
+        /// The board's words for the last refusal.
+        reason: String,
+    },
 }
 
 /// Reads a description from bytes. The bytes must be text.

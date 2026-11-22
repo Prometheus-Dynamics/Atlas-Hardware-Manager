@@ -273,9 +273,10 @@ enum Step {
 
 fn wait_of(error: &ActionError) -> Option<String> {
     match error {
-        ActionError::NotConnected(reason) | ActionError::NotAnswering(reason) => {
-            Some(reason.clone())
-        }
+        // Nothing was sent, and the board is not answering yet: wait, and try again.
+        ActionError::NotConnected(reason)
+        | ActionError::NotAnswering(reason)
+        | ActionError::NotYet(reason) => Some(reason.clone()),
         ActionError::Lost { reason, .. } | ActionError::Unknown { reason, .. } => {
             Some(reason.text().to_owned())
         }

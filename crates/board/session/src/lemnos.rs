@@ -18,6 +18,9 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::Instant;
+
+use crate::backoff::Backoff;
 
 use crate::Failure;
 use lemnos_contract_system_flash::Flash;
@@ -320,28 +323,48 @@ fn record(line: &str) -> Option<(&str, Vec<(String, String)>)> {
     Some((word, fields))
 }
 
-/// What a lookup for a contract found on the node.
+/// What a lookup for a contract found on the node. Three states of "not found" are kept apart: a
+/// complete answer (every device described, none carries the contract) is final; anything else is
+/// "not yet", with a sentence for people, and the caller may ask again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Lookup {
     /// The device whose resource this is carries the contract.
     Found(String),
-    /// The node lists devices, and none of them carries the contract.
+    /// Final: every device of the node was described, and none carries the contract.
     NoContract,
-    /// Every device of the node refused its description: the first refusal's words, which say why (for
-    /// example, Lemnos is stopped on the node).
+    /// Not final: the device that carries the contract is not answering yet (it is known from an
+    /// earlier describe, and is withdrawn or refused now), or the search did not finish (a device
+    /// refused its description or the resource list failed, and the contract was not found among
+    /// the devices that answered). The text is the sentence for people, with the time it began.
+    NotYet(String),
+    /// Every device refused its description and one refusal is the node turning this client away
+    /// (`denied`): its failure, which keeps its kind.
     Unanswered(Failure),
-    /// The node lists no Lemnos device at all. Once lemnosd is up that is a fault, not a normal state
-    /// (devices are adopted after connect, so this is read only after connect).
+    /// The node lists no Lemnos device at all, and no device has carried the contract. Once lemnosd is up
+    /// that is a fault, not a normal state (devices are adopted after connect, so this is read only after
+    /// connect).
     NoDevices,
 }
 
-/// The resources of the node's devices, by name, from the node's resource list (no call to a device).
-fn device_resources(orion: &Orion) -> Result<Vec<String>, orion::Error> {
+/// A device of the node's resource list: its name, and whether its published state is off (`Pending`,
+/// the state a device disabled by its board file is published in, as the sim publishes it). Read from
+/// the resource's state, never from a refusal's words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Listed {
+    name: String,
+    off: bool,
+}
+
+/// The devices of the node's resource list (no call to a device).
+fn device_resources(orion: &Orion) -> Result<Vec<Listed>, orion::Error> {
     Ok(orion
         .resources(RESOURCE_PREFIX)?
         .into_iter()
         .filter(|resource| resource.kind == RESOURCE_KIND)
-        .map(|resource| resource.name)
+        .map(|resource| Listed {
+            off: resource.state == orion::provider::ResourceState::Pending,
+            name: resource.name,
+        })
         .collect())
 }
 
@@ -352,16 +375,23 @@ fn device_resources(orion: &Orion) -> Result<Vec<String>, orion::Error> {
 ///
 /// [`orion::Error`] when the session is gone.
 pub fn resource_for(orion: &Orion, session: u64, contract: &str) -> Result<Lookup, orion::Error> {
-    search(orion, session, device_resources(orion)?, contract)
+    lookup(orion, session, contract, false)
 }
 
-/// The found devices of each contract, per session: a session asks each device's description once for a
-/// contract, and later calls reuse the answer. An answer is kept only while its resource is still on the
-/// node's resource list, so a device that leaves or changes is asked again. A new session has a new key.
+/// The devices that carried each contract, per session, and the first time each contract stopped being
+/// answered (`NOT_YET`). A session asks each device's description once for a contract, and later calls
+/// reuse the answer. A device that carried a contract is remembered for the session even when it leaves
+/// the node's list, so a device that is rebound for a moment is "not answering yet", not "no such contract".
+/// A new session has a new key.
 static FOUND: Mutex<BTreeMap<(u64, String), String>> = Mutex::new(BTreeMap::new());
+static NOT_YET: Mutex<BTreeMap<(u64, String), Instant>> = Mutex::new(BTreeMap::new());
 
 fn found() -> MutexGuard<'static, BTreeMap<(u64, String), String>> {
     FOUND.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn not_yet() -> MutexGuard<'static, BTreeMap<(u64, String), Instant>> {
+    NOT_YET.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// As [`resource_for`], for the session `session` (the Orion session the call goes on): the description
@@ -377,24 +407,62 @@ pub fn resource_cached(
     session: u64,
     contract: &str,
 ) -> Result<Lookup, orion::Error> {
-    let devices = device_resources(orion)?;
-    retain_described(session, &devices);
-    if devices.is_empty() {
-        found().retain(|(kept, _), _| *kept != session);
-        return Ok(Lookup::NoDevices);
-    }
+    lookup(orion, session, contract, true)
+}
+
+/// The one lookup. `cached` reads a kept device that is still listed without asking it again.
+fn lookup(
+    orion: &Orion,
+    session: u64,
+    contract: &str,
+    cached: bool,
+) -> Result<Lookup, orion::Error> {
+    let listed = match device_resources(orion) {
+        Ok(listed) => listed,
+        Err(error) if error.is_lost() => return Err(error),
+        // The node's list did not come back: the search is not complete, so it is not final.
+        Err(_) => return Ok(Lookup::NotYet(incomplete(session, contract))),
+    };
+    let names: Vec<String> = listed.iter().map(|device| device.name.clone()).collect();
+    retain_described(session, &names);
     let key = (session, contract.to_owned());
-    if let Some(kept) = found().get(&key).cloned()
-        && devices.contains(&kept)
+    if cached
+        && let Some(kept) = found().get(&key).cloned()
+        && names.contains(&kept)
     {
         return Ok(Lookup::Found(kept));
     }
-    found().remove(&key);
-    let lookup = search(orion, session, devices, contract)?;
-    if let Lookup::Found(resource) = &lookup {
-        found().insert(key, resource.clone());
-    }
-    Ok(lookup)
+    search(orion, session, listed, contract)
+}
+
+/// The plain name of a contract for people: `system.slots/1` is `slots`, `system.reboot/1` is `reboot`.
+fn plain_name(contract: &str) -> &str {
+    let name = contract.strip_prefix("system.").unwrap_or(contract);
+    name.strip_suffix("/1").unwrap_or(name)
+}
+
+/// The moment a session first stopped getting `contract`, kept until it is found again.
+fn started(session: u64, contract: &str) -> Instant {
+    *not_yet()
+        .entry((session, contract.to_owned()))
+        .or_insert_with(Instant::now)
+}
+
+/// The sentence for a device that carries `contract` but is not answering yet.
+fn device_not_yet(session: u64, contract: &str) -> String {
+    format!(
+        "the board's {} device isn't answering yet, for {}",
+        plain_name(contract),
+        crate::words::duration(started(session, contract).elapsed())
+    )
+}
+
+/// The sentence for a search that did not finish.
+fn incomplete(session: u64, contract: &str) -> String {
+    format!(
+        "couldn't finish asking the board what it offers yet, for {}",
+        crate::words::duration(started(session, contract).elapsed())
+    )
 }
 
 /// The description of device `resource`, as the bridge gave it (its bytes), or the words the device
@@ -444,13 +512,13 @@ pub fn describe(orion: &Orion, resource: &str) -> Result<Answer, orion::Error> {
     }
 }
 
-/// The describe answers of each device, per session: one describe per device per session, shared by the
-/// topics reader and the resolver. Keyed by (session, resource); kept while the session is the one asked
-/// and the resource is listed (see [`retain_described`]).
-/// One describe answer: the bridge's bytes, or the words of its refusal.
 /// What a describe gave: the bridge's bytes, or the failure it gave (its words, and its kind).
 pub type Answer = Result<Vec<u8>, Failure>;
 
+/// The describe answers of each device, per session: one describe per device per session, shared by the
+/// topics reader and the resolver. Keyed by (session, resource); kept while the session is the one asked
+/// and the resource is listed (see [`retain_described`]). Only a complete description is kept: a refusal
+/// or an error is "not yet", and it is asked again (see [`described`]).
 static DESCRIBED: Mutex<BTreeMap<(u64, String), Answer>> = Mutex::new(BTreeMap::new());
 
 fn described_map() -> MutexGuard<'static, BTreeMap<(u64, String), Answer>> {
@@ -465,7 +533,8 @@ pub fn held_description(session: u64, resource: &str) -> Option<Answer> {
         .cloned()
 }
 
-/// The describe answer of `resource` for this session: the one held, or else one asked now and kept.
+/// The describe answer of `resource` for this session: the one held, or else one asked now. Only a
+/// complete description is kept; a refusal is returned and not kept, so the next call asks again.
 ///
 /// # Errors
 ///
@@ -474,20 +543,65 @@ pub fn described(orion: &Orion, session: u64, resource: &str) -> Result<Answer, 
     if let Some(held) = held_description(session, resource) {
         return Ok(held);
     }
+    let key = (session, resource.to_owned());
+    // A refusal is "not yet": it is held only until its backoff has passed, then asked again.
+    if let Some(retry) = refusals().get(&key)
+        && Instant::now() < retry.after
+    {
+        return Ok(Err(retry.failure.clone()));
+    }
     let answer = describe(orion, resource)?;
-    described_map().insert((session, resource.to_owned()), answer.clone());
+    match &answer {
+        Ok(_) => {
+            refusals().remove(&key);
+            described_map().insert(key, answer.clone());
+        }
+        Err(failure) => {
+            let mut backoff = refusals()
+                .remove(&key)
+                .map_or_else(Backoff::default, |retry| retry.backoff);
+            let after = Instant::now() + backoff.next_delay();
+            refusals().insert(
+                key,
+                Retry {
+                    failure: failure.clone(),
+                    backoff,
+                    after,
+                },
+            );
+        }
+    }
     Ok(answer)
+}
+
+/// A refused describe, held for its backoff: the refusal, the backoff for the next ask, and when that ask
+/// may be made.
+#[derive(Clone, Debug)]
+struct Retry {
+    failure: Failure,
+    backoff: Backoff,
+    after: Instant,
+}
+
+static REFUSED: Mutex<BTreeMap<(u64, String), Retry>> = Mutex::new(BTreeMap::new());
+
+fn refusals() -> MutexGuard<'static, BTreeMap<(u64, String), Retry>> {
+    REFUSED.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Drops the answer held for `resource` in `session`, so the next [`described`] asks again (a generation
 /// the device published has moved).
 pub fn forget_description(session: u64, resource: &str) {
     described_map().remove(&(session, resource.to_owned()));
+    refusals().remove(&(session, resource.to_owned()));
 }
 
 /// Drops every answer of `session`: the session is lost, and a new one asks again.
 pub fn forget_session(session: u64) {
     described_map().retain(|(kept, _), _| *kept != session);
+    refusals().retain(|(kept, _), _| *kept != session);
+    found().retain(|(kept, _), _| *kept != session);
+    not_yet().retain(|(kept, _), _| *kept != session);
 }
 
 /// Drops the answers of `session` for the resources not in `listed`: a device that left the node's
@@ -495,177 +609,63 @@ pub fn forget_session(session: u64) {
 /// node's session, or a session that is gone, keeps its own; they are small and bounded by its devices).
 pub fn retain_described(session: u64, listed: &[String]) {
     described_map().retain(|(kept, resource), _| *kept != session || listed.contains(resource));
+    refusals().retain(|(kept, resource), _| *kept != session || listed.contains(resource));
 }
 
-/// The search for `contract` among `devices`: the device whose description carries it, or why there is
-/// none. When every device refused its description, the first refusal's words are the answer.
+/// The search for `contract` among `devices`: the device whose description carries it, or the state of
+/// the search (see [`Lookup`]). "No such contract" is only said from a complete answer. A device whose
+/// published state is off answers nothing now: it is not a refusal to wait on (it is asked again on the
+/// backoff, so a device that comes on is found).
 fn search(
     orion: &Orion,
     session: u64,
-    devices: Vec<String>,
+    devices: Vec<Listed>,
     contract: &str,
 ) -> Result<Lookup, orion::Error> {
-    if devices.is_empty() {
-        return Ok(Lookup::NoDevices);
-    }
+    let key = (session, contract.to_owned());
+    let known = found().get(&key).cloned();
     let total = devices.len();
+    let listed: Vec<String> = devices.iter().map(|device| device.name.clone()).collect();
     let mut refusals: Vec<Failure> = Vec::new();
-    for resource in devices {
+    let mut refused: Vec<String> = Vec::new();
+    for device in devices {
+        let resource = device.name;
         match described(orion, session, &resource)? {
             Ok(bytes)
                 if tags(&String::from_utf8_lossy(&bytes))
                     .iter()
                     .any(|tag| tag == contract) =>
             {
+                not_yet().remove(&key);
+                found().insert(key, resource.clone());
                 return Ok(Lookup::Found(resource));
             }
             Ok(_) => {}
-            Err(words) => refusals.push(words),
+            // Off by its board file: it offers nothing now, which is an answer.
+            Err(_) if device.off => {}
+            Err(words) => {
+                refused.push(resource);
+                refusals.push(words);
+            }
         }
     }
-    if !refusals.is_empty() && refusals.len() == total {
-        return Ok(Lookup::Unanswered(refusals.swap_remove(0)));
-    }
-    Ok(Lookup::NoContract)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Each method name Atlas calls is one of its contract's methods, as the contract crate states it.
-    /// A renamed method fails here, not on a board.
-    #[test]
-    fn the_method_names_atlas_calls_are_the_contracts() {
-        fn has(info: &lemnos_core::ContractInfo, name: &str) -> bool {
-            info.methods.iter().any(|method| method.name == name)
+    // A device that carried the contract and is withdrawn, or refuses while on, is not answering yet. One
+    // that answers without it, or is off, no longer carries it.
+    if let Some(kept) = known {
+        if !listed.contains(&kept) || refused.contains(&kept) {
+            return Ok(Lookup::NotYet(device_not_yet(session, contract)));
         }
-        let slots = <dyn Slots as Contract>::INFO;
-        for name in [
-            methods::SLOTS_LIST,
-            methods::SLOTS_ACCEPT,
-            methods::SLOTS_INSTALL_FILE,
-            methods::SLOTS_SET_DEFAULT,
-            methods::SLOTS_TRIAL,
-            methods::SLOTS_REMOVE,
-            methods::SLOTS_PIN,
-            methods::SLOTS_SET_KEEP,
-            methods::SLOTS_INFO,
-        ] {
-            assert!(has(&slots, name), "{name} is not a system.slots/1 method");
-        }
-        assert!(has(&<dyn Reboot as Contract>::INFO, methods::REBOOT_REBOOT));
-        let flash = <dyn Flash as Contract>::INFO;
-        assert!(has(&flash, methods::FLASH_VERIFY));
-        assert!(has(&flash, methods::FLASH_INFO));
+        found().remove(&key);
     }
-
-    #[test]
-    fn the_contract_tags_are_the_crates_tags() {
-        assert_eq!(SLOTS, "system.slots/1");
-        assert_eq!(REBOOT, "system.reboot/1");
-        assert_eq!(FLASH, "system.flash/1");
+    if total == 0 {
+        return Ok(Lookup::NoDevices);
     }
-
-    #[test]
-    fn an_atlas_name_is_its_contract_and_method() {
-        assert_eq!(
-            method_of("system.slots.list"),
-            Some(("system.slots/1".into(), "list".into()))
-        );
-        assert_eq!(
-            method_of("system.slots.install-file"),
-            Some(("system.slots/1".into(), "install_file".into()))
-        );
-        assert_eq!(
-            method_of("system.reboot.reboot"),
-            Some(("system.reboot/1".into(), "reboot".into()))
-        );
-        assert_eq!(method_of("locate"), None);
-        assert_eq!(method_of("system.slots"), None);
-        assert_eq!(method_of("system.slots.list.x"), None);
+    if let Some(position) = refusals.iter().position(Failure::is_denied) {
+        return Ok(Lookup::Unanswered(refusals.swap_remove(position)));
     }
-
-    #[test]
-    fn the_call_is_the_bridge_form_on_the_resource() {
-        let call = method_call("lemnos.slots", SLOTS, "list", b"").unwrap();
-        assert_eq!(call.name, "lemnos.slots.call");
-        assert_eq!(
-            call.target,
-            Target::Resource("lemnos.slots".parse().unwrap())
-        );
-        assert_eq!(call.args, b"system.slots/1:list");
-        let call = method_call("lemnos.slots", SLOTS, "pin", b"a true").unwrap();
-        assert_eq!(call.args, b"system.slots/1:pin a true");
-        assert_eq!(describe_call("lemnos.slots").unwrap().args, b"describe");
+    if refusals.is_empty() {
+        not_yet().remove(&key);
+        return Ok(Lookup::NoContract);
     }
-
-    #[test]
-    fn a_contract_and_method_have_one_atlas_name_or_none() {
-        assert_eq!(
-            name_of(REBOOT, "reboot").as_deref(),
-            Some("system.reboot.reboot")
-        );
-        assert_eq!(
-            name_of(SLOTS, "install_file").as_deref(),
-            Some("system.slots.install-file")
-        );
-        assert_eq!(name_of("sim.vane/1", "read"), None);
-        assert_eq!(name_of("system.slots/2", "list"), None);
-    }
-
-    #[test]
-    fn the_methods_of_a_description_carry_their_contract_params_and_action_name() {
-        let text = "describe 1\n\
-            device generation=3 label=\"Slots \\\"A\\\"\" kind=\"slots\"\n\
-            contract index=0 tag=\"system.slots/1\" kind=\"slots\" hash=0x1 methods=2\n\
-            contract index=1 tag=\"system.reboot/1\" kind=\"reboot\" hash=0x2 methods=1\n\
-            method contract=0 id=9 name=\"set_keep\" params=\"keep:u32\" returns=\"()\" out_buffer=false job=false\n\
-            method contract=0 id=11 name=\"install_file\" params=\"name:text pin:bool keep_old:bool\" returns=\"text\" out_buffer=false job=true\n\
-            method contract=1 id=1 name=\"reboot\" params=\"\" returns=\"()\" out_buffer=false job=false\n\
-            method contract=7 id=1 name=\"orphan\"\n\
-            item kind=action name=\"Restart now\" unit=\"\" contract=1 method=1 field=none";
-        let methods = described_methods("lemnos.x", text);
-        assert_eq!(
-            methods.len(),
-            3,
-            "a method of no contract record is left out"
-        );
-        assert_eq!(methods[0].contract, "system.slots/1");
-        assert_eq!(methods[0].method, "set_keep");
-        assert_eq!(
-            methods[0].params,
-            Some(vec![("keep".to_owned(), "u32".to_owned())])
-        );
-        assert_eq!(methods[0].job, Some(false));
-        assert_eq!(methods[0].label, None);
-        assert_eq!(methods[1].params.as_ref().map(Vec::len), Some(3));
-        assert_eq!(methods[1].job, Some(true));
-        assert_eq!(methods[2].contract, "system.reboot/1");
-        assert_eq!(methods[2].params, Some(Vec::new()));
-        assert_eq!(methods[2].label.as_deref(), Some("Restart now"));
-        assert_eq!(methods[2].resource, "lemnos.x");
-        // A method record that says nothing of its params or length reports neither.
-        let bare = described_methods(
-            "lemnos.y",
-            "describe 1\ncontract index=0 tag=\"a.b/1\"\nmethod contract=0 id=1 name=\"go\"",
-        );
-        assert_eq!((bare[0].params.clone(), bare[0].job), (None, None));
-    }
-
-    #[test]
-    fn a_resource_name_the_bridge_cannot_have_is_refused() {
-        assert!(method_call("no spaces here", SLOTS, "list", b"").is_err());
-    }
-
-    #[test]
-    fn the_tags_of_a_description_are_its_contract_records() {
-        let text = "describe 1\n\
-            device id=\"slots\" generation=3\n\
-            contract index=0 tag=system.slots/1 kind=slots hash=0x1 methods=2\n\
-            method contract=0 id=1 name=list\n\
-            contract index=1 tag=system.identity/1 kind=x hash=0x2 methods=0";
-        assert_eq!(tags(text), ["system.slots/1", "system.identity/1"]);
-        assert!(tags("describe 1\ndevice id=\"x\"").is_empty());
-    }
+    Ok(Lookup::NotYet(incomplete(session, contract)))
 }

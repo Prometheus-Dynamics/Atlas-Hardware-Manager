@@ -285,6 +285,33 @@ async fn a_second_read_of_the_catalog_asks_no_device_again() {
     );
 }
 
+/// A board whose only off device is off, and whose slots are gone, says the contract is not there: the
+/// off device is an answer ("it offers nothing now"), so the answer is complete.
+#[tokio::test]
+async fn a_board_with_an_off_device_and_no_slots_says_there_is_no_such_contract() {
+    let rig = Rig::start("off-no-slots", &lemnos_kind()).await;
+    assert!(rig.catalog().await.get("system.slots.list").is_some());
+    rig.node.remove_device("slots");
+    let mut catalog = rig.catalog().await;
+    let until_gone = Instant::now() + DEADLINE;
+    while catalog.get("system.slots.list").is_some() {
+        assert!(Instant::now() < until_gone, "the slots stayed listed");
+        time::sleep(Duration::from_millis(20)).await;
+        catalog = rig.catalog().await;
+    }
+    let error = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .expect_err("no slots, nothing sent");
+    assert_eq!(error.to_string(), "this board has no system.slots/1");
+    assert_eq!(
+        rig.node.runs_started("system.slots.list"),
+        0,
+        "nothing was sent"
+    );
+}
+
 /// A board with no restart device does not list the restart, and a run of it sends nothing.
 #[tokio::test]
 async fn a_board_without_a_restart_device_does_not_offer_the_restart() {
@@ -1020,16 +1047,19 @@ async fn a_lemnos_method_answers_through_the_device_that_carries_its_contract() 
 async fn a_board_without_the_contract_says_so_and_sends_nothing() {
     let rig = Rig::start("lemnos-no-contract", &lemnos_kind()).await;
     rig.node.refuse_describe(true);
-    // Every device refused its description, so the refusal's own words are the answer: nothing is sent.
+    // Every device refused its description: the search did not finish, so it is not yet, and nothing is sent.
     let error = rig
         .board
         .run(&lemnos_action("system.slots.list"), &[])
         .await
         .expect_err("no contract, nothing sent");
-    assert_eq!(
-        error.to_string(),
-        "the node did not answer: this board does not answer describe"
+    assert!(
+        error
+            .to_string()
+            .starts_with("couldn't finish asking the board what it offers yet, for "),
+        "{error}"
     );
+    assert!(error.is_not_yet(), "{error:?}");
     assert_eq!(
         rig.node.runs_started("system.slots.list"),
         0,

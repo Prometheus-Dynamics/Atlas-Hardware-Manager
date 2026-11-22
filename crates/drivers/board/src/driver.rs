@@ -244,7 +244,7 @@ impl Driver for BoardDriver {
                 let node = orion.node()?;
                 let expected = was_expected || lemnos::published_by(&node);
                 let lemnos = if expected {
-                    lemnos::probe(orion, number)?
+                    lemnos::probe(orion, number)?.state
                 } else {
                     LemnosState::Absent
                 };

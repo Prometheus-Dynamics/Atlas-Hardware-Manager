@@ -435,6 +435,7 @@
                         {:else if dev.state === "retrying"}<span class="chip warn" title={dev.reason ?? ""}><span class="dot warn"></span>retrying</span>
                         {:else if dev.state === "off"}<span class="chip off" title={dev.reason ?? ""}><span class="dot off"></span>off</span>
                         {:else}<span class="faint">not reported</span>{/if}
+                        {#if dev.not_answering_for}<span class="chip warn" data-not-answering><span class="dot warn"></span>isn't answering yet, for {dev.not_answering_for}</span>{/if}
                       </div>
                       <div class="faint" title={dev.reason ?? ""}>
                         {dev.state === "running" || dev.state === null

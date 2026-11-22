@@ -155,7 +155,9 @@ fn refuse_unsplit(action: &Action, words: &[String]) -> Result<(), ActionError> 
 enum Missing {
     Contract(String),
     NoDevices,
-    /// Every device refused its description: the device's failure, its words and its kind.
+    /// The device is not answering yet, or the search did not finish: the sentence for people.
+    NotYet(String),
+    /// The node turns this client away (`denied`): the failure, with its kind.
     Unanswered(atlas_session::Failure),
 }
 
@@ -178,6 +180,7 @@ fn aim(
         lemnos::Lookup::Found(resource) => resource,
         lemnos::Lookup::NoContract => return Ok(Err(Missing::Contract(contract))),
         lemnos::Lookup::NoDevices => return Ok(Err(Missing::NoDevices)),
+        lemnos::Lookup::NotYet(text) => return Ok(Err(Missing::NotYet(text))),
         lemnos::Lookup::Unanswered(words) => return Ok(Err(Missing::Unanswered(words))),
     };
     // A resource the node lists under the bridge's prefix is a name the bridge can have.
@@ -196,6 +199,8 @@ fn not_sent(missing: Missing) -> ActionError {
     match missing {
         Missing::Contract(contract) => ActionError::NoContract(contract),
         Missing::NoDevices => ActionError::NoDevices,
+        // Not final: nothing was sent, and the caller may ask again (a job waits and tries again).
+        Missing::NotYet(text) => ActionError::NotYet(text),
         // A node that turns this client away says so as a refusal, which the caller can act on (enrol).
         Missing::Unanswered(failure) if failure.is_denied() => ActionError::Refused(failure),
         Missing::Unanswered(failure) => ActionError::NotAnswering(failure.to_string()),
@@ -699,7 +704,7 @@ fn followed_end(finished: Finished) -> Result<Done, ActionError> {
 
 /// How a run that ended is answered: the board's words for anything that did not succeed. The
 /// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
-/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
+/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_lemnos_busy`]).
 fn ended(finished: Finished) -> Result<Done, ActionError> {
     let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
     let detail = finished.detail;
@@ -718,11 +723,7 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
         }),
         // Lemnos M39: a refusal without running is Rejected with the status's code.
         Outcome::Rejected => Err(ActionError::Refused(match code {
-            Some(code) => Failure::new(
-                FailureKind::Refused,
-                Some(code),
-                reason("the board refused it, without a reason"),
-            ),
+            Some(code) => Failure::lemnos(code, reason("the board refused it, without a reason")),
             None => reason("the board refused it, without a reason").into(),
         })),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
@@ -827,7 +828,7 @@ mod tests {
     #[test]
     fn a_rejected_run_keeps_its_code_and_busy_is_read_from_it() {
         let busy = ended(finished(Outcome::Rejected, 16, "an install is running")).unwrap_err();
-        assert!(busy.is_busy(), "{busy:?}");
+        assert!(busy.is_lemnos_busy(), "{busy:?}");
         assert_eq!(busy.board_reason(), Some("an install is running"));
         // The words alone never make it busy.
         let words = ended(finished(
@@ -836,10 +837,21 @@ mod tests {
             "busy: an install is running",
         ))
         .unwrap_err();
-        assert!(!words.is_busy(), "{words:?}");
+        assert!(!words.is_lemnos_busy(), "{words:?}");
         let missing = ended(finished(Outcome::Rejected, 2, "there is no pushed file")).unwrap_err();
-        assert!(!missing.is_busy());
+        assert!(!missing.is_lemnos_busy());
         assert_eq!(missing.failure().and_then(Failure::code), Some(2));
+    }
+
+    #[test]
+    fn an_orion_refusal_with_code_16_is_not_a_lemnos_busy() {
+        // Orion's DigestMismatch is 16 too: a digest refusal from Orion is not the board being busy.
+        let digest = Failure::of(&orion::Error::Client(orion::ClientError::refused(
+            orion::types::Error::DigestMismatch,
+            "digest does not match",
+        )));
+        let error = ActionError::Refused(digest);
+        assert!(!error.is_lemnos_busy(), "{error:?}");
     }
 
     #[test]
@@ -848,7 +860,7 @@ mod tests {
         assert_eq!(failed.failure().and_then(Failure::code), None);
         let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
         assert_eq!(timed.failure().and_then(Failure::code), Some(110));
-        assert!(!timed.is_busy());
+        assert!(!timed.is_lemnos_busy());
     }
 
     #[test]

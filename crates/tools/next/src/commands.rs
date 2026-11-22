@@ -11,7 +11,7 @@ use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
 use atlas_jobs::{DeviceHolds, Events, JobTiming};
-use atlas_session::Failure;
+use atlas_session::{Failure, FailureKind};
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
 use atlas_types::DeviceKey;
@@ -58,7 +58,7 @@ impl Refusal {
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
         let denied = error.failure().is_some_and(Failure::is_denied);
-        let busy = matches!(&error, SlotError::Board(board) if board.is_busy());
+        let busy = matches!(&error, SlotError::Board(board) if board.is_lemnos_busy());
         Self {
             code: 1,
             words: error.to_string(),
@@ -498,9 +498,9 @@ pub(crate) async fn install<W: Write>(
             }
             Some(Stage::Failed { reason }) => {
                 // The run's typed failure keeps the board's status code: BUSY is read from it.
-                let busy = installs
-                    .failure(job)
-                    .is_some_and(|failure| failure.code() == Some(BUSY_CODE));
+                let busy = installs.failure(job).is_some_and(|failure| {
+                    failure.kind() == FailureKind::Lemnos && failure.code() == Some(BUSY_CODE)
+                });
                 return Err(Refusal {
                     busy,
                     ..Refusal::new(1, reason)

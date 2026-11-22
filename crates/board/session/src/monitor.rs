@@ -142,8 +142,9 @@ impl Pause for RealPause {
 /// there is none. A long operation's start is a job too: it runs once, and then waits in `ops`.
 trait Job: Send {
     /// Runs the call on the live session and answers its caller. `Err` when the session broke
-    /// during the call, with the reason. A long operation adds itself to `ops`.
-    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String>;
+    /// during the call, with the reason. `Ok(true)` when the node answered the request (a bridge
+    /// request counts as renewing the lease only then). A long operation adds itself to `ops`.
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String>;
     /// Answers the caller without running the call: there is no session.
     fn refuse(self: Box<Self>, reason: &str);
     /// Whether this job starts a long operation, which counts against [`MAX_LONG_OPERATIONS`].
@@ -191,16 +192,16 @@ where
         self.bridge
     }
 
-    fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
+    fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String> {
         let Self { call, reply, .. } = *self;
         if reply.is_closed() {
             // The caller stopped waiting before its turn: the call is not started.
-            return Ok(());
+            return Ok(false);
         }
         match call(orion) {
             Ok(value) => {
                 let _ = reply.send(Ok(value));
-                Ok(())
+                Ok(true)
             }
             Err(error) if error.is_lost() => {
                 let text = error.to_string();
@@ -209,7 +210,7 @@ where
             }
             Err(error) => {
                 let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
-                Ok(())
+                Ok(false)
             }
         }
     }
@@ -232,18 +233,18 @@ where
     T: Send + 'static,
     F: FnOnce(&Orion) -> Result<Box<dyn SteppedTransfer<T>>, orion::Error> + Send + 'static,
 {
-    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String> {
         let Self {
             start,
             reply,
             cancel,
         } = *self;
         if reply.is_closed() {
-            return Ok(());
+            return Ok(false);
         }
         if cancel.is_cancelled() {
             let _ = reply.send(Ok(Outcome::Cancelled));
-            return Ok(());
+            return Ok(false);
         }
         match start(orion) {
             Ok(transfer) => {
@@ -252,7 +253,7 @@ where
                     reply: Some(reply),
                     cancel,
                 }));
-                Ok(())
+                Ok(true)
             }
             Err(error) if error.is_lost() => {
                 let text = error.to_string();
@@ -261,7 +262,7 @@ where
             }
             Err(error) => {
                 let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
-                Ok(())
+                Ok(true)
             }
         }
     }
@@ -629,6 +630,8 @@ impl Monitor {
                     last_bridge: clock.now(),
                     clock,
                     last_try: None,
+                    renew_backoff: Backoff::default(),
+                    renew_wait: None,
                     lapse_marked: false,
                     node: None,
                     device: None,
@@ -706,6 +709,12 @@ struct Keeper {
     last_bridge: Duration,
     /// When the session last tried to renew, successfully or not. Throttles a failing renewal.
     last_try: Option<Duration>,
+    /// The backoff for a renewal that did not succeed (see [`Backoff`]): each retry waits its next delay,
+    /// not a full renew period.
+    renew_backoff: Backoff,
+    /// The wait before the next renewal try, set by a renewal that did not succeed; `None` when the last
+    /// renewal did (a full renew period applies).
+    renew_wait: Option<Duration>,
     /// The clock the lease is measured on (see [`Clock`]).
     clock: Clock,
     /// Whether the current silence has been recorded as a lapse already.
@@ -743,6 +752,8 @@ impl Keeper {
                         backoff.reset();
                         self.node = Some(node.clone());
                         self.last_try = None;
+                        self.renew_backoff.reset();
+                        self.renew_wait = None;
                         self.device = None;
                         self.last_listed = None;
                         self.lapse_on_connect(&orion);
@@ -892,24 +903,37 @@ impl Keeper {
         };
         self.check_lapse();
         let silent = self.since(self.last_bridge);
+        // After a renewal that did not succeed, the next try comes on the short backoff, not a full period.
+        let retry_after = self.renew_wait.unwrap_or(self.lease.renew);
         let due = silent >= self.lease.renew
             && self
                 .last_try
-                .is_none_or(|tried| self.since(tried) >= self.lease.renew);
+                .is_none_or(|tried| self.since(tried) >= retry_after);
         if !due {
             return Ok(());
         }
-        self.last_try = Some(self.clock.now());
+        let sent = self.clock.now();
+        self.last_try = Some(sent);
         let Ok(name) = node_name.parse::<NodeName>() else {
             return Ok(());
         };
         match lease::renew(orion, &name, &device) {
-            Ok(()) => {
-                self.mark_bridge();
+            // Renewed only when the bridge answered it successfully. A refusal or a silence is not renewed.
+            Ok(true) => {
+                self.renew_backoff.reset();
+                self.renew_wait = None;
+                self.mark_bridge_at(sent);
+                Ok(())
+            }
+            Ok(false) => {
+                self.renew_wait = Some(self.renew_backoff.next_delay());
                 Ok(())
             }
             Err(error) if error.is_lost() => Err(error.to_string()),
-            Err(_) => Ok(()),
+            Err(_) => {
+                self.renew_wait = Some(self.renew_backoff.next_delay());
+                Ok(())
+            }
         }
     }
 
@@ -971,7 +995,12 @@ impl Keeper {
     }
 
     fn mark_bridge(&mut self) {
-        self.last_bridge = self.clock.now();
+        self.mark_bridge_at(self.clock.now());
+    }
+
+    /// A request that reached the board at `at` (the clock when it was sent) renews the lease as of then.
+    fn mark_bridge_at(&mut self, at: Duration) {
+        self.last_bridge = at;
         self.lapse_marked = false;
     }
 
@@ -1015,15 +1044,23 @@ impl Keeper {
                     self.parked.push_back(job);
                     continue;
                 }
-                if job.bridge() {
-                    self.mark_bridge();
-                }
-                if let Err(reason) = job.run(orion, ops) {
-                    // The session broke under this call: the rest of the turn is refused.
-                    for rest in batch {
-                        rest.refuse(&reason);
+                // A bridge request renews the lease only once the node has answered it. It counts from
+                // when it was sent: a call that waits on the node must not move the stamp to its end.
+                let bridge = job.bridge();
+                let sent = self.clock.now();
+                match job.run(orion, ops) {
+                    Ok(answered) => {
+                        if bridge && answered {
+                            self.mark_bridge_at(sent);
+                        }
                     }
-                    return Some(reason);
+                    Err(reason) => {
+                        // The session broke under this call: the rest of the turn is refused.
+                        for rest in batch {
+                            rest.refuse(&reason);
+                        }
+                        return Some(reason);
+                    }
                 }
             }
             let mut index = 0;

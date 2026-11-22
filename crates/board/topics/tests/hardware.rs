@@ -18,7 +18,7 @@ use atlas_topics::{
     Availability, Connection, Contract, Control, Device, DeviceState, Freshness, Hardware,
     ItemKind, Range, Reading, ReadingKind, Reported, Scalar, Snapshot, UnitState, Vector,
 };
-use atlas_types::LinkId;
+use atlas_types::{LemnosState, LinkId};
 use orion::Address;
 
 /// A pause that does not wait: the failure rule's delays are tested on the session side. It
@@ -416,7 +416,8 @@ async fn a_description_is_asked_once_and_again_only_when_its_generation_moves() 
 /// and its readings are shown, with the description "not available", and nothing is asked again
 /// until the app refreshes. The refresh asks every device again.
 #[tokio::test]
-async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_a_refresh() {
+async fn a_refused_describe_is_retried_by_the_view_on_its_backoff_and_shown_not_answering_yet_until_it_answers()
+ {
     let dir = scratch("refused");
     let node = start(&dir, None);
     node.refuse_describe(true);
@@ -426,78 +427,52 @@ async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_
         .expect("the node is on");
     connected(&handle).await;
     let hardware = Hardware::new(handle, link());
+    // The on devices are shown as not answering yet, with the board's words. The off device is an answer:
+    // it is shown as not available, once.
     let snapshot = read_until(
         &hardware,
-        "the devices shown with their readings",
+        "the on devices shown as not answering yet",
         |snapshot| {
             all_read(snapshot)
-                && snapshot
-                    .devices
-                    .iter()
-                    .all(|device| matches!(device.description, DescriptionState::NotAvailable(_)))
+                && device(snapshot, "lemnos.vane0").is_some_and(|device| {
+                    matches!(&device.description, DescriptionState::NotYet { reason, .. }
+                        if reason == "this board does not answer describe")
+                })
+                && device(snapshot, "lemnos.off0").is_some_and(|device| {
+                    matches!(device.description, DescriptionState::NotAvailable(_))
+                })
         },
     )
     .await;
-    let vane = device(&snapshot, "lemnos.vane0").expect("the vane is listed");
     assert_eq!(
-        vane.description,
-        DescriptionState::NotAvailable("this board does not answer describe".into())
+        item(device(&snapshot, "lemnos.vane0").unwrap(), "angle").unit_state,
+        UnitState::Unknown
     );
-    assert_eq!(vane.label, Reported::NotReported, "no labels stand in");
-    assert_eq!(vane.kind, Reported::NotReported);
-    assert_eq!(item(vane, "angle").unit_state, UnitState::Unknown);
     assert!(
-        item(vane, "angle").value.is_some(),
+        item(device(&snapshot, "lemnos.vane0").unwrap(), "angle")
+            .value
+            .is_some(),
         "the topics still show the reading"
     );
-    // The first ask and the generation topic's first sample race: a sample that arrives after the
-    // ask is a change, so one more ask follows it; a sample that arrives first needs none. Both
-    // orders are the rule, so the count is one or two, and what the test holds to is that nothing
-    // asks again on a timer. The sample is awaited first, so the count is taken after it.
+    // Nothing refreshes it: the view asks again by itself, on the backoff, while the board refuses.
+    let first = node.runs_started("lemnos.vane0.call");
     read_until(
         &hardware,
-        "the vane's first generation sample",
-        |snapshot| {
-            device(snapshot, "lemnos.vane0")
-                .is_some_and(|device| device.generation == Reported::Value(1))
-        },
+        "the view asking the vane again on its own",
+        |_| node.runs_started("lemnos.vane0.call") >= first + 2,
     )
     .await;
-    let mut asked = node.runs_started("lemnos.vane0.call");
-    assert!(
-        (1..=2).contains(&asked),
-        "asked once, and once more if its generation arrived after the ask: {asked}"
-    );
-    for _ in 0..5 {
-        let _ = hardware.snapshot().await;
-    }
-    asked = node.runs_started("lemnos.vane0.call");
-    for _ in 0..5 {
-        let _ = hardware.snapshot().await;
-    }
-    assert_eq!(
-        node.runs_started("lemnos.vane0.call"),
-        asked,
-        "no retry on a timer"
-    );
-
-    // The board answers again, and the app asks: every device is described.
+    // The board answers again: the next ask on the backoff describes the vane, with no refresh.
     node.refuse_describe(false);
-    hardware.refresh_descriptions();
     read_until(
         &hardware,
-        "the vane described after a refresh",
+        "the vane described once the board answers, without a refresh",
         |snapshot| {
             device(snapshot, "lemnos.vane0")
                 .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
         },
     )
     .await;
-    assert_eq!(
-        node.runs_started("lemnos.vane0.call"),
-        asked + 1,
-        "one ask on the refresh"
-    );
 }
 
 /// A session that fails in the middle of a refresh, and comes back on a new connection: the answers
@@ -515,13 +490,29 @@ async fn a_refresh_whose_session_fails_asks_again_only_the_devices_that_have_not
         .expect("the node is on");
     connected(&handle).await;
     let hardware = Hardware::new(handle, link());
+    // The on devices refuse their description: not yet, and asked again on the backoff. None is described.
     read_until(&hardware, "the devices shown, none described", |snapshot| {
         all_read(snapshot)
             && snapshot
                 .devices
                 .iter()
-                .all(|device| matches!(device.description, DescriptionState::NotAvailable(_)))
+                .all(|device| !matches!(device.description, DescriptionState::Described(_)))
     })
+    .await;
+    // The board answers: the view asks the on devices again on its backoff, and they are described. The
+    // counts below start only after that, so the retries of the refusal are not counted with the refresh.
+    node.refuse_describe(false);
+    read_until(
+        &hardware,
+        "every on device described once the board answers",
+        |snapshot| {
+            snapshot
+                .devices
+                .iter()
+                .filter(|device| device.name != "lemnos.off0")
+                .all(|device| matches!(device.description, DescriptionState::Described(_)))
+        },
+    )
     .await;
     // Every generation known: each device's sample has come, and with it the one ask it is owed.
     read_until(&hardware, "every generation known", |snapshot| {
@@ -775,4 +766,34 @@ async fn a_node_with_no_devices_is_read_without_devices() {
     .await;
     assert!(snapshot.devices.is_empty(), "a plain node lists no devices");
     assert_eq!(snapshot.connection, Connection::Live);
+}
+
+/// The Lemnos state the reader shows is not kept once it is not final: a probe refused while the board
+/// refuses describe is asked again on a later read, and the board's answer replaces it.
+#[tokio::test]
+async fn a_lemnos_state_that_is_not_answering_yet_is_asked_again_on_a_later_read() {
+    let dir = scratch("probe-again");
+    let node = start(&dir, None);
+    node.refuse_describe(true);
+    let sessions = Sessions::with_call_wait(Arc::new(NoPause), Duration::from_secs(5));
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+    let hardware = Hardware::new(handle, link());
+    read_until(&hardware, "Lemnos shown as not answering yet", |snapshot| {
+        snapshot
+            .identity
+            .as_ref()
+            .is_some_and(|identity| matches!(identity.lemnos, LemnosState::NotAnswering { .. }))
+    })
+    .await;
+    node.refuse_describe(false);
+    read_until(&hardware, "Lemnos answering on a later read", |snapshot| {
+        snapshot
+            .identity
+            .as_ref()
+            .is_some_and(|identity| identity.lemnos == LemnosState::Answering)
+    })
+    .await;
 }

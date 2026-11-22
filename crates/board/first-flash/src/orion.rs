@@ -60,7 +60,7 @@ fn action(name: String, job: bool) -> Action {
 fn sort(error: ActionError) -> CallError {
     let words = error.to_string();
     match error {
-        ActionError::NotConnected(_) => CallError::NotSent(words),
+        ActionError::NotConnected(_) | ActionError::NotYet(_) => CallError::NotSent(words),
         ActionError::StartInDoubt { .. }
         | ActionError::Lost { .. }
         | ActionError::NotAnswering(_)

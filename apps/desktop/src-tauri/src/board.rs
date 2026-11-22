@@ -24,6 +24,7 @@ use atlas_board_slots::{
 use atlas_jobs::{JobId, JobTiming};
 use atlas_session::{Handle, Presence};
 use atlas_slots::{Resolution, SlotList, Stage, TrialLast};
+use atlas_topics::description::DescriptionState;
 use atlas_topics::{Connection, Hardware, Reported, Scalar, Snapshot};
 use atlas_types::{CapabilityKind, CapabilitySet, DeviceKey, LinkId, Reading as Granted};
 use orion::Address;
@@ -279,6 +280,14 @@ fn hardware_json(snapshot: &Snapshot, history: &mut History, live: bool) -> Valu
                 "reason": reported(&device.state_reason),
                 "health": reported(&device.health),
                 "listed": device.listed,
+                // How long the board has not answered this device's description, as the time stands now
+                // (rebuilt on every read, so it counts up); null when it is answering or off.
+                "not_answering_for": match &device.description {
+                    DescriptionState::NotYet { since, .. } => {
+                        Value::String(atlas_session::words::duration(since.elapsed()))
+                    }
+                    _ => Value::Null,
+                },
                 "readings": readings,
             })
         })

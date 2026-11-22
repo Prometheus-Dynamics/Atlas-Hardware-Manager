@@ -17,12 +17,14 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atlas_board::{identity, lemnos};
+use atlas_session::Backoff;
 use atlas_session::lemnos as session_lemnos;
 use atlas_types::{Identity, LemnosState, LinkId};
 use orion::Orion;
+use orion::provider::ResourceState;
 use orion::topics::{FieldId, FieldType, Next, Status, Subscriber};
 use orion::types::NodeName;
 use orion_msg_topics::Declare;
@@ -70,8 +72,28 @@ struct Live {
     identity: Option<Identity>,
     topics: BTreeMap<String, Subscriber>,
     logs: Option<Subscriber>,
-    /// The descriptions asked for on this connection, by device resource name.
+    /// The descriptions asked for on this connection, by device resource name. Only a complete description
+    /// or a device that is off is kept here; a refusal of a device that is on is in `retry`.
     asked: BTreeMap<String, Asked>,
+    /// The devices whose description was refused while on, with the backoff for the next ask.
+    retry: BTreeMap<String, Retry>,
+    /// Whether the Lemnos probe's answer is final for this connection (see `lemnos::Probe`). Until it is,
+    /// the probe is asked again, on `probe_after`.
+    lemnos_settled: bool,
+    /// The backoff between probes while the answer is not final; restarted by a final answer.
+    probe_backoff: Backoff,
+    /// When the next probe may be asked, while the answer is not final.
+    probe_after: Option<Instant>,
+}
+
+/// A refused description of a device that is on: when it may be asked again, the backoff for that ask, the
+/// start of the stretch of refusals, and the board's words for the last one.
+#[derive(Clone, Debug)]
+struct Retry {
+    after: Instant,
+    backoff: Backoff,
+    since: Instant,
+    reason: String,
 }
 
 /// Reads the node at `address` on `orion`'s connection, which is the connection `session` names.
@@ -120,16 +142,30 @@ impl Live {
         refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<Result<Read, String>, orion::Error> {
         orion.pump(Duration::ZERO)?;
-        if self.identity.is_none() {
+        // The probe is asked until its answer is final: a transient one (the device is not answering yet)
+        // is not kept, and the next read asks again, on the backoff.
+        let due = self.probe_after.is_none_or(|after| Instant::now() >= after);
+        if self.identity.is_none() || (!self.lemnos_settled && due) {
             let node = orion.node()?;
-            let lemnos = if lemnos::published_by(&node) {
+            let probe = if lemnos::published_by(&node) {
                 lemnos::probe(orion, number)?
             } else {
-                LemnosState::Absent
+                lemnos::Probe {
+                    state: LemnosState::Absent,
+                    settled: true,
+                }
             };
-            match identity::identity(&node, &lemnos, link, address) {
+            match identity::identity(&node, &probe.state, link, address) {
                 Ok(identity) => self.identity = Some(identity),
                 Err(error) => return Ok(Err(format!("the node's identity: {error}"))),
+            }
+            self.lemnos_settled = probe.settled;
+            if probe.settled {
+                self.probe_backoff.reset();
+                self.probe_after = None;
+            } else {
+                let delay = self.probe_backoff.next_delay();
+                self.probe_after = Some(Instant::now() + delay);
             }
         }
         let Some(identity) = self.identity.clone() else {
@@ -163,6 +199,7 @@ impl Live {
                 number,
                 &resource.name,
                 generation_of(&topics),
+                resource.state == ResourceState::Pending,
                 refresh,
             )?;
             listed.insert(resource.name.clone());
@@ -174,6 +211,7 @@ impl Live {
             });
         }
         self.asked.retain(|name, _| listed.contains(name));
+        self.retry.retain(|name, _| listed.contains(name));
         session_lemnos::retain_described(number, &listed.iter().cloned().collect::<Vec<_>>());
         if let Some((cell, id)) = refresh
             && let Some(current) = lock(cell).as_mut().filter(|current| current.id == id)
@@ -207,8 +245,20 @@ impl Live {
         number: u64,
         device: &str,
         generation: Option<u64>,
+        off: bool,
         refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<DescriptionState, orion::Error> {
+        // A refused description of a device that is on is asked again by the reader, on its backoff (a
+        // refresh asks now). Until then it is shown as not answering yet.
+        if refresh.is_none()
+            && let Some(retry) = self.retry.get(device)
+            && Instant::now() < retry.after
+        {
+            return Ok(DescriptionState::NotYet {
+                since: retry.since,
+                reason: retry.reason.clone(),
+            });
+        }
         let mut held = match refresh {
             Some((cell, id)) => {
                 // The refresh's answer is also this connection's: once the refresh is over, the
@@ -249,12 +299,45 @@ impl Live {
             session_lemnos::forget_description(number, device);
         }
         let answer = fetch(orion, number, device)?;
-        let asked = asked_from(&answer, generation);
+        let asked = match &answer {
+            // A device that is off is not "not yet": its refusal is its answer, held as before.
+            Err(_) if off => asked_from(&answer, generation),
+            Err(reason) => {
+                let (since, mut backoff) = match self.retry.remove(device) {
+                    Some(retry) => (retry.since, retry.backoff),
+                    None => (Instant::now(), Backoff::default()),
+                };
+                let after = Instant::now() + backoff.next_delay();
+                self.retry.insert(
+                    device.to_owned(),
+                    Retry {
+                        after,
+                        backoff,
+                        since,
+                        reason: reason.to_string(),
+                    },
+                );
+                self.asked.remove(device);
+                Asked {
+                    state: DescriptionState::NotYet {
+                        since,
+                        reason: reason.to_string(),
+                    },
+                    generation: None,
+                }
+            }
+            Ok(_) => {
+                self.retry.remove(device);
+                asked_from(&answer, generation)
+            }
+        };
         if let Some((cell, id)) = refresh {
             answer_refresh(cell, id, device, &asked);
         }
         let state = asked.state.clone();
-        self.asked.insert(device.to_owned(), asked);
+        if !matches!(state, DescriptionState::NotYet { .. }) {
+            self.asked.insert(device.to_owned(), asked);
+        }
         Ok(state)
     }
 }

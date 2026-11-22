@@ -472,3 +472,54 @@ async fn with_the_lease_not_in_force_a_hold_sends_nothing_and_records_no_lapse()
         "no request of any kind reaches the node"
     );
 }
+
+#[tokio::test]
+async fn a_renewal_the_bridge_refused_is_not_counted_and_is_tried_again_on_the_backoff() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("renew-refused"), &with_lemnos(), None);
+    let sessions = sessions(lease(), &clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let _hold = handle.hold();
+    node.refuse_describe(true);
+    clock.advance(RENEW);
+    renewed(&handle, &node, 1, "the first renewal, refused").await;
+    // The refused renewal is not a renewal: the session tries again well before a full renew period.
+    node.refuse_describe(false);
+    clock.advance(Duration::from_secs(1));
+    renewed(&handle, &node, 2, "a second renewal on the backoff").await;
+}
+
+#[tokio::test]
+async fn a_bridge_request_the_node_did_not_answer_does_not_renew_the_lease() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("job-refused"), &with_lemnos(), None);
+    let sessions = sessions(lease(), &clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let _hold = handle.hold();
+    clock.advance(RENEW / 2);
+    // A bridge request that fails before the node answers it: it must not count as the renewal.
+    let _ = handle
+        .with_bridge(|_orion: &Orion| {
+            Err::<(), _>(orion::Error::Client(orion::ClientError::Denied(
+                "refused before the node answered",
+            )))
+        })
+        .await;
+    settled(&handle).await;
+    clock.advance(RENEW / 2);
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the renewal, due a full period after the last answered request",
+    )
+    .await;
+}

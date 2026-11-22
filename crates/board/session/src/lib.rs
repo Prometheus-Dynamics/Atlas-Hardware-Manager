@@ -60,6 +60,7 @@ pub mod long;
 pub mod monitor;
 mod seed;
 mod sessions;
+pub mod words;
 
 pub use backoff::Backoff;
 pub use failure::{Failure, FailureKind};

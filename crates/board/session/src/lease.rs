@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use orion::actions::ActionCall;
+use orion::actions::{ActionCall, Outcome};
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError, Orion};
 use tokio::sync::watch;
@@ -240,19 +240,20 @@ pub(crate) fn device_for_renewal(orion: &Orion) -> Result<Option<String>, OrionE
 /// It is one action run on the device's `.call describe`, which reads the description and changes
 /// nothing. The session calls it only while [`Lease::in_force`] is set.
 ///
-/// `Ok` also when the bridge answered in any way, including a refusal, or did not finish in
-/// [`RENEW_WAIT`] (the run is then cancelled, and the cancel is a request too).
+/// `Ok(true)` only when the bridge answered the renewal successfully. A refusal, a run that did not
+/// succeed, or one that did not finish in [`RENEW_WAIT`] (the run is then cancelled, and the cancel is a
+/// request too) is `Ok(false)`: the lease was not renewed, and the session tries again on a backoff.
 ///
 /// # Errors
 ///
 /// [`OrionError`] when the session is gone or the run could not be sent. The caller checks
 /// [`OrionError::is_lost`].
-pub(crate) fn renew(orion: &Orion, _node: &NodeName, device: &str) -> Result<(), OrionError> {
+pub(crate) fn renew(orion: &Orion, _node: &NodeName, device: &str) -> Result<bool, OrionError> {
     // The renewal is the bridge's `describe` with no other argument: the device's description as
     // text, a read. The session calls this only while the lease is in force (see `LEASE_IN_FORCE`).
     // The call is built in one place (`crate::lemnos`): the device's resource, the bridge's `describe`.
     let Ok(call) = crate::lemnos::describe_call(device) else {
-        return Ok(());
+        return Ok(false);
     };
     let mut run = orion.run(&ActionCall {
         name: &call.name,
@@ -262,10 +263,11 @@ pub(crate) fn renew(orion: &Orion, _node: &NodeName, device: &str) -> Result<(),
         detached: false,
     })?;
     match run.finish(RENEW_WAIT) {
-        Ok(_) | Err(ClientError::Refused { .. }) => Ok(()),
+        Ok(finished) => Ok(matches!(finished.outcome, Outcome::Succeeded)),
+        Err(ClientError::Refused { .. }) => Ok(false),
         Err(ClientError::Io(error)) if error.kind() == std::io::ErrorKind::TimedOut => {
             let _ = run.cancel();
-            Ok(())
+            Ok(false)
         }
         Err(error) => Err(OrionError::Client(error)),
     }

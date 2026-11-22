@@ -23,6 +23,8 @@ export type BoardDevice = {
   reason: string | null;
   health: string | null;
   listed: boolean;
+  /** How long the board has not answered this device's description, in plain words ("12 s"); null when it answers. */
+  not_answering_for: string | null;
   readings: BoardReading[];
 };
 
