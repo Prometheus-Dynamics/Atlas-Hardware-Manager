@@ -118,6 +118,8 @@ pub struct Parts {
     pub roms: Vec<Arc<dyn crate::flash::BootRom>>,
     /// What writes a removable disk. `None` leaves the choice to the core (the helper).
     pub disk_writer: Option<Arc<dyn crate::flash::DiskWriter>>,
+    /// The network the app's own updates are read through. `None` is the real one.
+    pub fetch: Option<Arc<dyn atlas_release::Fetch>>,
 }
 
 impl std::fmt::Debug for Parts {
@@ -162,6 +164,7 @@ struct Inner {
     sessions: Option<Arc<atlas_session::Sessions>>,
     boards: crate::board::Boards,
     flashes: crate::flash::Flashes,
+    app_update: crate::update::Updates,
     trust: crate::trust::Trust,
     /// What nothing-opened-yet falls back to, and what a test reads.
     remembered: Arc<crate::open::Remembered>,
@@ -277,6 +280,7 @@ impl Core {
             sessions,
             roms,
             disk_writer,
+            fetch,
         } = parts;
         // A real disk is written by the privileged helper, when it is beside the app.
         let disk_writer = disk_writer.or_else(|| {
@@ -290,6 +294,9 @@ impl Core {
             dirs.as_ref().map(|dirs| dirs.data.as_path()),
         );
         job_kinds.push(flashes.kind());
+        let app_update =
+            crate::update::Updates::new(fetch, dirs.as_ref().map(|dirs| dirs.data.as_path()));
+        job_kinds.push(app_update.kind());
 
         let events = Events::new(1024);
         let holds = DeviceHolds::new();
@@ -326,6 +333,7 @@ impl Core {
                 sessions,
                 boards,
                 flashes,
+                app_update,
                 trust,
                 remembered: Arc::new(crate::open::Remembered::default()),
                 opener: Mutex::new(None),
@@ -344,6 +352,7 @@ impl Core {
         tokio::spawn(core.clone().follow(receiver));
         tokio::spawn(core.clone().save_when_wanted());
         tokio::spawn(core.flashes().clone().follow(core.clone()));
+        tokio::spawn(core.app_update().clone().follow(core.clone()));
         let control = start_scan(registry, links, events, scan, holds);
         *lock(&core.inner.scan) = Some(control);
         #[cfg(feature = "sim")]
@@ -351,6 +360,12 @@ impl Core {
             world.settle(&core);
         }
         core
+    }
+
+    /// The app's own update.
+    #[must_use]
+    pub fn app_update(&self) -> &crate::update::Updates {
+        &self.inner.app_update
     }
 
     /// The flash screens' state.

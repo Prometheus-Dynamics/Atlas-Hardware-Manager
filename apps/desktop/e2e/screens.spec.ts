@@ -71,6 +71,61 @@ export const SCREENS: Screen[] = [
       await expect(page.locator('[data-panel="image"]')).toHaveAttribute("data-image", "ready");
       await page.evaluate(() => (location.hash = "#/settings"));
       await expect(page.locator('[data-panel="checks"] .tr')).toHaveCount(1);
+      // A release feed that has nothing newer, checked: the mockup's "checked just now".
+      await bridge.call("sim.feed", { state: "nothing", kind: "deb" });
+      await page.getByRole("button", { name: "Check for updates" }).click();
+      await expect(page.locator("[data-update]")).toHaveText("up to date");
+    },
+  },
+  {
+    name: "settings-no-source",
+    hash: "#/settings",
+    ready: async (page) => {
+      await settingsOpen(page);
+      await expect(page.locator("[data-update-controls]")).toHaveText("no update source configured");
+    },
+  },
+  {
+    name: "settings-update-downloading",
+    hash: "#/settings",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      await bridge.call("sim.feed", { state: "newer", kind: "deb", hold: true });
+      await page.getByRole("button", { name: "Check for updates" }).click();
+      await page.getByRole("button", { name: "Download" }).click();
+      await expect(page.locator("[data-update] .bar")).toBeVisible();
+      await expect(page.locator("[data-update]")).toContainText("25%");
+    },
+  },
+  {
+    name: "settings-update-ready",
+    hash: "#/settings",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      await bridge.call("sim.feed", { state: "newer", kind: "deb" });
+      await page.getByRole("button", { name: "Check for updates" }).click();
+      await page.getByRole("button", { name: "Download" }).click();
+      await expect(page.getByRole("button", { name: "Open installer" })).toBeVisible();
+    },
+  },
+  {
+    name: "settings-update-refused",
+    hash: "#/settings",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      await bridge.call("sim.feed", { state: "stranger", kind: "deb" });
+      await page.getByRole("button", { name: "Check for updates" }).click();
+      await expect(page.locator("[data-update]")).toContainText("no valid signature");
+    },
+  },
+  {
+    name: "settings-update-retrying",
+    hash: "#/settings",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      await bridge.call("sim.feed", { state: "down", kind: "deb" });
+      await page.getByRole("button", { name: "Check for updates" }).click();
+      await expect(page.getByRole("button", { name: "Stop" })).toBeVisible();
     },
   },
   {

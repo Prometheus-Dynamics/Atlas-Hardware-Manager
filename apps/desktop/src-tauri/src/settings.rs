@@ -24,6 +24,11 @@ pub struct Settings {
     pub channel: String,
     /// `system`, `light` or `dark`.
     pub theme: String,
+    /// The address of the signed release feed Atlas updates itself from. Empty: the one the
+    /// build was given, or none. There is no control for it on the Settings page; it is set in
+    /// this file.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub update_feed: String,
 }
 
 impl Default for Settings {
@@ -33,6 +38,7 @@ impl Default for Settings {
             security: false,
             channel: "dev".into(),
             theme: "system".into(),
+            update_feed: String::new(),
         }
     }
 }
@@ -60,6 +66,9 @@ impl Settings {
         }
         if !["dev", "beta", "stable"].contains(&self.channel.as_str()) {
             self.channel = defaults.channel;
+        }
+        if !(self.update_feed.starts_with("https://") || self.update_feed.starts_with("http://")) {
+            self.update_feed = defaults.update_feed;
         }
         self
     }
@@ -122,11 +131,13 @@ mod tests {
             theme: "sepia".into(),
             channel: "nightly".into(),
             security: true,
+            update_feed: "ftp://example.invalid/feed".into(),
         }
         .checked();
         assert_eq!(odd.keep_last, 3);
         assert_eq!(odd.theme, "system");
         assert_eq!(odd.channel, "dev");
+        assert_eq!(odd.update_feed, "");
         assert!(odd.security);
     }
 }

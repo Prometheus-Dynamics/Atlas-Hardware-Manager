@@ -507,3 +507,135 @@ async fn a_card_is_written_and_read_back_through_a_removal_and_only_the_simulate
     assert_eq!(written, source, "the card holds the image, byte for byte");
     assert!(disk["drops"].as_u64() >= Some(1), "{disk}");
 }
+
+fn update(core: &Core) -> Value {
+    core.topics().get("update").cloned().unwrap_or_default()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn with_no_update_source_nothing_is_asked_and_a_signed_newer_release_is_found_downloaded_and_put_in_place()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    until(&core, |core| update(core)["source"] == false).await;
+    assert_eq!(update(&core)["words"], "no update source configured");
+    let refused = atlas_app::call::call(&core, "update.check", Value::Null)
+        .await
+        .unwrap_err();
+    assert!(refused.0.contains("No update source"), "{refused}");
+
+    // A feed with nothing newer.
+    ask(
+        &core,
+        "sim.feed",
+        json!({ "state": "nothing", "kind": "app-image" }),
+    )
+    .await;
+    ask(&core, "update.check", Value::Null).await;
+    until(&core, |core| update(core)["words"] == "up to date").await;
+    assert!(update(&core)["checked_ms"].is_u64());
+
+    // A newer release, signed by the key the simulated world trusts.
+    ask(&core, "sim.feed", json!({ "state": "newer", "hold": true })).await;
+    ask(&core, "update.check", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "available").await;
+    assert_eq!(update(&core)["version"], "9999.1.0");
+    assert_eq!(update(&core)["size"], 384 * 1024);
+
+    // The download is a job; held half way, it shows what has arrived, and nothing is ready.
+    ask(&core, "update.download", Value::Null).await;
+    until(&core, |core| {
+        update(core)["downloaded"].as_u64().unwrap_or(0) > 0
+    })
+    .await;
+    assert_eq!(update(&core)["phase"], "downloading");
+    let jobs = core.topics()["jobs"].to_string();
+    assert!(jobs.contains("app-update"), "{jobs}");
+    // Cancelled and started again: it goes on from what it has.
+    ask(&core, "update.cancel", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "available").await;
+    ask(&core, "sim.feed", json!({ "hold": false })).await;
+    ask(&core, "update.download", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "ready").await;
+    assert_eq!(update(&core)["apply"], "Replace this AppImage");
+    let installer = update(&core)["installer"].as_str().unwrap().to_owned();
+    assert_eq!(std::fs::metadata(&installer).unwrap().len(), 384 * 1024);
+
+    // Applied: the AppImage's own file is now the installer's bytes.
+    let app_image = dir.path().join("data/sim-files/Atlas.AppImage");
+    assert_eq!(std::fs::read(&app_image).unwrap(), b"the old program");
+    ask(&core, "update.apply", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "applied").await;
+    assert_eq!(
+        std::fs::read(&app_image).unwrap(),
+        std::fs::read(&installer).unwrap()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_release_no_trusted_key_signed_is_refused_and_a_silent_feed_is_asked_again_until_stopped()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    ask(
+        &core,
+        "sim.feed",
+        json!({ "state": "stranger", "kind": "deb" }),
+    )
+    .await;
+    ask(&core, "update.check", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "refused").await;
+    let words = update(&core)["words"].as_str().unwrap().to_owned();
+    assert!(
+        words.contains("no valid signature from a trusted key"),
+        "{words}"
+    );
+    assert_eq!(update(&core)["version"], Value::Null);
+    // Security off changes nothing about it: there is still no offer and nothing to download.
+    assert!(!core.settings().security);
+    assert!(
+        atlas_app::call::call(&core, "update.download", Value::Null)
+            .await
+            .is_err()
+    );
+    core.log().flush();
+    assert!(core.log().read_all().unwrap().contains("update.check"));
+
+    // A feed that does not answer is asked again, and again, until the manual off.
+    ask(&core, "sim.feed", json!({ "state": "down" })).await;
+    ask(&core, "update.check", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "retrying").await;
+    until(&core, |core| {
+        update(core)["words"]
+            .as_str()
+            .unwrap_or("")
+            .contains("(try 2)")
+    })
+    .await;
+    assert!(
+        update(&core)["words"]
+            .as_str()
+            .unwrap()
+            .contains("connection refused")
+    );
+    ask(&core, "update.stop", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "idle").await;
+    // It answers again: the next check, asked by hand, finds the release.
+    ask(&core, "sim.feed", json!({ "state": "newer" })).await;
+    ask(&core, "update.check", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "available").await;
+    // A system package is handed to the system's installer, not run by Atlas.
+    ask(&core, "update.download", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "ready").await;
+    assert_eq!(update(&core)["apply"], "Open installer");
+    ask(&core, "update.apply", Value::Null).await;
+    until(&core, |core| update(core)["phase"] == "applied").await;
+    let opened = core.opened();
+    assert!(
+        opened
+            .last()
+            .unwrap()
+            .ends_with("atlas-hardware-manager_9999.1.0.deb"),
+        "{opened:?}"
+    );
+}

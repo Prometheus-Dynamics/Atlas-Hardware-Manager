@@ -30,6 +30,8 @@ sim = [
     "dep:atlas-sim-node",
     "dep:atlas-driver-rockchip",
     "dep:tiny_http",
+    "dep:base64",
+    "dep:sha2",
 ]
 # The UI is embedded in the binary instead of read from the dev server. `cargo tauri build` sets
 # it; a plain `cargo build` needs it named to get a window that runs on its own.
@@ -73,6 +75,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tiny_http = { version = "0.12", optional = true }
+# The simulated release feed: a minisign-form key for the trusted list, and its installer's hash.
+base64 = { version = "0.22", optional = true }
+sha2 = { version = "0.11", optional = true }
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]

@@ -32,3 +32,21 @@ export function shortFingerprint(key: TrustedKey): string {
 }
 
 export const purposeWord = (key: TrustedKey) => (key.purpose === "dev" ? "dev and example builds" : "production releases");
+
+/** The app's own update (apps/desktop/src-tauri/src/update.rs). */
+export type Update = {
+  /** Whether a release feed is configured at all. */
+  source: boolean;
+  kind: "deb" | "rpm" | "app-image" | "nsis" | "msi" | "dmg" | "source";
+  phase: "idle" | "checking" | "retrying" | "refused" | "available" | "downloading" | "failed" | "ready" | "applied";
+  words: string;
+  tone: "faint" | "ok" | "acc" | "err";
+  checked_ms: number | null;
+  version: string | null;
+  size: number | null;
+  downloaded: number;
+  retry_at_ms: number | null;
+  /** What the apply button says, when there is one. */
+  apply: string | null;
+  installer: string | null;
+};

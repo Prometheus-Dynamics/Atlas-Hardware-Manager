@@ -7,8 +7,8 @@
   import { call } from "../api/client";
   import type { Settings } from "../api/types";
   import { app, breadcrumb, inventory, logUiError, settings, topic } from "../stores/app.svelte";
-  import { eventTime, size } from "../ui/format";
-  import { purposeWord, shortFingerprint, type Bundle, type SupportInfo, type Trust, type TrustedKey } from "./types";
+  import { eventTime, size, when } from "../ui/format";
+  import { purposeWord, shortFingerprint, type Bundle, type SupportInfo, type Trust, type TrustedKey, type Update } from "./types";
 
   const KEY_COLUMNS = "grid-template-columns:minmax(0,1fr) 150px 112px";
   const CHECK_COLUMNS = "grid-template-columns:70px 96px minmax(0,1fr) minmax(0,1fr)";
@@ -18,8 +18,30 @@
 
   const current = $derived(settings());
   const trust = $derived(topic<Trust>("trust") ?? { keys: [], problems: [], checks: [] });
-  /** Self-update's state, once the build has it (F9 publishes it). */
-  const update = $derived(topic<{ words: string }>("update"));
+  /** The app's own update. */
+  const update = $derived(topic<Update>("update"));
+  /** "checked just now", as the mockup says it, then the time. */
+  const checked = $derived(
+    !update?.source
+      ? ""
+      : update.checked_ms === null
+        ? "not checked yet"
+        : app.now - update.checked_ms < 60_000
+          ? "checked just now"
+          : `checked ${when(update.checked_ms, app.now)}`,
+  );
+  const TONES = { faint: "var(--fg-faint)", ok: "var(--ok-fg)", acc: "var(--accent-text)", err: "var(--err-fg)" };
+  const part = $derived(update?.size ? Math.min(100, Math.round((update.downloaded / update.size) * 100)) : 0);
+  let updateSaid = $state("");
+  async function ask(name: string) {
+    updateSaid = "";
+    breadcrumb(name);
+    try {
+      await call(name);
+    } catch (error) {
+      updateSaid = words(error);
+    }
+  }
   const robots = $derived(inventory().robots);
 
   /** What the last thing asked for answered, by the place it is shown. */
@@ -260,7 +282,28 @@
       <div class="muted" style="font-size:11px">Each board can set its own number. Pinned, running and default slots are never removed.</div>
       <div class="swrap" style="justify-content:space-between;border-top:1px solid var(--hairline);padding-top:8px">
         <span class="ell"><b>Atlas</b> <span class="faint mono">{app.version}</span></span>
-        <span class="faint" style="font-size:11px;white-space:nowrap" data-update>{update?.words ?? "updates are not checked in this build"}</span>
+        <span class="acts" data-update-controls>
+          {#if !update?.source}
+            <span class="faint" style="font-size:11px;white-space:nowrap">no update source configured</span>
+          {:else if update.phase === "checking"}
+            <span class="chip info"><span class="dot spin"></span>Checking</span>
+          {:else if update.phase === "retrying"}
+            <span class="chip err"><span class="dot err"></span>Retrying</span>
+            <button class="btn sm" onclick={() => ask("update.stop")}><Icon name="stop" />Stop</button>
+          {:else if update.phase === "available"}
+            <button class="btn sm" onclick={() => ask("update.check")}><Icon name="retry" />Check for updates</button>
+            <button class="btn sm pri" onclick={() => ask("update.download")}><Icon name="download" />Download</button>
+          {:else if update.phase === "downloading"}
+            <button class="btn sm" onclick={() => ask("update.cancel")}>Cancel</button>
+          {:else if update.phase === "ready" && update.apply}
+            <button class="btn sm pri" onclick={() => ask("update.apply")}>{update.apply}</button>
+          {:else}
+            {#if update.phase === "failed" && update.version}
+              <button class="btn sm" onclick={() => ask("update.download")}><Icon name="download" />Download again</button>
+            {/if}
+            <button class="btn sm" onclick={() => ask("update.check")}><Icon name="retry" />Check for updates</button>
+          {/if}
+        </span>
       </div>
       <div class="swrap">
         <span class="faint">Channel</span>
@@ -271,6 +314,19 @@
         <select class="sel" aria-label="Theme" value={current?.theme ?? "system"} onchange={(e) => set({ theme: e.currentTarget.value as Settings["theme"] })}>
           {#each THEMES as theme}<option>{theme}</option>{/each}
         </select>
+        <span class="faint ell" style="font-size:11px" data-update-checked>{checked}</span>
+      </div>
+      <!-- One line, always there, so nothing below it moves when an update comes and goes. -->
+      <div class="swrap" style="height:17px;font-size:11px" data-update>
+        {#if updateSaid}
+          <span class="ell" style="color:var(--err-fg)">{updateSaid}</span>
+        {:else if update?.source && update.phase === "downloading"}
+          <span style="white-space:nowrap;color:var(--accent-text)">{update.words}</span>
+          <div class="bar" style="flex:1"><i style="width:{part}%"></i></div>
+          <span class="faint num" style="white-space:nowrap">{part}% · {size(update.downloaded)} of {size(update.size ?? 0)}</span>
+        {:else if update?.source && update.words}
+          <span class="ell" style="color:{TONES[update.tone]}" title={update.words}>{update.words}{update.phase === "available" && update.size ? ` · ${size(update.size)}` : ""}</span>
+        {/if}
       </div>
       <div class="more-s">
         <div class="subhead" style="margin:0"><h2 class="up" style="margin:0;color:var(--fg-muted)">What lands on boards</h2></div>

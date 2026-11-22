@@ -41,6 +41,8 @@ use atlas_usb::{DeviceSummary, OpenOptions, Timeouts, UsbBus, UsbError, UsbId, U
 use serde::Deserialize;
 use serde_json::Value;
 
+pub mod feed;
+
 use crate::call::{CallError, CallResult, args};
 use crate::core::{Core, Parts};
 use crate::drivers::TeamList;
@@ -452,6 +454,7 @@ struct Inner {
     /// The key of the simulated node's board, as the board driver reports it.
     node_id: String,
     picks: Arc<Picks>,
+    feed: Arc<feed::SimFeed>,
 }
 
 /// The files the simulated person will choose, in order: what stands in for the file dialog
@@ -639,6 +642,8 @@ impl World {
         )));
         parts.sessions = Some(sessions);
 
+        let sim_feed = Arc::new(feed::SimFeed::default());
+        parts.fetch = Some(sim_feed.clone());
         let world = Self {
             inner: Arc::new(Inner {
                 scene,
@@ -649,6 +654,7 @@ impl World {
                 node,
                 node_id,
                 picks: Arc::new(Picks::default()),
+                feed: Arc::clone(&sim_feed),
             }),
         };
         (world, problems)
@@ -809,6 +815,12 @@ impl World {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push_back(path);
+    }
+
+    /// The simulated release feed.
+    #[must_use]
+    pub fn feed(&self) -> &Arc<feed::SimFeed> {
+        &self.inner.feed
     }
 
     /// What stands in for the file dialog.
@@ -1153,6 +1165,71 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 .map_err(|error| CallError(error.to_string()))?;
             world.queue_pick(path.clone());
             Ok(Value::String(path.display().to_string()))
+        }
+        // Sets what the simulated release feed holds (`nothing`, `newer`, `stranger`, `down`),
+        // or takes the feed away (`off`); how this copy says it was installed; and whether an
+        // installer download is held after its first pieces. The feed's key joins this
+        // world's own trusted list the first time a feed is set.
+        "sim.feed" => {
+            #[derive(Deserialize)]
+            struct Feed {
+                #[serde(default)]
+                state: Option<String>,
+                #[serde(default)]
+                hold: Option<bool>,
+                #[serde(default)]
+                kind: Option<String>,
+            }
+            let Feed { state, hold, kind } = args(name, arguments)?;
+            let dir = core
+                .dirs()
+                .map(|dirs| dirs.data.join("sim-files"))
+                .ok_or_else(|| CallError::from("the app has no data directory"))?;
+            std::fs::create_dir_all(&dir).map_err(|error| CallError(error.to_string()))?;
+            if let Some(hold) = hold {
+                world.feed().set_hold(hold);
+            }
+            if let Some(kind) = kind {
+                let app_image = dir.join("Atlas.AppImage");
+                let install = match kind.as_str() {
+                    "deb" => (atlas_release::InstallKind::Deb, None),
+                    "rpm" => (atlas_release::InstallKind::Rpm, None),
+                    "source" => (atlas_release::InstallKind::Source, None),
+                    "app-image" => {
+                        std::fs::write(&app_image, b"the old program")
+                            .map_err(|error| CallError(error.to_string()))?;
+                        (atlas_release::InstallKind::AppImage, Some(app_image))
+                    }
+                    other => return Err(CallError(format!("no install kind `{other}`"))),
+                };
+                core.app_update().set_install(crate::update::Install {
+                    kind: install.0,
+                    app_image: install.1,
+                });
+            }
+            if let Some(state) = state {
+                let holds = match state.as_str() {
+                    "off" => None,
+                    "nothing" => Some(feed::Holds::NothingNewer),
+                    "newer" => Some(feed::Holds::Newer),
+                    "stranger" => Some(feed::Holds::NewerByAStranger),
+                    "down" => Some(feed::Holds::Down),
+                    other => return Err(CallError(format!("no feed state `{other}`"))),
+                };
+                if let Some(holds) = holds {
+                    world.feed().set(holds);
+                    let key = dir.join("sim-release-key.json");
+                    std::fs::write(&key, feed::SimFeed::key_file())
+                        .map_err(|error| CallError(error.to_string()))?;
+                    // Already trusted from an earlier call: nothing to add.
+                    if core.trust().add_file(&key).is_ok() {
+                        crate::trust::publish(core);
+                    }
+                }
+                core.app_update()
+                    .set_feed(holds.map(|_| feed::FEED_URL.to_owned()));
+            }
+            Ok(Value::Null)
         }
         // What the app was asked to open outside itself (a folder, a page), where there is no
         // window to open it.

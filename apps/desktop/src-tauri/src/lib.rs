@@ -29,6 +29,7 @@ pub mod settings;
 pub mod sim;
 pub mod support;
 pub mod trust;
+pub mod update;
 pub mod view;
 pub mod window;
 
