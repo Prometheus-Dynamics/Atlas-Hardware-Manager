@@ -112,7 +112,7 @@ fi
 if [[ $devices -eq 1 ]]; then
   devices_lane+=("scripts/check-devices.sh")
   # The gate's small data checks over devices/ (each about a second).
-  for py in check-lemnos-gadget check-usb-ifname check-lemnos0-address check-console-gate check-orion-link check-board-ids; do
+  for py in check-lemnos-gadget check-usb-ifname check-lemnos0-address check-wired-ethernet check-console-gate check-orion-link check-board-ids; do
     [[ -f scripts/$py.py ]] && devices_lane+=("python3 scripts/$py.py")
   done
 fi

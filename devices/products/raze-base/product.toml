@@ -37,6 +37,7 @@ lemnos-slot-init = "../../components/lemnos-slot-init/component.toml"
 raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
 raze-base-files = "../../components/raze-base-files/component.toml"
 lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
+wired-ethernet = "../../components/wired-ethernet/component.toml"
 # rpi-dtmerge: a host tool for boot-partition --verify (M38); not built until a run names it (its component.toml).
 rpi-dtmerge = "../../components/rpi-dtmerge/component.toml"
 orion = "../../components/orion/component.toml"
@@ -50,7 +51,7 @@ bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
+components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "wired-ethernet", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"

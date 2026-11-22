@@ -154,6 +154,12 @@ if [ -f scripts/check-lemnos0-address.py ]; then
   step "lemnos0 address (serial-hash-v1)" python3 scripts/check-lemnos0-address.py
 fi
 
+# The Raze's wired Ethernet: one network file by type, the USB gadget's link matched by none.
+if [ -f scripts/check-wired-ethernet.py ]; then
+  step "wired ethernet (not the gadget's link)" python3 scripts/check-wired-ethernet.py
+  step "wired ethernet self-test" python3 scripts/check-wired-ethernet.py --self-test
+fi
+
 # The Raze's console follows the board's security switch (LOCK: Lemnos S2): the getty's ExecCondition reads the view.
 if [ -f scripts/check-console-gate.py ]; then
   step "console follows the security view" python3 scripts/check-console-gate.py
