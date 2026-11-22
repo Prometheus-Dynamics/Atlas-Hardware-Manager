@@ -21,9 +21,6 @@ pub enum ActionError {
         "this board lists no Lemnos devices, so nothing was sent: Lemnos is up but has published none"
     )]
     NoDevices,
-    /// The board's list is there but is not a list Atlas reads.
-    #[error("the board's action list cannot be read: {0}")]
-    BadCatalog(String),
     /// The arguments do not fit the board's description. Nothing was sent.
     #[error("{0}")]
     BadArguments(String),

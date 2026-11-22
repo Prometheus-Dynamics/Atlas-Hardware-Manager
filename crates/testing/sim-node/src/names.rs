@@ -1,14 +1,12 @@
-//! The names the simulated node answers to: the Lemnos slot and reboot surface (I5), the
-//! board's other actions, and its topics. This is the one table to change.
+//! The names the simulated node answers to: the Lemnos slot and reboot surface (I5) and its topics.
+//! This is the one table to change.
 //!
-//! I5 names its methods (`system.slots/1`, `system.reboot/1`). Orion needs one action name
-//! per method, so the sim names each `system.<contract>.<method>` with `-` for `_`. How
-//! Orion carries Lemnos methods to clients is OPEN (see `testing/sim-node/README.md`); a
-//! change there is an edit to the constants below.
+//! I5 names its methods (`system.slots/1`, `system.reboot/1`). The node offers them as a board does,
+//! through each device's `lemnos.<device>.call` (`crate::bridge`); the `system.<contract>.<method>`
+//! names below (with `-` for `_`) are what the tests and the node's own model call each method.
 //!
-//! The board's other actions (`locate`, `self-test`, `set-clock`, `support-bundle`,
-//! `data.*`, `fs.*`, `status`) are not in I5. They stay here as provisional names for the
-//! C-series briefs that name them.
+//! The node offers nothing else: no action of its own on the node target. A board with Lemnos at
+//! a6251ecf publishes none, so a run of any other name is answered by Orion with "not found".
 
 /// One method of a Lemnos contract and the name the node answers to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,28 +91,6 @@ pub const SURFACE: &[Method] = &[
     },
 ];
 
-/// The board's own actions the node registers on its node target, the one list the node registers
-/// (`actions.list` and `vendor.dry-run` included). None of them is a Lemnos method, and Lemnos at
-/// a6251ecf does not publish them. The Lemnos methods are NOT here: they are the bridge's device
-/// actions (`crate::bridge`).
-// LOCK: no publisher at Lemnos a6251ecf; removed from the default sim in the next commit. The design
-// profile keeps them until then.
-pub const ACTIONS: &[&str] = &[
-    STATUS,
-    LOCATE,
-    SELF_TEST,
-    SET_CLOCK,
-    SUPPORT_BUNDLE,
-    DATA_BACKUP,
-    DATA_RESTORE,
-    FS_LIST,
-    FS_READ,
-    FS_WRITE,
-    FS_REMOVE,
-    crate::actions::CATALOG,
-    crate::actions::DRY_RUN,
-];
-
 /// Topics the simulated node publishes.
 pub const TOPICS: &[&str] = &[READINGS, HARDWARE, LOGS];
 
@@ -196,24 +172,6 @@ pub fn valid_name(name: &str) -> bool {
 // system.reboot/1.
 pub const REBOOT: &str = "system.reboot.reboot";
 
-// The board's own actions, outside I5 (provisional). Their words are the same: spaces between
-// them, and bytes as hex.
-/// The boot and slot state as text.
-pub const STATUS: &str = "status";
-pub const LOCATE: &str = "locate";
-pub const SELF_TEST: &str = "self-test";
-pub const SET_CLOCK: &str = "set-clock";
-/// A small text report of the board's state, returned as output.
-pub const SUPPORT_BUNDLE: &str = "support-bundle";
-// The data partition. `data.backup` answers the partition as hex; `data.restore` takes that hex;
-// `fs.*` take a path as a word.
-pub const DATA_BACKUP: &str = "data.backup";
-pub const DATA_RESTORE: &str = "data.restore";
-pub const FS_LIST: &str = "fs.list";
-pub const FS_READ: &str = "fs.read";
-pub const FS_WRITE: &str = "fs.write";
-pub const FS_REMOVE: &str = "fs.remove";
-
 /// Live readings: temperature (C), input voltage (V), fan speed (rpm).
 pub const READINGS: &str = "readings";
 /// The hardware description, once at start.
@@ -228,7 +186,7 @@ mod tests {
     #[test]
     fn names_are_unique() {
         let mut seen = std::collections::BTreeSet::new();
-        for name in ACTIONS.iter().chain(TOPICS).chain(HELLO) {
+        for name in TOPICS.iter().chain(HELLO) {
             assert!(seen.insert(*name), "{name} is listed twice");
             assert!(!name.is_empty() && !name.contains(' '));
         }

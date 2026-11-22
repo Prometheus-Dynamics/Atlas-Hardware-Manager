@@ -44,10 +44,20 @@
   );
   const list = $derived(board?.slots?.state === "ok" ? board.slots.list : undefined);
   const runningSlot = $derived(list?.slots.find((slot) => slot.running));
-  const offered = $derived(online ? (board?.actions ?? []) : []);
-  // The two actions the top bar has a place for, when the board lists them as short actions.
-  const locate = $derived(offered.find((a) => a.name === "locate" && a.direct));
-  const reboot = $derived(offered.find((a) => a.name === "system.reboot.reboot" && a.direct));
+  // What the board offers to run: the methods its devices describe. `undefined` until it is read.
+  const offered = $derived(online && board?.actions ? board.actions : undefined);
+  // The top bar has a place for two controls. Each one stays in its place, and is off when the
+  // board does not offer what it runs.
+  // Reboot is the restart a device of the board serves (Lemnos `system.reboot/1`).
+  const reboot = $derived(offered?.find((a) => a.name === "system.reboot.reboot" && a.direct));
+  // Locate: no board offers one yet (Lemnos has no contract for it), so there is nothing to run.
+  const locate = undefined as { name: string } | undefined;
+  /** Why a control in the top bar is off, in words; empty while the board is not read. */
+  const missing = $derived.by(() => {
+    if (!offered) return online && board?.actions_error ? "Atlas could not read what this board offers." : "";
+    const names = [locate ? "" : "locate", reboot ? "" : "reboot"].filter(Boolean);
+    return names.length > 0 ? `This board doesn't offer ${names.join(" or ")}.` : "";
+  });
   /** What the last call said, shown for a few seconds. A refusal carries the board's own words. */
   const said = $derived(board?.said && app.now - board.said.at_ms < 8000 ? board.said : undefined);
 
@@ -206,12 +216,9 @@
       {/if}
     {/snippet}
     {#snippet actions()}
-      {#if locate}
-        <button class="btn" title={locate.description ?? ""} onclick={() => run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
-      {/if}
-      {#if reboot}
-        <button class="btn" title={reboot.description ?? ""} onclick={() => run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
-      {/if}
+      {#if missing}<span class="faint" data-not-offered>{missing}</span>{/if}
+      <button class="btn" class:dis={!locate} disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
+      <button class="btn" class:dis={!reboot} disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
     {/snippet}
 
     <section class="panel" style="grid-column:1/-1" data-panel="readings">
@@ -444,9 +451,8 @@
           </div>
         {:else if tab === "files"}
           <div class="pane pane-files" style="display:flex">
-            <div class="empty-box" data-not-built="files">
-              <div>Files, backup and restore are not in this build.</div>
-              <div class="faint" style="max-width:420px;font-size:11px">Atlas has no library yet that reads a board's data partition through Orion. Nothing here is shown until it does.</div>
+            <div class="empty-box" data-not-offered="files">
+              <div>This board doesn't offer files yet.</div>
             </div>
           </div>
         {:else}

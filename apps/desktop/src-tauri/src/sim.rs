@@ -994,6 +994,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 /// Answers how many runs of this action the node took.
                 runs: Option<String>,
                 lemnos: Option<bool>,
+                /// Takes this device (its id, for example `reboot`) off the board for good, as on a
+                /// board whose file has no such device.
+                remove_device: Option<String>,
             }
             let hook: Hook = args(name, arguments)?;
             tokio::task::spawn_blocking(move || {
@@ -1009,6 +1012,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     }
                     if let Some(line) = &hook.log {
                         node.model().log(line);
+                    }
+                    if let Some(device) = &hook.remove_device {
+                        node.remove_device(device);
                     }
                     match hook.lemnos {
                         Some(true) => node.resume_lemnos(),

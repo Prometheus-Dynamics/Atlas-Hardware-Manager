@@ -20,7 +20,9 @@ test("the top bar says who the board is, and readings arrive and move", async ({
   await expect(top.locator(".crumb")).toHaveText("Devices /");
   await expect(top.locator(".chip.ok")).toHaveText("Running");
   await expect(top.locator(".chip.neu")).toHaveText(["slot-4", "demo-os 2026.11.2", "USB 1-2", "127.0.0.1"]);
+  // Both controls keep their place. The board offers a restart, and no board offers a locate.
   await expect(top.getByRole("button")).toHaveText(["Locate", "Reboot"]);
+  await expect(top.getByRole("button", { name: "Reboot" })).toBeEnabled();
 
   const tiles = app.locator('[data-panel="readings"] .tile');
   await expect(tiles).toHaveCount(5);
@@ -48,18 +50,41 @@ test("log lines the board writes arrive, newest first", async ({ app, bridge }) 
   await expect(lines.nth(1)).toContainText("frame loop started");
 });
 
-test("Locate and Reboot run at once, with no confirmation, and say what the board said", async ({ app, bridge }) => {
+test("Locate is off with its reason on the page, and Reboot runs at once and says what the board said", async ({ app, bridge }) => {
   await openBoard(app);
   const top = app.locator("header.top");
-  await top.getByRole("button", { name: "Locate" }).click();
-  await expect(top.locator('[data-said="ok"]')).toHaveText("locate: blinking");
-  expect(await bridge.call("sim.node", { runs: "locate" })).toBe(1);
-  // The reboot is one run of the device's `.call` (`lemnos.reboot.call`), counted from before the click:
-  // the node also counts a device's description runs under that name.
+  // No board offers a locate: the control is there, off, and the page says why in words.
+  const locate = top.getByRole("button", { name: "Locate" });
+  await expect(locate).toBeDisabled();
+  await expect(locate).toHaveClass(/\bdis\b/);
+  await expect(top.locator("[data-not-offered]")).toHaveText("This board doesn't offer locate.");
+  // The reason is on the page, not in a tooltip.
+  expect(await top.locator("[title]").count()).toBe(0);
+  // Nothing named locate (or the old action list) was sent to the board.
+  expect(await bridge.call("sim.node", { runs: "locate" })).toBe(0);
+  expect(await bridge.call("sim.node", { runs: "actions.list" })).toBe(0);
+  // The board's restart device offers the reboot: one run of its `.call` (`lemnos.reboot.call`), counted
+  // from before the click (the node also counts a device's description runs under that name).
+  const reboot = top.getByRole("button", { name: "Reboot" });
+  await expect(reboot).toBeEnabled();
   const before = (await bridge.call("sim.node", { runs: "lemnos.reboot.call" })) as number;
-  await top.getByRole("button", { name: "Reboot" }).click();
+  await reboot.click();
   await expect(top.locator('[data-said="ok"]')).toContainText("system.reboot.reboot");
   expect(await bridge.call("sim.node", { runs: "lemnos.reboot.call" })).toBe(before + 1);
+});
+
+test("a board with no restart device shows Reboot off, with its reason", async ({ app, bridge }) => {
+  await openBoard(app);
+  const top = app.locator("header.top");
+  const reboot = top.getByRole("button", { name: "Reboot" });
+  await expect(reboot).toBeEnabled();
+  // The board's file has no restart device: it leaves the board's resource list.
+  await bridge.call("sim.node", { remove_device: "reboot" });
+  await expect(reboot).toBeDisabled();
+  await expect(reboot).toHaveClass(/\bdis\b/);
+  await expect(top.getByRole("button")).toHaveText(["Locate", "Reboot"]);
+  await expect(top.locator("[data-not-offered]")).toHaveText("This board doesn't offer locate or reboot.");
+  await expectNoOverflow(app);
 });
 
 test("slots: what each row offers, pin and unpin, and set default", async ({ app }) => {
@@ -184,7 +209,7 @@ test("a trial on an unhealthy board falls back, and the page says why", async ({
   await expect(app.locator("[data-boots]")).toContainText("trial did not hold, fell back");
 });
 
-test("the dock's tabs: hardware as the board describes it, and what is not in this build", async ({ app }) => {
+test("the dock's tabs: hardware as the board describes it, and what is not offered or not in this build", async ({ app }) => {
   await openBoard(app);
   const dock = app.locator('[data-panel="dock"]');
   await expect(dock.locator(".tabbar label")).toHaveText(["Logs", "Hardware", "Files", "Terminal"]);
@@ -197,7 +222,8 @@ test("the dock's tabs: hardware as the board describes it, and what is not in th
   await expect(dock.locator('[data-device="lemnos.gauge1"] .chip.warn')).toHaveText("retrying");
   await expect(dock.locator('[data-device="lemnos.gauge1"]')).toContainText("sensor drifting");
   await dock.getByText("Files", { exact: true }).click();
-  await expect(dock.locator('[data-not-built="files"]')).toContainText("not in this build");
+  // No board offers files yet: the tab says so in one plain sentence, in its place.
+  await expect(dock.locator(".pane-files")).toHaveText("This board doesn't offer files yet.");
   await dock.getByText("Terminal", { exact: true }).click();
   await expect(dock.locator('[data-not-built="terminal"]')).toContainText("not in this build");
 });
@@ -209,7 +235,10 @@ test("a board that stops answering shows as offline, and reads again when it is 
   await expect(app.locator("header.top .chip.off")).toHaveText("Offline");
   await expect(app.locator('[data-panel="readings"] .empty-box')).toContainText("is offline");
   await expect(app.locator('[data-panel="slots"] .empty-box')).toContainText("is offline");
-  await expect(app.locator("header.top").getByRole("button")).toHaveCount(0);
+  // The controls keep their place while the board is away, and are off. The page already says why.
+  await expect(app.locator("header.top").getByRole("button")).toHaveText(["Locate", "Reboot"]);
+  await expect(app.locator("header.top").getByRole("button", { name: "Reboot" })).toBeDisabled();
+  await expect(app.locator("header.top [data-not-offered]")).toHaveCount(0);
   await bridge.call("sim.set_online", { id: BOARD.id, online: true });
   await expect(app.locator("header.top .chip.ok")).toHaveText("Running");
   await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
@@ -243,7 +272,12 @@ test.describe("a plain Orion node", () => {
     await expect(app.locator("header.top .chip.ok")).toHaveText("Running");
     await expect(app.locator('[data-slots-state="none"]')).toContainText("has no slots");
     await expect(app.locator('[data-panel="readings"] .empty-box')).toContainText("no readings");
-    await expect(app.locator("header.top").getByRole("button")).toHaveCount(0);
+    // A plain node offers nothing to run: both controls keep their place, off, with the reason in words.
+    const top = app.locator("header.top");
+    await expect(top.getByRole("button")).toHaveText(["Locate", "Reboot"]);
+    await expect(top.getByRole("button", { name: "Locate" })).toBeDisabled();
+    await expect(top.getByRole("button", { name: "Reboot" })).toBeDisabled();
+    await expect(top.locator("[data-not-offered]")).toHaveText("This board doesn't offer locate or reboot.");
     await expectNoOverflow(app);
   });
 });

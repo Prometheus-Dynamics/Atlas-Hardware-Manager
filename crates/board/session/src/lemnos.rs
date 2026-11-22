@@ -145,6 +145,181 @@ pub fn tags(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// The Atlas name of method `method` of contract `contract`: `system.slots/1` and `install_file` are
+/// `system.slots.install-file`. The inverse of [`method_of`]; `None` for a contract or method that
+/// form cannot name (a contract outside `system.`, or of another version).
+#[must_use]
+pub fn name_of(contract: &str, method: &str) -> Option<String> {
+    let name = format!(
+        "{}.{}",
+        contract.strip_suffix("/1")?,
+        method.replace('_', "-")
+    );
+    (method_of(&name)? == (contract.to_owned(), method.to_owned())).then_some(name)
+}
+
+/// One method a device offers, as its description gives it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Offered {
+    /// The device's resource (`lemnos.<device>`).
+    pub resource: String,
+    /// The contract's tag (`system.reboot/1`).
+    pub contract: String,
+    /// The method's name in its contract (`reboot`, `install_file`).
+    pub method: String,
+    /// Its parameters, each a name and a shape (`keep`, `u32`), in order. `None` when the description
+    /// does not give them.
+    pub params: Option<Vec<(String, String)>>,
+    /// Whether it is a long job. `None` when the description does not say.
+    pub job: Option<bool>,
+    /// The name the device gives the action that runs it (an `item kind=action` record that names this
+    /// method). `None` when the device names none.
+    pub label: Option<String>,
+}
+
+/// What the node offers to run: the methods of its devices, and the devices that did not answer.
+#[derive(Clone, Debug, Default)]
+pub struct Offers {
+    /// How many devices the node's resource list says take a `call`.
+    pub devices: usize,
+    /// Every method those devices describe, in the order of the resource list and the descriptions.
+    pub methods: Vec<Offered>,
+    /// The devices whose description was refused, each with the refusal. A device that is off refuses its
+    /// description; that is normal, and its methods are not offered.
+    pub unanswered: Vec<(String, Failure)>,
+}
+
+/// What the node offers to run, read from the two places a board says it: the node's resource list
+/// (which devices there are, and that each offers `lemnos.<device>.call`) and each device's description
+/// (its contracts and their methods). The descriptions are the session's kept ones ([`described`]), so a
+/// device is asked once per session. Nothing here is a call to an action of the node's own.
+///
+/// # Errors
+///
+/// [`orion::Error`] when the session is gone.
+pub fn offers(orion: &Orion, session: u64) -> Result<Offers, orion::Error> {
+    let listed = orion.resources(RESOURCE_PREFIX)?;
+    let devices: Vec<String> = listed
+        .iter()
+        .filter(|resource| resource.kind == RESOURCE_KIND)
+        .map(|resource| resource.name.clone())
+        .collect();
+    retain_described(session, &devices);
+    let mut offers = Offers::default();
+    for resource in listed {
+        // Only a device whose resource lists its `call` can be called.
+        let call = format!("{}.call", resource.name);
+        if resource.kind != RESOURCE_KIND || !resource.actions.contains(&call) {
+            continue;
+        }
+        offers.devices += 1;
+        match described(orion, session, &resource.name)? {
+            Ok(bytes) => offers.methods.extend(described_methods(
+                &resource.name,
+                &String::from_utf8_lossy(&bytes),
+            )),
+            Err(failure) => offers.unanswered.push((resource.name, failure)),
+        }
+    }
+    Ok(offers)
+}
+
+/// The methods a describe text gives for the device `resource`: each `method` record, with the tag of
+/// the `contract` record it names and the name of the `item kind=action` record that runs it. A method
+/// whose contract record or name is missing is not one that can be called, and is left out.
+#[must_use]
+pub fn described_methods(resource: &str, text: &str) -> Vec<Offered> {
+    let records: Vec<(&str, Vec<(String, String)>)> = text.lines().filter_map(record).collect();
+    let value = |fields: &[(String, String)], key: &str| {
+        fields
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value.clone())
+    };
+    let of_word = |word: &'static str| {
+        records
+            .iter()
+            .filter(move |(found, _)| *found == word)
+            .map(|(_, fields)| fields)
+    };
+    let mut methods = Vec::new();
+    for fields in of_word("method") {
+        let (Some(index), Some(method)) = (value(fields, "contract"), value(fields, "name")) else {
+            continue;
+        };
+        let Some(contract) = of_word("contract")
+            .find(|contract| value(contract, "index").as_deref() == Some(index.as_str()))
+            .and_then(|contract| value(contract, "tag"))
+        else {
+            continue;
+        };
+        let id = value(fields, "id");
+        let label = of_word("item")
+            .find(|item| {
+                value(item, "kind").as_deref() == Some("action")
+                    && value(item, "contract").as_deref() == Some(index.as_str())
+                    && id.is_some()
+                    && value(item, "method") == id
+            })
+            .and_then(|item| value(item, "name"))
+            .filter(|name| !name.trim().is_empty());
+        methods.push(Offered {
+            resource: resource.to_owned(),
+            contract,
+            method,
+            params: value(fields, "params").map(|params| {
+                params
+                    .split_whitespace()
+                    .map(|param| {
+                        let (name, shape) = param.split_once(':').unwrap_or((param, ""));
+                        (name.to_owned(), shape.to_owned())
+                    })
+                    .collect()
+            }),
+            job: value(fields, "job").and_then(|job| match job.as_str() {
+                "true" => Some(true),
+                "false" => Some(false),
+                _ => None,
+            }),
+            label,
+        });
+    }
+    methods
+}
+
+/// One record line of a describe text: its word and its `key=value` pairs, a quoted value unescaped
+/// (the encoder's escapes: `\\ \" \n \r \t`). `None` for a line that is not a record.
+fn record(line: &str) -> Option<(&str, Vec<(String, String)>)> {
+    let (word, mut rest) = line.split_once(' ').unwrap_or((line, ""));
+    let mut fields = Vec::new();
+    while !rest.is_empty() {
+        let (key, body) = rest.split_once('=')?;
+        if let Some(quoted) = body.strip_prefix('"') {
+            let mut text = String::new();
+            let mut chars = quoted.char_indices();
+            let end = loop {
+                match chars.next()? {
+                    (index, '"') => break index + 1,
+                    (_, '\\') => text.push(match chars.next()?.1 {
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        other => other,
+                    }),
+                    (_, other) => text.push(other),
+                }
+            };
+            fields.push((key.to_owned(), text));
+            rest = quoted[end..].strip_prefix(' ').unwrap_or(&quoted[end..]);
+        } else {
+            let (bare, after) = body.split_once(' ').unwrap_or((body, ""));
+            fields.push((key.to_owned(), bare.to_owned()));
+            rest = after;
+        }
+    }
+    Some((word, fields))
+}
+
 /// What a lookup for a contract found on the node.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Lookup {
@@ -423,6 +598,59 @@ mod tests {
         let call = method_call("lemnos.slots", SLOTS, "pin", b"a true").unwrap();
         assert_eq!(call.args, b"system.slots/1:pin a true");
         assert_eq!(describe_call("lemnos.slots").unwrap().args, b"describe");
+    }
+
+    #[test]
+    fn a_contract_and_method_have_one_atlas_name_or_none() {
+        assert_eq!(
+            name_of(REBOOT, "reboot").as_deref(),
+            Some("system.reboot.reboot")
+        );
+        assert_eq!(
+            name_of(SLOTS, "install_file").as_deref(),
+            Some("system.slots.install-file")
+        );
+        assert_eq!(name_of("sim.vane/1", "read"), None);
+        assert_eq!(name_of("system.slots/2", "list"), None);
+    }
+
+    #[test]
+    fn the_methods_of_a_description_carry_their_contract_params_and_action_name() {
+        let text = "describe 1\n\
+            device generation=3 label=\"Slots \\\"A\\\"\" kind=\"slots\"\n\
+            contract index=0 tag=\"system.slots/1\" kind=\"slots\" hash=0x1 methods=2\n\
+            contract index=1 tag=\"system.reboot/1\" kind=\"reboot\" hash=0x2 methods=1\n\
+            method contract=0 id=9 name=\"set_keep\" params=\"keep:u32\" returns=\"()\" out_buffer=false job=false\n\
+            method contract=0 id=11 name=\"install_file\" params=\"name:text pin:bool keep_old:bool\" returns=\"text\" out_buffer=false job=true\n\
+            method contract=1 id=1 name=\"reboot\" params=\"\" returns=\"()\" out_buffer=false job=false\n\
+            method contract=7 id=1 name=\"orphan\"\n\
+            item kind=action name=\"Restart now\" unit=\"\" contract=1 method=1 field=none";
+        let methods = described_methods("lemnos.x", text);
+        assert_eq!(
+            methods.len(),
+            3,
+            "a method of no contract record is left out"
+        );
+        assert_eq!(methods[0].contract, "system.slots/1");
+        assert_eq!(methods[0].method, "set_keep");
+        assert_eq!(
+            methods[0].params,
+            Some(vec![("keep".to_owned(), "u32".to_owned())])
+        );
+        assert_eq!(methods[0].job, Some(false));
+        assert_eq!(methods[0].label, None);
+        assert_eq!(methods[1].params.as_ref().map(Vec::len), Some(3));
+        assert_eq!(methods[1].job, Some(true));
+        assert_eq!(methods[2].contract, "system.reboot/1");
+        assert_eq!(methods[2].params, Some(Vec::new()));
+        assert_eq!(methods[2].label.as_deref(), Some("Restart now"));
+        assert_eq!(methods[2].resource, "lemnos.x");
+        // A method record that says nothing of its params or length reports neither.
+        let bare = described_methods(
+            "lemnos.y",
+            "describe 1\ncontract index=0 tag=\"a.b/1\"\nmethod contract=0 id=1 name=\"go\"",
+        );
+        assert_eq!((bare[0].params.clone(), bare[0].job), (None, None));
     }
 
     #[test]

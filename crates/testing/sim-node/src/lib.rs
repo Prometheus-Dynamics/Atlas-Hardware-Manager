@@ -1,12 +1,14 @@
 //! The simulated Orion node: what a board publishes, answered the way a board answers.
 //!
 //! - [`node`]: the node. It is an Orion comm core in this process (Orion's own `orion-stubs`),
-//!   with node logic that publishes the hello facts a board publishes, registers the I5 slot
-//!   and reboot surface, the board's own actions, topics and files, and answers each run. It
-//!   can be stopped and started again on the same port. Linux only, as Orion is.
+//!   with node logic that publishes the hello facts a board publishes, lists its devices with the
+//!   `lemnos.<device>.{set,call,power}` actions a board with Lemnos at a6251ecf offers (the I5 slot
+//!   and reboot surface is two of those devices), its topics and files, and answers each run. It
+//!   offers no action of its own: a name no board publishes is answered "not found". It can be
+//!   stopped and started again on the same port. Linux only, as Orion is.
 //! - [`slots`]: the root slot rules of Lemnos's slot driver (I5), and [`slots::trial`], the trial
 //!   lifecycle (I5f) on the simulated clock. [`bundle`]: the slot bundle and its signature check
-//!   (I5g). [`model`]: the board's state (slots, data partition, clock, readings).
+//!   (I5g). [`model`]: the board's state (slots, log, readings).
 //!
 //! Test hooks on [`SimNode`] (none of them is a delay; each one changes state at once):
 //! - `slot_clock_advance(secs)`: moves the simulated slot clock. A trial confirms when its daemon
@@ -25,17 +27,16 @@
 //! - `slot_follow_boot(bool)`: the hello's `version.slot` follows the running slot (a boot moves it,
 //!   a confirm does not). Off by default.
 //! - `runs_started(action)`: how many runs of an action the node took, refused ones included.
+//! - `remove_device(id)`: takes a device off the node for good, as on a board whose file has none.
 //!
 //! The file pushes are not counted per byte: the stub's file receiver keeps no per-chunk record.
 //! What the shelf holds is `shelf()`.
 //! - [`script`]: scripted failures: refuse, fail, stall, restart, and link faults.
 //! - [`names`]: the one table of names the node answers to and publishes.
 //!
-//! `testing/sim-node/README.md` says what the node does not do, and maps each C-series brief
-//! to the names it uses. The mock devices that drivers list are in `atlas-mock`.
+//! The mock devices that drivers list are in `atlas-mock`.
 
 pub mod access;
-pub mod actions;
 pub mod bridge;
 pub mod bundle;
 pub mod describe;

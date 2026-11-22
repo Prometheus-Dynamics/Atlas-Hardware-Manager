@@ -1,9 +1,10 @@
 //! The actions a board offers: listed from the board, run on its node, followed and cancelled.
 //!
-//! Nothing here names an action. A board describes its actions as a list ([`Catalog`]): a name,
-//! and where it gives them, a human label, a description, the arguments with their types, and
-//! whether it is long-running. A field the board does not give is [`Reported::NotReported`], and
-//! the app shows that. An action Atlas has never heard of is listed and runs from its entry alone.
+//! Nothing here names an action. What a board offers is read from the board ([`Catalog`]): the
+//! node's resource list names its devices and their `call` action, and each device's description
+//! names its methods, with their arguments and shapes and whether each is a long job. A field the
+//! board does not give is [`Reported::NotReported`], and the app shows that. A method Atlas has
+//! never heard of is listed and runs from its entry alone.
 //!
 //! - [`BoardActions`] runs them through the node's session ([`atlas_session::Handle`]): read the
 //!   list ([`BoardActions::catalog`]), run a short action ([`BoardActions::run`]), or start one
@@ -27,9 +28,9 @@ mod error;
 mod jobs;
 
 pub use board::{
-    BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX, POLL,
-    Progress, any_answer, lease_ended,
+    BoardActions, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX, POLL, Progress,
+    any_answer, lease_ended,
 };
-pub use catalog::{Action, Arg, ArgKind, Catalog, CatalogError, Reported, Route};
+pub use catalog::{Action, Arg, ArgKind, Catalog, Reported, Route};
 pub use error::{ActionError, BUSY_CODE};
 pub use jobs::{ActionJobs, CANCEL_CONFIRM, CancelState, KIND};

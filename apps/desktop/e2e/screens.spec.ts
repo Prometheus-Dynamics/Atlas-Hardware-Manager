@@ -215,6 +215,9 @@ export const SCREENS: Screen[] = [
     hash: BOARD,
     ready: async (page) => {
       await boardRead(page);
+      // Locate is off with its reason (no board offers one); Reboot is on (the board's restart device).
+      await expect(page.locator("header.top [data-not-offered]")).toHaveText("This board doesn't offer locate.");
+      await expect(page.locator("header.top").getByRole("button", { name: "Reboot" })).toBeEnabled();
     },
   },
   {
@@ -223,15 +226,28 @@ export const SCREENS: Screen[] = [
     ready: async (page) => {
       await boardRead(page);
       await page.locator('[data-panel="dock"] .tabbar').getByText("Hardware", { exact: true }).click();
-      await expect(page.locator("[data-device]")).toHaveCount(5);
+      await expect(page.locator("[data-device]")).toHaveCount(7);
     },
   },
+  // No board offers files yet: the tab says so in one sentence.
   {
     name: "board-files",
     hash: BOARD,
     ready: async (page) => {
       await boardRead(page);
       await page.locator('[data-panel="dock"] .tabbar').getByText("Files", { exact: true }).click();
+      await expect(page.locator('[data-panel="dock"] .pane-files')).toHaveText("This board doesn't offer files yet.");
+    },
+  },
+  // A board whose file has no restart device: Reboot is off beside Locate, with the reason in words.
+  {
+    name: "board-no-reboot",
+    hash: BOARD,
+    ready: async (page, bridge) => {
+      await boardRead(page);
+      await bridge.call("sim.node", { remove_device: "reboot" });
+      await expect(page.locator("header.top").getByRole("button", { name: "Reboot" })).toBeDisabled();
+      await expect(page.locator("header.top [data-not-offered]")).toHaveText("This board doesn't offer locate or reboot.");
     },
   },
   {

@@ -8,7 +8,8 @@
 //! state it changed arrives with the next publish.
 //!
 //! Everything goes through the libraries: `atlas-topics` (readings, hardware, logs),
-//! `atlas-actions` (the board's own action list), `atlas-board-slots` (slots, installs, trials).
+//! `atlas-actions` (what the board offers to run, read from its resource list and its devices'
+//! descriptions), `atlas-board-slots` (slots, installs, trials).
 //! What a library does not have is not made up here: the page says it is not in this build.
 
 use std::collections::{BTreeMap, VecDeque};
@@ -437,7 +438,7 @@ async fn read(core: Core, first: Target) {
     let topic = topic(&id);
     let mut history = History::default();
     let mut read_at = String::new();
-    let mut catalog: Option<(u64, Vec<Action>)> = None;
+    let mut catalog: Option<Vec<Action>> = None;
     let mut slots: Value = Value::Null;
     let mut tick: u64 = 0;
     loop {
@@ -500,20 +501,19 @@ async fn read(core: Core, first: Target) {
             );
             view["logs_missed"] = json!(snapshot.logs_missed);
 
-            // The board's own action list: read once per session, and again after a reconnect.
-            let session = handle.session();
-            if found && catalog.as_ref().is_none_or(|(at, _)| *at != session) {
+            // What the board offers to run: the methods its devices describe, under the devices its
+            // resource list gives a `call`. Read with every sample, so a device that comes or goes
+            // is seen; the descriptions are the session's kept ones, so no device is asked for it.
+            if found {
                 match BoardActions::new(handle.clone()).catalog().await {
-                    Ok(list) => catalog = Some((session, list.actions().to_vec())),
+                    Ok(list) => catalog = Some(list.actions().to_vec()),
                     Err(error) => {
                         catalog = None;
                         view["actions_error"] = json!(action_words(&error));
                     }
                 }
             }
-            view["actions"] = catalog
-                .as_ref()
-                .map_or(Value::Null, |(_, actions)| actions_json(actions));
+            view["actions"] = catalog.as_deref().map_or(Value::Null, actions_json);
 
             // Slots: every other read, and at once after a call that changed them.
             let board_slots = slots_of(handle.clone(), &target);
@@ -648,7 +648,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             lock(&core.boards().open).remove(&id);
             Ok(Value::Null)
         }
-        // Runs one of the board's own short actions, by the name the board lists it under.
+        // Runs one short action the board offers, by its name in the list read from the board.
         "board.action" => {
             #[derive(Deserialize)]
             struct Run {
@@ -663,7 +663,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 let catalog = actions.catalog().await.map_err(|e| action_words(&e))?;
                 let entry = catalog
                     .get(&action)
-                    .ok_or_else(|| format!("the board does not list {action}"))?;
+                    .ok_or_else(|| format!("this board does not offer {action}"))?;
                 let done = actions
                     .run(entry, &[])
                     .await

@@ -23,6 +23,7 @@
 //! // on `TopicDecl` only); the readings, hardware and hello topics are `TopicDecl`s and use
 //! // `OnSubscribe::Latest`. Marked for removal when the provider can declare Latest.
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -754,6 +755,8 @@ pub struct Control {
     hold: Arc<AtomicBool>,
     refuse: Arc<AtomicBool>,
     changes: Arc<Mutex<Vec<(String, Change)>>>,
+    /// The devices a test took off the node for good (see [`Control::remove`]).
+    removed: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl Control {
@@ -772,6 +775,20 @@ impl Control {
         if let Ok(mut queue) = self.changes.lock() {
             queue.push((device.to_owned(), change));
         }
+    }
+
+    /// Takes device `device` off the node for good: it is withdrawn on the next tick and never listed
+    /// again, as on a board whose file has no such device.
+    pub fn remove(&self, device: &str) {
+        if let Ok(mut removed) = self.removed.lock() {
+            removed.insert(device.to_owned());
+        }
+    }
+
+    fn is_removed(&self, device: &str) -> bool {
+        self.removed
+            .lock()
+            .is_ok_and(|removed| removed.contains(device))
     }
 
     fn held(&self) -> bool {
@@ -841,7 +858,7 @@ impl Devices {
         let mut models: Vec<Model> = DEVICES.iter().map(Model::new).collect();
         let live = !control.held();
         let listed = if live {
-            list(orion, &mut models)?
+            list(orion, &mut models, &control)?
         } else {
             Vec::new()
         };
@@ -873,11 +890,23 @@ impl Devices {
             return;
         }
         if !self.live {
-            if let Ok(listed) = list(orion, &mut self.models) {
+            if let Ok(listed) = list(orion, &mut self.models, &self.control) {
                 self.listed = listed;
                 self.live = true;
             }
             return;
+        }
+        // A device a test took off the node is withdrawn, and stays so.
+        let mut at = 0;
+        while at < self.listed.len() {
+            if self
+                .control
+                .is_removed(self.models[self.listed[at].model].spec.id)
+            {
+                let _ = self.listed.remove(at).resource.withdraw();
+            } else {
+                at += 1;
+            }
         }
         let tick = self.ticks;
         for listed in &mut self.listed {
@@ -930,6 +959,14 @@ impl Devices {
                 let _ = listed.resource.set_state(resource_state(word));
             }
         }
+    }
+
+    /// Where the runs of the devices' actions arrive: the requests of a listed device. One registration
+    /// carries the runs of every action this program registered. `None` while no device is listed.
+    pub fn requests(&mut self) -> Option<&mut orion::actions::Registration> {
+        self.listed
+            .iter_mut()
+            .find_map(|listed| listed.resource.requests())
     }
 
     /// What `call describe` on device `device` answers, or why it is refused.
@@ -1058,11 +1095,14 @@ fn field_type(kind: Kind) -> FieldType {
 }
 
 /// Lists every device, and each listing is an appearance: its generation moves once.
-fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
+fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Listed>, String> {
     let provider = orion.provider();
     let now = SampleTime::from_nanos(1);
     let mut listed = Vec::new();
     for (index, model) in models.iter_mut().enumerate() {
+        if control.is_removed(model.spec.id) {
+            continue;
+        }
         model.generation += 1;
         let spec = model.spec;
         let builder: Describing = provider

@@ -6,7 +6,7 @@
 //!
 //! Two ways to run an action:
 //!
-//! - A **short** action is one call ([`BoardActions::run`], [`BoardActions::catalog`]): started
+//! - A **short** action is one call ([`BoardActions::run`]): started
 //!   and waited for inside a single call, **not detached**. The board cancels a run whose session
 //!   ends, so a direct run is never left on the board where nobody can follow it. A direct run
 //!   that does not finish within half the call wait (at most [`DIRECT_WAIT`]) is asked to stop
@@ -20,7 +20,7 @@
 //!
 //! Retry safety of each call:
 //!
-//! - [`BoardActions::catalog`] reads the list. It changes nothing, so it may be made again.
+//! - [`BoardActions::catalog`] reads what the board offers. It changes nothing, so it may be made again.
 //! - A direct [`BoardActions::run`] is never retried by this crate: a call that did not come back
 //!   is [`ActionError::Unknown`], and the caller decides.
 //! - [`BoardActions::start`] is never retried by this crate: a start that was sent and not
@@ -44,9 +44,6 @@ use crate::args;
 use crate::catalog::{Action, Catalog, Reported, Route};
 use crate::error::ActionError;
 
-/// The name the board answers its action list to. A provisional name, agreed with Lemnos with the
-/// list's format (see `crates/testing/sim-node/src/actions.rs`).
-pub const CATALOG_ACTION: &str = "actions.list";
 /// How long one poll of a detached run waits for news before the session is looked at again.
 pub const POLL: Duration = Duration::from_millis(250);
 /// The longest a short action may take in one call. Half the call wait is used when that is less.
@@ -218,32 +215,42 @@ impl BoardActions {
         &self.handle
     }
 
-    /// Reads the board's action list, as one short call. A board's refusal of the read (a reply
-    /// over the bridge's size bound, or a node that lists nothing) comes back as
-    /// [`ActionError::Refused`] with the board's reason, verbatim. The simulated node answers it
-    /// as Lemnos M8 does.
+    /// Reads what the board offers to run. No action of the board is asked for a list: no board
+    /// publishes one. The names come from the node's resource list (its devices, and the
+    /// `lemnos.<device>.call` each one takes) and the methods, their arguments and whether each is a
+    /// long job come from each device's description, which the session keeps once asked
+    /// (`atlas_session::lemnos::offers`). A device that refuses its description (one that is off does)
+    /// offers nothing; a node with no devices (a plain Orion node) gives an empty list.
     ///
     /// # Errors
     ///
-    /// [`ActionError::Refused`] (a refusal, with the board's reason; a plain Orion node refuses
-    /// the read because it lists nothing); [`ActionError::NotAnswering`] when the node did not
-    /// answer; [`ActionError::BadCatalog`] when the list is not one Atlas reads.
+    /// [`ActionError::NotConnected`] (nothing sent); [`ActionError::Refused`] when every device
+    /// refused its description because the node turns this client away, with the node's reason;
+    /// [`ActionError::NotAnswering`] when every device refused it for another reason (Lemnos is
+    /// stopped on the node), or the node did not answer.
     pub async fn catalog(&self) -> Result<Catalog, ActionError> {
         // Retry: reading the list changes nothing, so the caller may make it again.
-        let done = self
-            .direct(CATALOG_ACTION, Vec::new())
+        self.node_name()?;
+        let session = self.handle.session();
+        let mut offers = self
+            .handle
+            // A read: with the descriptions kept, nothing reaches the bridge, so this is not counted
+            // as a request that renews the board's lease.
+            .with_client(move |orion| lemnos::offers(orion, session))
             .await
             .map_err(|error| match error {
-                // The board's own words, verbatim: a size refusal is never reported as "no actions".
-                refused @ (ActionError::Refused(_)
-                | ActionError::Failed(_)
-                | ActionError::Cancelled(_)) => refused,
-                other => ActionError::NotAnswering(other.to_string()),
+                SessionError::Gone(reason) => ActionError::NotAnswering(reason),
+                SessionError::Failed(failure) => ActionError::NotAnswering(failure.to_string()),
             })?;
-        // An out-buffer reply through the bridge (Lemnos M8a, in the lock since d6b9361d).
-        let text = String::from_utf8(done.output)
-            .map_err(|_| ActionError::BadCatalog("the list is not text".into()))?;
-        Catalog::parse(&text).map_err(|error| ActionError::BadCatalog(error.to_string()))
+        if offers.devices > 0 && offers.unanswered.len() == offers.devices {
+            let (_, failure) = offers.unanswered.swap_remove(0);
+            return Err(if failure.is_denied() {
+                ActionError::Refused(failure)
+            } else {
+                ActionError::NotAnswering(failure.to_string())
+            });
+        }
+        Ok(Catalog::from_offers(&offers.methods))
     }
 
     /// Runs a short action in one call and returns its result.

@@ -269,32 +269,84 @@ fn slot_missing(listing: &Value, id: &str) -> bool {
         .any(|slot| slot["id"] == id)
 }
 
+/// The names the sim once answered as the board's own actions. No board publishes them (Lemnos at
+/// a6251ecf offers the devices' `set`, `call` and `power` and nothing on the node), so the default
+/// sim does not either: Orion itself answers each with "not found".
+const NEVER_PUBLISHED: &[&str] = &[
+    "actions.list",
+    "status",
+    "locate",
+    "self-test",
+    "set-clock",
+    "support-bundle",
+    "data.backup",
+    "data.restore",
+    "fs.list",
+    "fs.read",
+    "fs.write",
+    "fs.remove",
+    "vendor.dry-run",
+];
+
+fn assert_not_found(orion: &orion::Orion, name: &str) {
+    match call(orion, name, b"") {
+        Err(error) => assert!(error.to_string().contains("not found"), "{name}: {error}"),
+        Ok(finished) => {
+            assert_eq!(finished.outcome, Outcome::Rejected, "{name}");
+            assert!(
+                finished.detail.contains("not found"),
+                "{name}: {}",
+                finished.detail
+            );
+        }
+    }
+}
+
 #[test]
-fn the_board_answers_its_own_actions_and_data_partition() {
+fn a_name_no_board_publishes_is_not_found_on_the_default_node() {
     let node = start("own");
     let orion = node.connect("own").expect("a session");
-    assert_eq!(ok(&orion, names::LOCATE, b"").output, b"blinking");
-    assert_eq!(ok(&orion, names::SELF_TEST, b"").output, b"passed");
-    assert_eq!(ok(&orion, names::SET_CLOCK, b"").output, b"clock set");
-    assert!(node.model().clock_offset_s.is_none());
-    assert!(text(&ok(&orion, names::STATUS, b"").output).contains("running=slot-1"));
-    assert!(text(&ok(&orion, names::SUPPORT_BUNDLE, b"").output).contains("slot-1"));
+    for name in NEVER_PUBLISHED {
+        assert_not_found(&orion, name);
+        assert_eq!(node.runs_started(name), 0, "{name} reached the node logic");
+    }
+    // What the node does offer is on its resource list: three actions per device, and no other.
+    let devices = orion.resources("lemnos.").expect("the resource list");
+    assert!(!devices.is_empty());
+    for device in devices {
+        let mut offered = device.actions.clone();
+        offered.sort();
+        let name = &device.name;
+        assert_eq!(
+            offered,
+            [
+                format!("{name}.call"),
+                format!("{name}.power"),
+                format!("{name}.set")
+            ],
+            "{name}"
+        );
+    }
+}
 
-    let backup = ok(&orion, names::DATA_BACKUP, b"").output;
-    ok(&orion, names::FS_WRITE, b"notes.txt 68656c6c6f");
-    assert_eq!(
-        ok(&orion, names::FS_READ, b"notes.txt").output,
-        b"68656c6c6f"
-    );
-    assert!(text(&ok(&orion, names::FS_LIST, b"").output).contains("notes.txt"));
-    ok(&orion, names::FS_REMOVE, b"notes.txt");
-    refused(&orion, names::FS_READ, b"notes.txt");
-    ok(&orion, names::DATA_RESTORE, &backup);
-    assert!(node.model().data.contains_key("config/board.toml"));
-    refused(&orion, names::DATA_RESTORE, b"zz");
+/// A device a test takes off the node is gone from the resource list, and its call is not answered by
+/// it: a board whose file has no restart device.
+#[test]
+fn a_removed_device_is_off_the_resource_list() {
+    let node = start("no-reboot");
+    let orion = node.connect("no-reboot").expect("a session");
+    node.remove_device("reboot");
+    wait_for("the device to leave the list", || {
+        let listed = orion.resources("lemnos.").ok()?;
+        (!listed.iter().any(|device| device.name == "lemnos.reboot")).then_some(())
+    });
     assert!(
-        node.model().data.contains_key("config/board.toml"),
-        "a bad restore changes nothing"
+        orion
+            .resources("lemnos.")
+            .expect("the list")
+            .iter()
+            .any(|device| device.name == "lemnos.slots"),
+        "the other devices stay"
     );
 }
 
@@ -326,14 +378,14 @@ fn a_failed_run_changes_nothing() {
 }
 
 #[test]
-fn a_stalled_self_test_is_cancelled_with_no_change() {
+fn a_stalled_run_is_cancelled_with_no_change() {
     let node = start("stall");
     let orion = node.connect("stall").expect("a session");
     node.script()
-        .push_action(names::SELF_TEST, Behaviour::Stall);
-    let mut run = atlas_sim_node::bridge::run(&orion, names::SELF_TEST, b"".as_ref(), 0, false)
+        .push_action(names::SLOTS_INFO, Behaviour::Stall);
+    let mut run = atlas_sim_node::bridge::run(&orion, names::SLOTS_INFO, b"".as_ref(), 0, false)
         .expect("the run starts");
-    wait_for("the self-test to stall", || {
+    wait_for("the run to stall", || {
         (node.stalled_runs() == 1).then_some(())
     });
     run.cancel().expect("cancel is sent");
@@ -354,11 +406,11 @@ fn a_plain_cancel_ends_its_own_run_and_the_session_carries_on() {
     let cancelling = node.connect("cancelling").expect("a session");
     let other = node.connect("other").expect("a session");
     node.script()
-        .push_action(names::SELF_TEST, Behaviour::Stall);
+        .push_action(names::SLOTS_INFO, Behaviour::Stall);
     let mut run =
-        atlas_sim_node::bridge::run(&cancelling, names::SELF_TEST, b"".as_ref(), 0, false)
+        atlas_sim_node::bridge::run(&cancelling, names::SLOTS_INFO, b"".as_ref(), 0, false)
             .expect("the run starts");
-    wait_for("the self-test to stall", || {
+    wait_for("the run to stall", || {
         (node.stalled_runs() == 1).then_some(())
     });
     run.cancel().expect("cancel is sent");
@@ -371,7 +423,7 @@ fn a_plain_cancel_ends_its_own_run_and_the_session_carries_on() {
     // The cancelling session is still there: it carries calls after the cancel.
     assert_eq!(list(&cancelling)["state"], list(&other)["state"]);
     // Another session's run is untouched: it runs to its end.
-    let finished = ok(&other, names::SELF_TEST, b"");
+    let finished = ok(&other, names::SLOTS_INFO, b"");
     assert_eq!(finished.outcome, Outcome::Succeeded);
 }
 
@@ -550,8 +602,8 @@ fn a_scripted_restart_loses_jobs_at_its_step() {
     let orion = node.connect("scripted").expect("a session");
     let two = bundle_for("slot-2", "2.0.0", None);
     node.script()
-        .push_action(names::STATUS, Behaviour::RestartDaemon);
-    let finished = call(&orion, names::STATUS, b"").expect("an outcome");
+        .push_action(names::SLOTS_INFO, Behaviour::RestartDaemon);
+    let finished = call(&orion, names::SLOTS_INFO, b"").expect("an outcome");
     assert_eq!(finished.outcome, Outcome::Failed);
     let landed = install(&orion, &two, false, false);
     assert_eq!(landed.outcome, Outcome::Succeeded, "{}", landed.detail);
@@ -920,7 +972,7 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
     assert_eq!(hello_fact(&orion, names::HELLO_STATE), "running");
     // The name is the hello document's, not a fact.
     assert_eq!(orion.node().expect("the document").name, NODE_NAME);
-    let answered = call(&orion, names::STATUS, b"").expect("status answers");
+    let answered = call(&orion, names::SLOTS_INFO, b"").expect("the call answers");
     assert_eq!(answered.outcome, Outcome::Succeeded);
 }
 
@@ -1162,7 +1214,7 @@ fn a_stalled_link_holds_then_carries_on() {
     let orion = node
         .connect_through_link("slow")
         .expect("a session through the link");
-    let finished = call(&orion, names::STATUS, b"").expect("an answer after the stall");
+    let finished = call(&orion, names::SLOTS_INFO, b"").expect("an answer after the stall");
     assert_eq!(finished.outcome, Outcome::Succeeded);
     assert!(started.elapsed() >= pause, "the stall held the connection");
 }
@@ -1203,7 +1255,7 @@ fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services(
         ),
     }
 
-    // Orion's own services work: a file pushed to it, its own file actions, and its logs topic.
+    // Orion's own services work: a file pushed to it, and its logs topic.
     orion
         .files()
         .push("notes/hello.txt", &mut Cursor::new(&b"hi"[..]), |_, _| {})
@@ -1215,11 +1267,10 @@ fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services(
             .expect("the shelf")
             .contains_key("notes/hello.txt")
     );
-    ok(&orion, names::FS_WRITE, b"notes.txt 68656c6c6f");
-    assert_eq!(
-        ok(&orion, names::FS_READ, b"notes.txt").output,
-        b"68656c6c6f"
-    );
+    // It offers no action: a plain node is asked for nothing by name.
+    for name in NEVER_PUBLISHED {
+        assert_not_found(&orion, name);
+    }
     orion.subscribe(names::LOGS).expect("the logs topic");
 }
 
@@ -1239,9 +1290,8 @@ fn a_node_whose_lemnos_stops_keeps_its_facts_and_fails_its_calls_until_it_answer
     let stopped = call(&orion, names::SLOTS_LIST, b"").expect("the call is answered");
     assert_eq!(stopped.outcome, Outcome::Failed, "{}", stopped.detail);
     assert!(stopped.detail.starts_with("-4:"), "{}", stopped.detail);
-    // The node itself stays up: its facts and its own actions still answer.
+    // The node itself stays up: its facts are still there.
     assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), family);
-    ok(&orion, names::STATUS, b"");
 
     node.resume_lemnos();
     assert_eq!(
@@ -1258,8 +1308,8 @@ fn the_board_is_reachable_on_the_socket_and_the_network_alike() {
     let network = node
         .connect_through_link("network")
         .expect("a session through the link");
-    let a = call(&direct, names::STATUS, b"").expect("status");
-    let b = call(&network, names::STATUS, b"").expect("status");
+    let a = call(&direct, names::SLOTS_INFO, b"").expect("the call answers");
+    let b = call(&network, names::SLOTS_INFO, b"").expect("the call answers");
     assert_eq!(a.outcome, Outcome::Succeeded);
     assert_eq!(text(&a.output), text(&b.output));
 }

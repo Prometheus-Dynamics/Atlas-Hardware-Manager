@@ -308,9 +308,16 @@ async fn an_open_board_is_read_through_its_session_and_a_closed_one_is_not() {
     assert_eq!(view["connection"]["live"], true);
     assert_eq!(view["slots"]["list"]["default"], "slot-4");
     assert!(
+        view["actions"].as_array().is_some_and(|actions| actions
+            .iter()
+            .any(|action| action["name"] == "system.reboot.reboot" && action["direct"] == true)),
+        "the restart the board's device describes is offered: {view}"
+    );
+    // The list is what the board's devices describe. No board publishes a locate, so none is listed.
+    assert!(
         view["actions"]
             .as_array()
-            .is_some_and(|actions| actions.iter().any(|action| action["name"] == "locate")),
+            .is_some_and(|actions| !actions.iter().any(|action| action["name"] == "locate")),
         "{view}"
     );
     assert!(view["hardware"].as_array().is_some_and(|d| !d.is_empty()));
@@ -332,14 +339,15 @@ async fn an_open_board_is_read_through_its_session_and_a_closed_one_is_not() {
     .unwrap_err();
     assert!(refused.0.contains("running slot"), "{refused}");
     until(&core, |core| board(core, &id)["said"]["ok"] == false).await;
-    let said = atlas_app::call::call(
+    // An action the board does not offer is not sent: the page is told so.
+    let unlisted = atlas_app::call::call(
         &core,
         "board.action",
         json!({ "id": id, "action": "locate" }),
     )
     .await
-    .unwrap();
-    assert_eq!(said, "blinking");
+    .unwrap_err();
+    assert!(unlisted.0.contains("does not offer locate"), "{unlisted}");
 
     atlas_app::call::call(&core, "board.close", json!({ "id": id }))
         .await
@@ -360,7 +368,7 @@ async fn a_device_that_is_not_an_orion_node_has_nothing_to_read_and_refuses_boar
     let error = atlas_app::call::call(
         &core,
         "board.action",
-        json!({ "id": id, "action": "locate" }),
+        json!({ "id": id, "action": "system.reboot.reboot" }),
     )
     .await
     .unwrap_err();
