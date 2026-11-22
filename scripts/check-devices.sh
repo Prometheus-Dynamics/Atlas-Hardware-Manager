@@ -187,9 +187,16 @@ cargo_lemnos_rev() {  # <Cargo.toml>
   }' "$1"
 }
 
-# Prints one line per product whose gaia.lock pins a Lemnos rev other than the Cargo.toml's, and returns 1 when
-# any does, or when no product pins Lemnos at all (nothing to hold Cargo to). Returns 0 with nothing printed when
-# every product's Lemnos rev is the Cargo rev.
+# Prints one line per slot product whose gaia.lock pins a Lemnos rev other than the Cargo.toml's, and returns 1 when
+# any does, or when no slot product pins Lemnos at all (nothing to hold Cargo to). Returns 0 with nothing printed
+# when every slot product's Lemnos rev is the Cargo rev.
+# Only slot products (a recipe of SLOT_RECIPES): Atlas reads their slot bundles, so their Lemnos must be the one
+# whose bundle format Atlas was built with. A product that makes no slot (the flasher's initramfs-boot) is held to its
+# own one Lemnos rev by the one-rev rule, and may be on another Lemnos than the slot products (D6: the bcm2712 flasher
+# on Lemnos 4b5be3a5 while raze-base stays on 31e0f736).
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot and slot-disk are
+# the slot with its bundle and boot partition: L2d). The Cargo pin rule and the slot chain read it.
+SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"
 lemnos_cargo_pin_rule() {  # <Cargo.toml> <devices dir>
   local cargo_rev lock rev bad=0 pinned=0
   cargo_rev=$(cargo_lemnos_rev "$1")
@@ -199,6 +206,7 @@ lemnos_cargo_pin_rule() {  # <Cargo.toml> <devices dir>
   fi
   for lock in "$2"/products/*/gaia.lock; do
     [[ -f $lock ]] || continue
+    grep -qE "^recipe = \"($SLOT_RECIPES)\"" "$(dirname "$lock")/product.toml" 2>/dev/null || continue
     while IFS= read -r rev; do
       [[ -n $rev ]] || continue
       pinned=1
@@ -226,7 +234,19 @@ lemnos_cargo_pin_self_test() {  # <Cargo.toml> <devices dir>
   fi
   rm -f "$bad"
   lemnos_cargo_pin_rule "$1" "$2" >/dev/null || { echo "check-devices: self-test: the real Cargo pin no longer matches the products' Lemnos rev" >&2; rc=1; }
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Cargo pin rule refuses a lemnos-slot-store rev other than the products' Lemnos rev, and passes the real tree"
+  # A product that makes no slot may lock another Lemnos; a slot product may not.
+  local fake
+  fake=$(mktemp -d)
+  mkdir -p "$fake/products/slot" "$fake/products/flasher"
+  printf 'recipe = "slot-boot"\n' >"$fake/products/slot/product.toml"
+  printf 'recipe = "initramfs-boot"\n' >"$fake/products/flasher/product.toml"
+  printf '[source."a.src"]\nurl = "https://github.com/Prometheus-Dynamics/Lemnos"\ncommit = "%s"\n' "$real" >"$fake/products/slot/gaia.lock"
+  printf '[source."a.src"]\nurl = "https://github.com/Prometheus-Dynamics/Lemnos"\ncommit = "2222222222222222222222222222222222222222"\n' >"$fake/products/flasher/gaia.lock"
+  lemnos_cargo_pin_rule "$1" "$fake" >/dev/null || { echo "check-devices: self-test: a product that makes no slot was held to the Cargo pin" >&2; rc=1; }
+  printf 'recipe = "slot"\n' >"$fake/products/flasher/product.toml"
+  lemnos_cargo_pin_rule "$1" "$fake" >/dev/null && { echo "check-devices: self-test: a slot product on another Lemnos rev was not refused" >&2; rc=1; }
+  rm -rf "$fake"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Cargo pin rule refuses a lemnos-slot-store rev other than the slot products' Lemnos rev, holds no product that makes no slot to it, and passes the real tree"
   return $rc
 }
 
@@ -932,7 +952,11 @@ erofs_rule_self_test() {
   elif [[ $out != *"image raze-base compresses with lzma, so CONFIG_EROFS_FS_ZIP_LZMA must be =y"* ]]; then
     echo "check-devices: self-test: the lzma refusal does not name the plan's value and the symbol: $out" >&2; rc=1
   fi
-  rm -rf "$tmp/devices/products/raze-base"
+  # Every product of bcm2712 goes (raze-base, and the flasher, whose initramfs-boot makes no slot), so the family has none.
+  local fp
+  for fp in "$tmp"/devices/products/*/product.toml; do
+    [[ $(product_family "$fp") == bcm2712 ]] && rm -rf "$(dirname "$fp")"
+  done
   if out=$(erofs_rule "$tmp/devices" "$pc") || [[ $out != *"FAIL families/bcm2712: CONFIG_EROFS_FS_ZIP_ZSTD is not =y"* ]]; then
     echo "check-devices: self-test: a family with no product was not held to zstd by name: $out" >&2; rc=1
   fi
@@ -1767,9 +1791,7 @@ SLOT_CHAIN=(
   "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
-# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot and slot-disk are
-# the slot with its bundle and boot partition: L2d).
-SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"
+# SLOT_RECIPES (the recipes that boot a slot) is defined with the Cargo pin rule, near the top.
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
 LZMA_STREAMS=4
 
