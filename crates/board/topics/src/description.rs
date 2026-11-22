@@ -854,7 +854,10 @@ mod tests {
 
     #[test]
     fn empty_lines_are_refused_and_one_final_line_break_is_taken() {
-        assert!(parse("describe 1\ndevice\n").is_ok(), "Lemnos 7b4fdb25 ends the last line");
+        assert!(
+            parse("describe 1\ndevice\n").is_ok(),
+            "Lemnos 7b4fdb25 ends the last line"
+        );
         assert_eq!(parse("describe 1\ndevice\n\n").unwrap_err().line, 3);
         assert_eq!(parse("describe 1\n\ndevice").unwrap_err().line, 2);
     }
