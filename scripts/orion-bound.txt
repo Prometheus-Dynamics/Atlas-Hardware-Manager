@@ -20,6 +20,7 @@ atlas-actions       # binds on: orion (direct, the client facade)
 atlas-board         # binds on: orion (direct, the client facade)
 atlas-board-slots   # binds on: orion (direct, the client facade)
 atlas-files         # binds on: orion (direct, the client facade)
+atlas-first-flash   # binds on: orion (direct, the client facade), and through atlas-actions, atlas-files and atlas-session
 atlas-next          # binds on: orion (direct, and through atlas-board-slots and atlas-session)
 atlas-nt            # binds on: orion-ws (through orion-nt4); dev-only: orion, orion-comm-app
 atlas-session       # binds on: orion (direct, the client facade)
