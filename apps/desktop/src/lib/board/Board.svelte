@@ -122,11 +122,14 @@
     if (slot.failed) return `Did not boot (${slot.failures} ${slot.failures === 1 ? "failure" : "failures"}).`;
     if (slot.running && slot.default) return `Running now. ${size(slot.size)} · ${slot.signed}.`;
     if (slot.running) return `Running now, not the default. ${size(slot.size)}.`;
+    if (slot.default && list?.trial_slot) return "The default. The board falls back to it if the trial does not hold.";
     if (slot.default) return "Default at the next boot.";
     if (slot.pinned) return "Never removed by keep-last-N.";
     if (slot.previous) return `Previous default. Kept by keep-last-${list?.keep ?? ""}.`;
     return `${size(slot.size)} · ${slot.signed}`;
   }
+  /** While a trial runs, the default is what the board falls back to. */
+  const fallback = (slot: Slot) => slot.default && !slot.running && !slot.trial && Boolean(list?.trial_slot);
   const removable = (slot: Slot) => !slot.running && !slot.default && !slot.trial && !slot.pinned && (list?.slots.length ?? 0) > 1;
   const keeps = $derived([...new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, list?.keep ?? 3])].filter((n) => n > 0).sort((a, b) => a - b));
   type Boot = { time: string; slot: string; words: string };
@@ -159,7 +162,8 @@
       const level = /^\s*(warn|warning)\b/i.test(line.text) ? "warn" : /^\s*(err|error|fail)/i.test(line.text) ? "err" : "info";
       // The board stamps a line with its own clock; a board whose clock is not set counts from its start.
       const time = line.time_ms > 946_684_800_000 ? clock(line.time_ms) : `+${Math.round(line.time_ms / 1000)} s`;
-      return { time, level, text: line.text };
+      // A line that starts with its level has it in the level column, once.
+      return { time, level, text: line.text.replace(/^\s*(info|warn|warning|err|error)\s*:\s*/i, "") };
     }),
   );
   const hardware = $derived(board?.hardware ?? []);
@@ -213,7 +217,7 @@
     <section class="panel" style="grid-column:1/-1" data-panel="readings">
       <div class="ph">
         <h2>Readings</h2>
-        <span class="kicker">live · last 60 s</span>
+        {#if online && tiles.length > 0}<span class="kicker">live · last 60 s</span>{/if}
         <span class="grow"></span>
         {#if stale && online}
           <span class="chip warn ell" style="flex:0 1 auto" title={stale.reason}><span class="dot warn"></span>Not answering · shown as last read</span>
@@ -236,7 +240,7 @@
           {/each}
         </div>
       {:else}
-        <div class="pb" style="display:flex;min-height:101px;padding:0">
+        <div class="pb" style="display:flex;min-height:103px;padding:0">
           <div class="empty-box" style="margin:8px 10px;padding:8px">
             <div>{unread || (board ? "This board reports no readings." : "Reading the board…")}</div>
           </div>
@@ -287,7 +291,10 @@
               {#if removing === slot.id}
                 <div class="slot tall confirm" data-slot={slot.id}>
                   <div style="min-width:0">
-                    <div class="l1"><b>Remove {slot.id}?</b></div>
+                    <div class="l1">
+                      <b>Remove {slot.id}?</b>
+                      {#if list.keep > 0 && list.slots.length > list.keep}<span class="chip err"><span class="dot err"></span>Over keep-last-{list.keep}</span>{/if}
+                    </div>
                     <div class="l2">{slot.version} · this cannot be undone</div>
                   </div>
                   <div class="acts">
@@ -302,7 +309,7 @@
                   </div>
                 </div>
               {:else}
-                <div class="slot tall {slot.trial ? 'trial' : slot.default ? 'dflt' : ''}" data-slot={slot.id}>
+                <div class="slot tall {slot.trial ? 'trial' : slot.default && !fallback(slot) ? 'dflt' : ''}" data-slot={slot.id}>
                   <div style="min-width:0">
                     <div class="l1">
                       <b class="ell">{slot.id} · {slot.version}</b>
@@ -311,8 +318,9 @@
                       {:else if slot.running}
                         <span class="chip ok"><span class="dot ok"></span>Running</span>
                       {/if}
-                      {#if slot.default && !slot.trial}<span class="chip neu">Default</span>{/if}
-                      {#if slot.previous && !slot.running}<span class="chip neu">Fallback</span>{/if}
+                      {#if fallback(slot)}<span class="chip neu">Fallback</span>
+                      {:else if slot.default && !slot.trial}<span class="chip neu">Default</span>{/if}
+                      {#if slot.previous && !slot.running && !list.trial_slot}<span class="chip neu">Fallback</span>{/if}
                       {#if slot.pinned}<span class="chip neu">Pinned</span>{/if}
                       {#if slot.failed}<span class="chip err"><span class="dot err"></span>Failed</span>{/if}
                     </div>

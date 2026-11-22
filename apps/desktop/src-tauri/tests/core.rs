@@ -273,3 +273,94 @@ async fn a_failed_call_is_logged_with_what_was_asked_and_settings_are_saved() {
     assert_eq!(reopened.settings().keep_last, 5);
     assert!(reopened.settings().security);
 }
+
+fn board(core: &Core, id: &str) -> Value {
+    core.topics()
+        .get(&atlas_app::board::topic(id))
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_open_board_is_read_through_its_session_and_a_closed_one_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    let id = core.sim().unwrap().node_id().to_owned();
+    until(&core, |core| {
+        presence(core, &id).as_deref() == Some("online")
+    })
+    .await;
+    // Nothing is read for a board nobody is looking at.
+    assert_eq!(board(&core, &id), Value::Null);
+
+    atlas_app::call::call(&core, "board.open", json!({ "id": id }))
+        .await
+        .unwrap();
+    until(&core, |core| board(core, &id)["slots"]["state"] == "ok").await;
+    let view = board(&core, &id);
+    assert_eq!(view["reach"], "orion");
+    assert_eq!(view["connection"]["live"], true);
+    assert_eq!(view["slots"]["list"]["default"], "slot-4");
+    assert!(
+        view["actions"]
+            .as_array()
+            .is_some_and(|actions| actions.iter().any(|action| action["name"] == "locate")),
+        "{view}"
+    );
+    assert!(view["hardware"].as_array().is_some_and(|d| !d.is_empty()));
+    // The device list's Default column is filled from the slots that were read.
+    until(&core, |core| {
+        devices(core)
+            .iter()
+            .any(|device| device["id"] == id.as_str() && device["default_version"] == "2026.11.2")
+    })
+    .await;
+
+    // The board's own refusal comes back in its words, and is on the page's topic.
+    let refused = atlas_app::call::call(
+        &core,
+        "board.slots.remove",
+        json!({ "id": id, "slot": "slot-4" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(refused.0.contains("running slot"), "{refused}");
+    until(&core, |core| board(core, &id)["said"]["ok"] == false).await;
+    let said = atlas_app::call::call(
+        &core,
+        "board.action",
+        json!({ "id": id, "action": "locate" }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(said, "blinking");
+
+    atlas_app::call::call(&core, "board.close", json!({ "id": id }))
+        .await
+        .unwrap();
+    until(&core, |core| board(core, &id) == Value::Null).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_that_is_not_an_orion_node_has_nothing_to_read_and_refuses_board_calls() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    let id = "simulated:SIM-REC-1";
+    until(&core, |core| presence(core, id).is_some()).await;
+    atlas_app::call::call(&core, "board.open", json!({ "id": id }))
+        .await
+        .unwrap();
+    until(&core, |core| board(core, id)["reach"] == "none").await;
+    let error = atlas_app::call::call(
+        &core,
+        "board.action",
+        json!({ "id": id, "action": "locate" }),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.0.contains("not reached through Orion"), "{error}");
+    let unknown = atlas_app::call::call(&core, "board.open", json!({ "id": "simulated:NOPE" }))
+        .await
+        .unwrap_err();
+    assert!(unknown.0.contains("no device"), "{unknown}");
+}
