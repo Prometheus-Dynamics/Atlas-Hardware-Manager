@@ -4,6 +4,7 @@
   // for. Every change is saved at once; nothing here has a Save button.
   import Page from "../ui/Page.svelte";
   import Icon from "../ui/Icon.svelte";
+  import Skel from "../ui/Skel.svelte";
   import { call } from "../api/client";
   import type { Settings } from "../api/types";
   import { app, breadcrumb, inventory, logUiError, settings, topic } from "../stores/app.svelte";
@@ -45,7 +46,7 @@
   const robots = $derived(inventory().robots);
 
   /** What the last thing asked for answered, by the place it is shown. */
-  let said = $state<{ where: "keys" | "robots" | "support"; words: string } | null>(null);
+  let said = $state<{ where: "keys" | "robots" | "support"; words: string; ok?: boolean } | null>(null);
   const words = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
   // Changes are sent one after another, each on top of what the core answered to the one before:
@@ -80,7 +81,7 @@
     said = null;
     try {
       const added = await call<string[] | false>("trust.add");
-      if (added) said = { where: "keys", words: `Added ${added.join(", ")}.` };
+      if (added) said = { where: "keys", words: `Added ${added.join(", ")}.`, ok: true };
     } catch (error) {
       said = { where: "keys", words: words(error) };
     }
@@ -161,7 +162,6 @@
   <section class="panel" style="grid-row:1/3" data-panel="keys">
     <div class="ph">
       <h2>Trusted keys</h2>
-      {#if said?.where === "keys"}<span class="kicker ell" data-said title={said.words}>{said.words}</span>{/if}
       <span class="grow"></span>
       <button class="btn sm" onclick={addKey}><Icon name="plus" />Add key…</button>
     </div>
@@ -171,6 +171,7 @@
         <div>Fingerprint</div>
         <div></div>
       </div>
+      {#if !app.ready}<Skel rows={2} columns={KEY_COLUMNS} cells={2} style="min-height:50px" />{/if}
       {#each trust.keys as key (key.key_id)}
         <!-- The selected look, written out: the stylesheet's `.sel` is also its select box, whose border and padding would move the row. -->
         <div
@@ -189,9 +190,14 @@
         </div>
       {/each}
     </div>
-    <div class="note" style="margin:8px 10px">
-      Atlas checks an image you choose against these keys. Owner details come from the key file. A board checks an image with its own keys when its security is on.
-    </div>
+    {#if said?.where === "keys"}
+      <!-- What adding or removing a key answered, in full, where the note about the keys is. -->
+      <div class="note {said.ok ? 'ok' : 'err'}" style="margin:8px 10px" data-said>{said.words}</div>
+    {:else}
+      <div class="note" style="margin:8px 10px">
+        Atlas checks an image you choose against these keys. Owner details come from the key file. A board checks an image with its own keys when its security is on.
+      </div>
+    {/if}
     {#if shown}
       <div class="ph" style="border-top:1px solid var(--hairline)">
         <h2>Key details</h2><span class="grow"></span><span class="kicker">{shown.yours ? "added by you" : "built into Atlas"}</span>
@@ -205,8 +211,8 @@
           <dt>Fingerprint</dt><dd class="mono">{shown.fingerprint}</dd>
           <dt>Created</dt><dd>{shown.created}</dd>
           <dt>Expires</dt><dd>{shown.expires ?? "never"}</dd>
-          <dt>From</dt><dd title={shown.source}>{shown.source}</dd>
-          <dt class="more-s">Note</dt><dd class="more-s" title={shown.note}>{shown.note || "·"}</dd>
+          <dt>From</dt><dd style="white-space:normal;overflow-wrap:anywhere">{shown.source}</dd>
+          <dt class="more-s">Note</dt><dd class="more-s" style="white-space:normal;overflow-wrap:anywhere">{shown.note || "·"}</dd>
         </dl>
         {#if shown.yours}
           {#if removing}
@@ -229,18 +235,22 @@
           <div class="tr" class:more-s={i >= 4} style="{CHECK_COLUMNS};min-height:24px;font-size:11px;padding:0">
             <div class="faint">{eventTime(check.at_ms, app.now)}</div>
             <div>{check.what}</div>
-            <div title={check.subject}>{check.subject}</div>
-            <div class="muted" style={check.refused ? "color:var(--err-fg)" : ""} title={check.result}>
+            <div style="white-space:normal;overflow-wrap:anywhere">{check.subject}</div>
+            <div class="muted" style="white-space:normal;overflow-wrap:anywhere;{check.refused ? 'color:var(--err-fg)' : ''}">
               {check.result}{check.refused ? " · refused" : current?.security ? "" : " · used: security is off"}
             </div>
           </div>
         {:else}
-          <div class="faint" style="padding:8px 0;font-size:11px">
-            Nothing has been checked yet. Atlas checks an image's signature when you choose it to flash or to write to a card.
-          </div>
+          {#if app.ready}
+            <div class="faint" style="padding:8px 0;font-size:11px">
+              Nothing has been checked yet. Atlas checks an image's signature when you choose it to flash or to write to a card.
+            </div>
+          {:else}
+            <Skel rows={2} row="" style="height:24px;display:flex;align-items:center" />
+          {/if}
         {/each}
         {#each trust.problems as problem}
-          <div class="note warn ell" style="margin-top:6px" title={problem}>{problem}</div>
+          <div class="note warn" style="margin-top:6px">{problem}</div>
         {/each}
       </div>
     {/if}
@@ -252,10 +262,13 @@
       <div class="swrap" style="justify-content:space-between">
         <span><b>Check signatures</b></span>
         <div style="display:flex;align-items:center;gap:8px">
-          <span class="faint">{current?.security ? "on" : "off"}</span>
+          <span class="faint">{!current ? "·" : current.security ? "on" : "off"}</span>
+          <!-- Until the settings are read the switch is the disabled one: it has no value to show or change. -->
           <button
             class="sw"
             class:on={current?.security}
+            class:dis={!current}
+            disabled={!current}
             role="switch"
             aria-checked={current?.security ?? false}
             aria-label="Check signatures"
@@ -283,7 +296,7 @@
     <div class="pb" style="display:flex;flex-direction:column;gap:8px">
       <div class="swrap" style="justify-content:space-between">
         <span><b>Keep last N slots</b> by default</span>
-        <select class="sel" aria-label="Keep last N slots" value={current?.keep_last ?? 3} onchange={(e) => set({ keep_last: Number(e.currentTarget.value) })}>
+        <select class="sel" aria-label="Keep last N slots" disabled={!current} value={current?.keep_last ?? 3} onchange={(e) => set({ keep_last: Number(e.currentTarget.value) })}>
           {#each KEEP as n}<option value={n}>{n}</option>{/each}
         </select>
       </div>
@@ -291,7 +304,9 @@
       <div class="swrap" style="justify-content:space-between;border-top:1px solid var(--hairline);padding-top:8px">
         <span class="ell"><b>Atlas</b> <span class="faint mono">{app.version}</span></span>
         <span class="acts" data-update-controls>
-          {#if !update?.source}
+          {#if !app.ready}
+            <button class="btn sm" disabled><Icon name="retry" />Check for updates</button>
+          {:else if !update?.source}
             <span class="faint" style="font-size:11px;white-space:nowrap">no update source configured</span>
           {:else if update.phase === "checking"}
             <span class="chip info"><span class="dot spin"></span>Checking</span>
@@ -315,25 +330,26 @@
       </div>
       <div class="swrap">
         <span class="faint">Channel</span>
-        <select class="sel" aria-label="Channel" value={current?.channel ?? "dev"} onchange={(e) => set({ channel: e.currentTarget.value })}>
+        <select class="sel" aria-label="Channel" disabled={!current} value={current?.channel ?? "dev"} onchange={(e) => set({ channel: e.currentTarget.value })}>
           {#each CHANNELS as channel}<option>{channel}</option>{/each}
         </select>
         <span class="faint">Theme</span>
-        <select class="sel" aria-label="Theme" value={current?.theme ?? "system"} onchange={(e) => set({ theme: e.currentTarget.value as Settings["theme"] })}>
+        <select class="sel" aria-label="Theme" disabled={!current} value={current?.theme ?? "system"} onchange={(e) => set({ theme: e.currentTarget.value as Settings["theme"] })}>
           {#each THEMES as theme}<option>{theme}</option>{/each}
         </select>
         <span class="faint ell" style="font-size:11px" data-update-checked>{checked}</span>
       </div>
       <!-- One line, always there, so nothing below it moves when an update comes and goes. -->
-      <div class="swrap" style="height:17px;font-size:11px" data-update>
+      <div class="swrap" style="min-height:17px;font-size:11px" data-update>
         {#if updateSaid}
-          <span class="ell" style="color:var(--err-fg)">{updateSaid}</span>
+          <span style="color:var(--err-fg)">{updateSaid}</span>
         {:else if update?.source && update.phase === "downloading"}
           <span style="white-space:nowrap;color:var(--accent-text)">{update.words}</span>
           <div class="bar" style="flex:1"><i style="width:{part}%"></i></div>
           <span class="faint num" style="white-space:nowrap">{part}% · {size(update.downloaded)} of {size(update.size ?? 0)}</span>
         {:else if update?.source && update.words}
-          <span class="ell" style="color:{TONES[update.tone]}" title={update.words}>{update.words}{update.phase === "available" && update.size ? ` · ${size(update.size)}` : ""}</span>
+          <!-- In full: a reason for a failed check wraps instead of being cut. -->
+          <span style="color:{TONES[update.tone]}">{update.words}{update.phase === "available" && update.size ? ` · ${size(update.size)}` : ""}</span>
         {/if}
       </div>
       <div class="more-s">
@@ -351,7 +367,7 @@
     <div class="ph"><h2>Logs and support</h2></div>
     <div class="pb" style="display:flex;flex-direction:column;gap:8px">
       <dl class="kv">
-        <dt>App log</dt><dd class="mono" title={info?.log_path ?? ""}>{info?.log_path ?? "this run keeps no log"}</dd>
+        <dt>App log</dt><dd class="mono" style="white-space:normal;overflow-wrap:anywhere">{#if info}{info.log_path ?? "this run keeps no log"}{:else}<div class="ph-skel" style="width:60%;margin-top:3px"></div>{/if}</dd>
         <dt>Size</dt><dd>{info ? size(info.log_bytes) : "·"} · UI errors, failed calls, breadcrumbs</dd>
       </dl>
       <div class="swrap">
@@ -360,10 +376,11 @@
         {#if bundle}<button class="btn sm quiet" onclick={() => open("support.open_bundle_folder")}>Show the bundle</button>{/if}
       </div>
       {#if said?.where === "support"}
-        <div class="ell" style="font-size:11px;color:var(--err-fg)">{said.words}</div>
+        <div style="font-size:11px;color:var(--err-fg)">{said.words}</div>
       {:else if bundle}
-        <div class="muted ell" style="font-size:11px" data-bundle title={bundle.path}>
-          {bundle.path.replace(/^.*[\\/]/, "")} · {size(bundle.bytes)} · holds: {bundle.parts.map((part) => part.name).join(", ")}
+        <!-- Where the bundle is, in full, and what is in it. -->
+        <div class="muted" style="font-size:11px;white-space:normal;overflow-wrap:anywhere" data-bundle>
+          {bundle.path} · {size(bundle.bytes)} · holds: {bundle.parts.map((part) => part.name).join(", ")}
         </div>
       {:else}
         <div class="muted" style="font-size:11px">The bundle is a file on this computer. You see what is in it before you send it anywhere.</div>
@@ -377,6 +394,7 @@
     </div>
     <div class="pb flush tbl" style="padding:0;display:flex;flex-direction:column">
       <div class="rows" style="flex:none;max-height:52px">
+        {#if !app.ready}<Skel rows={1} />{/if}
         {#each robots as robot (robot.name)}
           <div class="tr" style="grid-template-columns:minmax(0,1fr) 90px auto" data-robot={robot.name}>
             <div><b>{robot.name}</b></div>
@@ -390,7 +408,7 @@
         <input class="inp" style="width:90px;flex:none" placeholder="Team" aria-label="Team number" inputmode="numeric" bind:value={robotTeam} />
         <button class="btn sm" type="submit"><Icon name="plus" />Add robot</button>
       </form>
-      <div class="ell" style="padding:0 10px 8px;font-size:11px;{said?.where === 'robots' ? 'color:var(--err-fg)' : 'color:var(--fg-muted)'}" data-robot-said>
+      <div style="padding:0 10px 8px;font-size:11px;{said?.where === 'robots' ? 'color:var(--err-fg)' : 'color:var(--fg-muted)'}" data-robot-said>
         {said?.where === "robots" ? said.words : "Removing a robot forgets its name and team, not its devices."}
       </div>
     </div>

@@ -37,3 +37,9 @@ body { user-select: none; -webkit-user-select: none; }
 .rows { flex: 1; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
 .tr.link { cursor: default; }
 .tr.link:focus-visible { outline-offset: -2px; }
+
+/* Words that change in place keep the width of their longest form (named in `data-widest`), so
+   what stands beside them does not move when they change. */
+.hold { display: inline-grid; }
+.hold > span { grid-area: 1 / 1; }
+.hold::after { content: attr(data-widest); grid-area: 1 / 1; visibility: hidden; height: 0; overflow: hidden; }

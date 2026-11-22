@@ -10,8 +10,9 @@
 //! - a removable disk: a made-up disk list behind the real disk driver;
 //! - a robot's controller that does not run Orion yet: a made-up robot network ([`SimNet`])
 //!   behind the real robot drivers, for the team of the simulated robot;
-//! - a board in recovery, and a board that was seen and is gone: the mock fleet (`atlas-mock`).
-//!   The simulated node cannot be put in recovery (see its `Mode`), so the mock stands in.
+//! - a board in recovery, and a board that was seen and is gone: the mock fleet (`atlas-mock`),
+//!   each on a USB port of its own and the old one on the network too ([`bench`]). The simulated
+//!   node cannot be put in recovery (see its `Mode`), so the mock stands in.
 //!
 //! Nothing on the computer is looked at: no USB, no disks, no network beyond the node's own
 //! port on 127.0.0.1. The `sim.*` calls change the simulated world the way the world changes
@@ -30,17 +31,18 @@ use atlas_disk::{Disk, DiskError, DiskSource, Guard, Platform, Proof, RawDisk, R
 use atlas_driver_disk::DiskDriver;
 use atlas_driver_rockchip::RockchipDriver;
 use atlas_inventory::Robot;
-use atlas_mock::{MockDevice, MockFleet, SIM_FAMILY, SIM_LINK};
+use atlas_mock::{MockFleet, SIM_FAMILY};
 use atlas_robot::{Answer, RADIO_FAMILY, Reach, SYSTEMCORE_FAMILY};
 use atlas_rockchip::sim::{Fault, SimRockchip};
 use atlas_session::{RealPause, Seed, Sessions};
 use atlas_sim_node::socket::NodeDir;
-use atlas_sim_node::{Hello, Kind, SimNode};
-use atlas_types::{DeviceKey, DeviceState, Link, LinkId, LinkKind};
+use atlas_sim_node::{Behaviour, Hello, Kind, SimNode};
+use atlas_types::{DeviceKey, Link, LinkId, LinkKind};
 use atlas_usb::{DeviceSummary, OpenOptions, Timeouts, UsbBus, UsbError, UsbId, UsbIo};
 use serde::Deserialize;
 use serde_json::Value;
 
+pub mod bench;
 pub mod feed;
 
 use crate::call::{CallError, CallResult, args};
@@ -158,6 +160,8 @@ pub struct SimDisks {
     held: AtomicBool,
     /// Where the card's bytes are kept.
     backing: Mutex<Option<PathBuf>>,
+    /// While set, the disks cannot be listed: how a link that does not answer is shown.
+    broken: AtomicBool,
 }
 
 impl SimDisks {
@@ -393,14 +397,19 @@ fn sample_image() -> Vec<u8> {
 
 impl DiskSource for SimDisks {
     fn disks(&self) -> Result<Vec<Disk>, DiskError> {
+        if self.broken.load(Ordering::Relaxed) {
+            return Err(DiskError::List("the card reader did not answer".into()));
+        }
         Ok(self.disks.lock().unwrap_or_else(|e| e.into_inner()).clone())
     }
 }
 
 fn card() -> Disk {
     Disk {
-        path: "/dev/sim-card".into(),
-        name: "sim-card".into(),
+        // The kernel's name for it, as a card in a reader has one. Nothing opens this path: the
+        // simulated platform keeps the card's bytes in a file of its own.
+        path: "/dev/sdb".into(),
+        name: "sdb".into(),
         size_bytes: 64_000_000_000,
         vendor: None,
         model: Some("SD card".into()),
@@ -509,13 +518,6 @@ fn seed_slots(node: &SimNode) {
     model.slots.keep = 3;
 }
 
-fn mock_key(serial: &'static str) -> DeviceKey {
-    DeviceKey::from_static(SIM_FAMILY, serial)
-}
-
-const OLD_BOARD: &str = "SIM-OLD-1";
-const RECOVERY_BOARD: &str = "SIM-REC-1";
-
 impl World {
     /// Adds the simulated drivers and links to the app's parts. What cannot be started (the
     /// simulated node's port or socket) is left out and returned as a line for the log.
@@ -527,7 +529,16 @@ impl World {
             (NETWORK_LINK, LinkKind::Ethernet, "Network"),
             (BOOT_LINK, LinkKind::UsbBoot, "USB"),
             (DISK_LINK, LinkKind::LocalDisk, "card reader"),
-            (SIM_LINK, LinkKind::Simulated, "Simulated devices"),
+            (
+                bench::USB_LINKS[0].0,
+                LinkKind::UsbNetwork,
+                bench::USB_LINKS[0].1,
+            ),
+            (
+                bench::USB_LINKS[1].0,
+                LinkKind::UsbNetwork,
+                bench::USB_LINKS[1].1,
+            ),
         ] {
             parts.links.push(Link {
                 id: LinkId::new(id),
@@ -536,19 +547,15 @@ impl World {
             });
         }
 
-        // The mock fleet: a board in recovery, and one that will be unplugged once it was seen.
+        // The bench boards: one in recovery, and one that will be unplugged once it was seen.
         let fleet = if demo {
-            MockFleet::of([
-                MockDevice::new(RECOVERY_BOARD, DeviceState::Recovery).named("bench-c"),
-                MockDevice::new(OLD_BOARD, DeviceState::Running)
-                    .named("old-bench")
-                    .with_version("product", "demo-os")
-                    .with_version("os", "2026.10.20"),
-            ])
+            bench::boards()
         } else {
             MockFleet::of([])
         };
-        parts.registry.register(Arc::new(fleet.driver()));
+        parts
+            .registry
+            .register(Arc::new(bench::BenchDriver::new(fleet.clone())));
 
         // The boot ROM driver on a simulated bus.
         let rom = Arc::new(SimRom::default());
@@ -738,7 +745,7 @@ impl World {
                         });
                     }
                 }
-                let old = mock_key(OLD_BOARD);
+                let old = bench::key(bench::OLD_BOARD);
                 if !unplugged && core.with_inventory(|inventory| inventory.get(&old).is_some()) {
                     world.inner.fleet.set_online(&old, false);
                     unplugged = true;
@@ -994,6 +1001,11 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 /// Answers how many runs of this action the node took.
                 runs: Option<String>,
                 lemnos: Option<bool>,
+                /// The next run of this action is refused, in these words: `[action, words]`.
+                refuse: Option<(String, String)>,
+                /// The board's own security switch: on, it refuses to make an unsigned slot the
+                /// default or to try it.
+                security: Option<bool>,
             }
             let hook: Hook = args(name, arguments)?;
             tokio::task::spawn_blocking(move || {
@@ -1009,6 +1021,13 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     }
                     if let Some(line) = &hook.log {
                         node.model().log(line);
+                    }
+                    if let Some((action, words)) = &hook.refuse {
+                        node.script()
+                            .push_action(action, Behaviour::Refuse(words.clone()));
+                    }
+                    if let Some(on) = hook.security {
+                        node.model().slots.board_security = on;
                     }
                     match hook.lemnos {
                         Some(true) => node.resume_lemnos(),
@@ -1078,6 +1097,8 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             #[derive(Deserialize)]
             struct Card {
                 hold: Option<bool>,
+                /// The reader stops answering (the list of disks cannot be read), or answers again.
+                broken: Option<bool>,
                 /// Plugs a second removable disk in (a USB stick), or takes it out.
                 stick: Option<bool>,
                 /// Answers once a write is waiting on the hold: the card is open and being
@@ -1087,6 +1108,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             }
             let Card {
                 hold,
+                broken,
                 stick,
                 wait_held,
             } = args(name, arguments)?;
@@ -1100,6 +1122,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     .await
                     .map_err(|_| CallError::from("no write reached the held card"))?;
             }
+            if let Some(broken) = broken {
+                world.inner.disks.broken.store(broken, Ordering::Relaxed);
+            }
             if let Some(hold) = hold {
                 world.inner.disks.hold.store(hold, Ordering::Relaxed);
             }
@@ -1110,11 +1135,11 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     .disks
                     .lock()
                     .unwrap_or_else(|e| e.into_inner());
-                disks.retain(|disk| disk.name != "sim-stick");
+                disks.retain(|disk| disk.name != "sdc");
                 if plugged {
                     disks.push(Disk {
-                        path: "/dev/sim-stick".into(),
-                        name: "sim-stick".into(),
+                        path: "/dev/sdc".into(),
+                        name: "sdc".into(),
                         size_bytes: 16_000_000_000,
                         model: Some("USB stick".into()),
                         serial: Some("SIM-STICK-1".into()),

@@ -2,7 +2,7 @@
 // each. Real pointer clicks against the real core; the devices are the simulated ones, each
 // behind the driver that finds its real counterpart (see src-tauri/src/sim.rs).
 import type { Locator, Page } from "@playwright/test";
-import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, test } from "./bridge";
+import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, holdSnapshot, test } from "./bridge";
 
 const COLUMNS = ["Board", "State", "Reached by", "Default", "Seen"];
 const row = (page: Page, record: { id: string }): Locator => page.locator(`.tr.dev[data-device="${record.id}"]`);
@@ -48,12 +48,15 @@ test("every state is one row, under its group, with its words and its links", as
   await expect(rom.locator(".chip.acc")).toHaveText("Boot ROM, waiting");
   await expect(rom.locator("button.btn.sm.pri")).toHaveText("Flash");
   await expect(cells(rom).nth(2).locator(".chip.neu")).toHaveText(["USB 1-3 · boot ROM"]);
+  // Beside its name: its chip family in two words. The USB id it was found by is not here.
+  await expect(cells(rom).nth(0)).toHaveText("bench-b Rockchip family");
   await expect(app.locator(".tr.dev button")).toHaveCount(1);
 
   await expect(row(app, DEMO.recovery).locator(".chip.warn")).toHaveText("Recovery");
+  await expect(cells(row(app, DEMO.recovery)).nth(2).locator(".chip.neu")).toHaveText(["USB 1-6"]);
 
   const disk = row(app, DEMO.disk);
-  await expect(cells(disk).nth(0)).toHaveText("SD card 64 GB sim-card");
+  await expect(cells(disk).nth(0)).toHaveText("SD card 64 GB sdb");
   await expect(disk.locator(".chip.info").first()).toHaveText("Removable disk");
   await expect(cells(disk).nth(2).locator(".chip.neu")).toHaveText(["card reader"]);
 
@@ -61,7 +64,7 @@ test("every state is one row, under its group, with its words and its links", as
   const offline = row(app, DEMO.offline);
   await expect(offline).toHaveClass(/dim/);
   await expect(offline.locator(".chip.off")).toHaveText("Offline");
-  await expect(cells(offline).nth(2)).toHaveText("last simulated");
+  await expect(cells(offline).nth(2)).toHaveText("last USB 1-4 · 10.42.1.9");
   await expect(cells(offline).nth(2).locator(".chip")).toHaveCount(0);
   await expect(cells(offline).nth(4)).toHaveText(/^\d\d:\d\d$/);
   await expect(cells(offline).nth(0)).toHaveText("old-bench demo-os 2026.10.20");
@@ -81,7 +84,7 @@ test("a row opens its record's screen, and Flash opens the flash flow for that b
     [DEMO.controller, /#\/systemcore\/systemcore%3A9999$/],
     [DEMO.disk, /#\/disk\/removable-disk%3ASIM-CARD-1$/],
     [DEMO.bootRom, /#\/flash\/rockchip-maskrom%3Ausb-1-3$/],
-    [DEMO.offline, /#\/board\/simulated%3ASIM-OLD-1$/],
+    [DEMO.offline, /#\/board\/sim-bench%3ASIM-OLD-1$/],
   ];
   for (const [record, url] of opens) {
     await cells(row(app, record)).nth(0).click();
@@ -123,13 +126,19 @@ test("the boot ROM row loses Flash when the board is unplugged", async ({ app, b
 
 test("the scan's manual off is one click, changes no layout, and stops finding", async ({ app, bridge }) => {
   await listSettled(app);
-  const chip = app.locator(".ph .chip").last();
+  const chip = app.locator(".ph [data-scan]");
   const button = app.locator(".ph button");
   await expect(button).toHaveText("Pause");
+  // The chip ends the header, flush right, as the mockup draws it; the button stands before it.
+  await expect(app.locator(".ph").first().locator("> :last-child")).toHaveAttribute("data-scan", "on");
+  const edge = await app.locator(".ph").first().evaluate((el) => el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
+  expect(await chip.evaluate((el) => el.getBoundingClientRect().right)).toBe(edge);
+  await expect(chip.locator(".dot")).toHaveClass(/\bspin\b/);
   const before = { button: await button.boundingBox(), row: await row(app, DEMO.running).boundingBox(), right: await chip.evaluate((el) => el.getBoundingClientRect().right) };
   await button.click();
   await expect(chip).toHaveText("Scanning is off");
-  await expect(chip).toHaveClass(/\boff\b/);
+  await expect(chip).toHaveClass(/\bchip off\b/);
+  await expect(chip.locator(".dot")).toHaveClass(/\bdot off\b/);
   await expect(button).toHaveText("Resume");
   expect(await button.boundingBox()).toEqual(before.button);
   expect(await row(app, DEMO.running).boundingBox()).toEqual(before.row);
@@ -144,8 +153,75 @@ test("the scan's manual off is one click, changes no layout, and stops finding",
   await expect(row(app, DEMO.recovery).locator(".chip.off")).toHaveText("Offline");
 });
 
+test("the events leave out a rename to the same name and say found and followed in one line", async ({ app, bridge }) => {
+  await listSettled(app);
+  // The core's history does hold such lines: every simulated board was named as a person would.
+  const snapshot = (await bridge.call("snapshot")) as { topics: { inventory: { activity: { name: string; message: string }[] } } };
+  const history = snapshot.topics.inventory.activity;
+  expect(history.filter((line) => line.message === `renamed to ${line.name}`).length).toBeGreaterThan(0);
+  const lines = await app.locator(".lines .ln > span:nth-child(3)").allTextContents();
+  expect(lines.length).toBeGreaterThan(0);
+  expect(lines.filter((text) => /^(.+): renamed to \1$/.test(text))).toEqual([]);
+  // "now followed over Y" never stands alone straight after "found on X" for the same board.
+  const alone = lines.filter((text, index) => {
+    const name = `${text.split(":")[0]}:`;
+    return text.startsWith(`${name} now followed over `) && lines.slice(index + 1).find((older) => older.startsWith(name))?.startsWith(`${name} found on `);
+  });
+  expect(alone).toEqual([]);
+  // A link is called by its label in a line, never by its id.
+  expect(lines.filter((text) => /\b(usb-1-\d|lan|disks)\b/.test(text))).toEqual([]);
+});
+
+test("a link that is not answering is a row that says why, in words", async ({ app, bridge }) => {
+  await listSettled(app);
+  await bridge.call("sim.disk", { broken: true });
+  const chip = app.locator(".ph [data-failing]");
+  await expect(chip).toHaveText("1 link not answering");
+  await expect(chip).not.toHaveAttribute("title");
+  const link = app.locator('.tr[data-link="disks"]');
+  await expect(link).toHaveClass(/\bwarnrow\b/);
+  await expect(cells(link).nth(0)).toHaveText("card reader link");
+  await expect(link.locator(".chip.warn")).toHaveText("Not answering");
+  await expect(cells(link).nth(2)).toHaveText(/^device did not respond: could not list disks: the card reader did not answer\. Try \d+ in \d+ s\.$/);
+  // The reason is read without hovering: nothing of it is cut off.
+  expect(await cells(link).nth(2).evaluate((el) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
+  await expect(app.locator(".tr.g").first()).toContainText("Not answering");
+  await expectNoOverflow(app);
+  await bridge.call("sim.disk", { broken: false });
+  await expect(link).toHaveCount(0);
+  await expect(chip).toHaveCount(0);
+});
+
+test("the list waits for the core's first answer as bars, and says nothing about what is there", async ({ page, bridge }) => {
+  const release = await holdSnapshot(page);
+  await page.goto(bridge.url);
+  await expect(page.locator(".tr.dev[data-loading] .ph-skel").first()).toBeVisible();
+  await expect(page.locator(".tr.h > div")).toHaveText(COLUMNS);
+  await expect(page.locator(".empty-box")).toHaveCount(0);
+  await expect(page.locator(".main")).not.toContainText("Nothing found yet");
+  await expect(page.locator(".main")).not.toContainText("records");
+  release();
+  await listSettled(page);
+  await expect(page.locator("[data-loading]")).toHaveCount(0);
+});
+
 test.describe("with nothing plugged in", () => {
   test.use({ scene: "empty" });
+
+  test("scanning switched off says so in the header and in the box, and a failing link says why", async ({ app, bridge }) => {
+    await expect(app.locator(".empty-box")).toContainText("Nothing found yet");
+    await app.locator(".ph").getByRole("button", { name: "Pause" }).click();
+    const chip = app.locator(".ph [data-scan]");
+    await expect(chip).toHaveText("Scanning is off");
+    await expect(chip).toHaveClass(/\bchip off\b/);
+    await expect(app.locator(".ph > :last-child")).toHaveAttribute("data-scan", "off");
+    await expect(app.locator(".empty-box")).toContainText("Scanning is off, so nothing new is found.");
+    await app.locator(".ph").getByRole("button", { name: "Resume" }).click();
+    await expect(chip).toHaveText("Scanning USB and network");
+    await bridge.call("sim.disk", { broken: true });
+    await expect(app.locator('.empty-box .note.warn[data-link="disks"]')).toHaveText(/^card reader is not answering: device did not respond: could not list disks: the card reader did not answer\. Try \d+ in \d+ s\.$/);
+    await expectNoOverflow(app);
+  });
 
   test("the list says so, keeps scanning, and offers the flash flow", async ({ app }) => {
     await expect(app.locator(".empty-box")).toContainText("Nothing found yet");

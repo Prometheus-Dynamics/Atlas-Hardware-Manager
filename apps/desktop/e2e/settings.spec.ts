@@ -152,9 +152,12 @@ test("a support bundle is a file on this computer, and the page says what it hol
   await expect(support.locator("dd").nth(1)).toHaveText(/^[\d.]+ (B|KB|MB) · UI errors, failed calls, breadcrumbs$/);
   await support.getByRole("button", { name: "Make support bundle" }).click();
   const line = support.locator("[data-bundle]");
-  await expect(line).toHaveText(/^atlas-support-\d+\.txt · [\d.]+ (KB|MB) · holds: Atlas, Settings, Devices and recent events, Scan, Jobs, App log: atlas\.log/);
+  // Where the bundle is, in full and on the page, with what it holds.
+  await expect(line).toHaveText(/^\/.*atlas-support-\d+\.txt · [\d.]+ (KB|MB) · holds: Atlas, Settings, Devices and recent events, Scan, Jobs, App log: atlas\.log/);
+  await expect(line).not.toHaveAttribute("title");
+  expect(await line.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   // The file is there, readable, and holds what the page says.
-  const path = (await line.getAttribute("title"))!;
+  const path = (await line.textContent())!.trim().split(" · ")[0]!;
   const text = readFileSync(path, "utf8");
   for (const part of ["===== Atlas =====", "===== Settings =====", "===== Devices and recent events =====", "===== App log: atlas.log ====="]) expect(text).toContain(part);
   expect(text).toContain(DEMO.running.name);
