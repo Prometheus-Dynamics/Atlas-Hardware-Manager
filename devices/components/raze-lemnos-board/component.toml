@@ -150,7 +150,8 @@ from = { file = "files/raze-i2c-dev.conf" }
 to = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
 mode = "0644"
 
-# Hand-written and kept: no generated udev rule at Lemnos I5j (`lemnos-ctl tree` has no --udev; Lemnos Q2i a06c650c).
+# Hand-written and kept beside the generated 71-lemnos-board.rules: `lemnos-ctl tree --udev` grants the lemnos group its
+# nodes, and this rule is not one of those.
 # USB power policy, not a Lemnos-user rule: it sets power/control=on and USB2 LPM off for every USB
 # device when udev adds it, because USB autosuspend dropped external cameras on dev. udev runs it as
 # root, so it gives the lemnos user nothing.
