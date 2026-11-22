@@ -11,6 +11,7 @@
 //! (`<file>.minisig`, checked against [`Keyring`]) and ed25519 over the
 //! compact JSON of a [`ManifestBody`] for remote releases.
 
+mod app_update;
 mod catalog;
 mod error;
 mod fetch;
@@ -20,6 +21,10 @@ mod trust;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use app_update::{
+    APP_FAMILY, AppQuery, AppUpdate, InstallKind, VerifiedInstaller, check_app_update,
+    download_app_update, version_cmp,
+};
 pub use catalog::{
     Artifact, Channel, DownloadProgress, ReleaseCatalog, ReleaseEntry, ReleaseOrigin, RemoteSource,
 };

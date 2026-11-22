@@ -144,99 +144,120 @@ impl ReleaseCatalog {
             .await
             .map_err(|error| ReleaseError::io(&self.cache_dir, error))?;
         let target = self.cached_target(&entry);
-        let size = entry.size_bytes;
-        let partial_path = PathBuf::from(format!("{}.partial", target.display()));
-        let mut partial = Partial::open(partial_path, size).await?;
-
-        let mut backoff = BACKOFF_FIRST;
-        while partial.offset < size {
-            let before = partial.offset;
-            match self.stream(&url, &mut partial, size, &progress).await? {
-                Attempt::Done => {}
-                Attempt::Retry if partial.offset > before => backoff = BACKOFF_FIRST,
-                Attempt::Retry => {
-                    tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(BACKOFF_CAP);
-                }
-            }
-        }
-
-        let Partial {
-            path, file, hasher, ..
-        } = partial;
-        file.sync_all()
-            .await
-            .map_err(|error| ReleaseError::io(&path, error))?;
-        drop(file);
-        let actual = crate::hash::to_hex(&hasher.finalize());
-        if !entry.sha256.is_empty() && actual != entry.sha256 {
-            let _ = tokio::fs::remove_file(&path).await;
-            return Err(ReleaseError::HashMismatch {
-                path: target,
-                expected: entry.sha256,
-                actual,
-            });
-        }
-        tokio::fs::rename(&path, &target)
-            .await
-            .map_err(|error| ReleaseError::io(&target, error))?;
+        fetch_file(
+            self.fetch.as_ref(),
+            &url,
+            &target,
+            entry.size_bytes,
+            &entry.sha256,
+            &progress,
+        )
+        .await?;
         entry.path = Some(target);
         self.upsert(entry.clone())?;
         Ok(entry)
     }
+}
 
-    /// One request from the partial's offset to the end. Any failure short of
-    /// a fatal one (a 4xx answer, too many bytes) is [`Attempt::Retry`].
-    async fn stream(
-        &self,
-        url: &str,
-        partial: &mut Partial,
-        size: u64,
-        progress: &impl Fn(DownloadProgress),
-    ) -> Result<Attempt, ReleaseError> {
-        let reply = match self.fetch.get(url, partial.offset).await {
-            Ok(reply) => reply,
-            Err(_) => return Ok(Attempt::Retry),
-        };
-        match reply.status {
-            200..=299 => {}
-            416 => {
-                // The server doesn't have that range: start over.
-                partial.restart().await?;
-                return Ok(Attempt::Retry);
-            }
-            429 | 500..=599 => return Ok(Attempt::Retry),
-            status => {
-                return Err(download_error(url, format!("the server answered {status}")));
+/// Downloads `url` to `target`: resumed from `<target>.partial`, never given up on while the
+/// server may still answer (the failure rule), and given its name only when it is `size` bytes
+/// and, when `sha256` is not empty, hashes to it. A file that fails its check is deleted.
+pub(crate) async fn fetch_file(
+    fetch: &dyn Fetch,
+    url: &str,
+    target: &std::path::Path,
+    size: u64,
+    sha256: &str,
+    progress: &(dyn Fn(DownloadProgress) + Send + Sync),
+) -> Result<(), ReleaseError> {
+    let partial_path = PathBuf::from(format!("{}.partial", target.display()));
+    let mut partial = Partial::open(partial_path, size).await?;
+
+    let mut backoff = BACKOFF_FIRST;
+    while partial.offset < size {
+        let before = partial.offset;
+        match stream(fetch, url, &mut partial, size, progress).await? {
+            Attempt::Done => {}
+            Attempt::Retry if partial.offset > before => backoff = BACKOFF_FIRST,
+            Attempt::Retry => {
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(BACKOFF_CAP);
             }
         }
-        // A whole file again, when the server ignored the range: start over.
-        if partial.offset > 0 && reply.status != 206 {
+    }
+
+    let Partial {
+        path, file, hasher, ..
+    } = partial;
+    file.sync_all()
+        .await
+        .map_err(|error| ReleaseError::io(&path, error))?;
+    drop(file);
+    let actual = crate::hash::to_hex(&hasher.finalize());
+    if !sha256.is_empty() && actual != sha256 {
+        let _ = tokio::fs::remove_file(&path).await;
+        return Err(ReleaseError::HashMismatch {
+            path: target.to_path_buf(),
+            expected: sha256.to_owned(),
+            actual,
+        });
+    }
+    tokio::fs::rename(&path, target)
+        .await
+        .map_err(|error| ReleaseError::io(target, error))
+}
+
+/// One request from the partial's offset to the end. Any failure short of
+/// a fatal one (a 4xx answer, too many bytes) is [`Attempt::Retry`].
+async fn stream(
+    fetch: &dyn Fetch,
+    url: &str,
+    partial: &mut Partial,
+    size: u64,
+    progress: &(dyn Fn(DownloadProgress) + Send + Sync),
+) -> Result<Attempt, ReleaseError> {
+    let reply = match fetch.get(url, partial.offset).await {
+        Ok(reply) => reply,
+        Err(_) => return Ok(Attempt::Retry),
+    };
+    match reply.status {
+        200..=299 => {}
+        416 => {
+            // The server doesn't have that range: start over.
             partial.restart().await?;
+            return Ok(Attempt::Retry);
         }
-        let mut body = reply.body;
-        loop {
-            if partial.offset >= size {
-                return Ok(Attempt::Done);
-            }
-            let piece = match tokio::time::timeout(STALL, body.next_chunk()).await {
-                Err(_) | Ok(Err(_)) | Ok(Ok(None)) => return Ok(Attempt::Retry),
-                Ok(Ok(Some(piece))) => piece,
-            };
-            if partial.offset + piece.len() as u64 > size {
-                let actual = partial.offset + piece.len() as u64;
-                let _ = tokio::fs::remove_file(&partial.path).await;
-                return Err(ReleaseError::SizeMismatch {
-                    path: partial.path.clone(),
-                    expected: size,
-                    actual,
-                });
-            }
-            partial.write(&piece).await?;
-            progress(DownloadProgress {
-                downloaded: partial.offset,
-                total: Some(size),
+        429 | 500..=599 => return Ok(Attempt::Retry),
+        status => {
+            return Err(download_error(url, format!("the server answered {status}")));
+        }
+    }
+    // A whole file again, when the server ignored the range: start over.
+    if partial.offset > 0 && reply.status != 206 {
+        partial.restart().await?;
+    }
+    let mut body = reply.body;
+    loop {
+        if partial.offset >= size {
+            return Ok(Attempt::Done);
+        }
+        let piece = match tokio::time::timeout(STALL, body.next_chunk()).await {
+            Err(_) | Ok(Err(_)) | Ok(Ok(None)) => return Ok(Attempt::Retry),
+            Ok(Ok(Some(piece))) => piece,
+        };
+        if partial.offset + piece.len() as u64 > size {
+            let actual = partial.offset + piece.len() as u64;
+            let _ = tokio::fs::remove_file(&partial.path).await;
+            return Err(ReleaseError::SizeMismatch {
+                path: partial.path.clone(),
+                expected: size,
+                actual,
             });
         }
+        partial.write(&piece).await?;
+        progress(DownloadProgress {
+            downloaded: partial.offset,
+            total: Some(size),
+        });
     }
 }

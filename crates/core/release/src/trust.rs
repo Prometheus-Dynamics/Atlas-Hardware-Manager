@@ -179,6 +179,21 @@ impl Keyring {
         ring
     }
 
+    /// The trusted, unexpired keys as the keys a release manifest is verified with
+    /// ([`crate::Manifest::verify`]). A minisign key is an ed25519 key, so the one trusted list
+    /// decides both whose files and whose manifests are accepted. With `production_only`, a
+    /// [`Purpose::Dev`] key (whose private key is not guarded) is left out.
+    pub fn manifest_keys(&self, production_only: bool) -> Vec<crate::PublicKey> {
+        let today = today();
+        self.keys
+            .iter()
+            .filter(|key| !key.expired(&today))
+            .filter(|key| !production_only || key.purpose == Purpose::Production)
+            .filter_map(|key| key.verifying_key().ok())
+            .map(|(_, key)| crate::PublicKey::from_verifying(key))
+            .collect()
+    }
+
     fn by_id(&self, id: &[u8; 8]) -> Option<&TrustedKey> {
         let hex = key_id_hex(id);
         self.keys
