@@ -464,13 +464,13 @@ impl Jobs {
         self.send_if_active(id, Command::Pause)
     }
 
-    /// Lets a paused job, or one waiting to retry, run now. False if it is not paused.
+    /// Lets a paused job, or one waiting to retry, run now: the wait before the next try is cut
+    /// short. False if it is neither paused nor waiting to retry.
     pub fn resume(&self, id: JobId) -> bool {
-        let paused = self
-            .inner
-            .record(id)
-            .is_some_and(|job| job.status == JobStatus::Paused);
-        paused && self.send_if_active(id, Command::Run)
+        let waiting = self.inner.record(id).is_some_and(|job| {
+            matches!(job.status, JobStatus::Paused | JobStatus::Retrying { .. })
+        });
+        waiting && self.send_if_active(id, Command::Run)
     }
 
     /// Stops a job. A step already running is dropped; nothing after it runs.
