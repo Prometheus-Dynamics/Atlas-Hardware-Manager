@@ -1,4 +1,4 @@
-# The Raze's flasher board file: Lemnos testing/boards/bcm2712-flasher.toml at 4b5be3a5, byte for byte except
+# The Raze's flasher board file: Lemnos testing/boards/bcm2712-flasher.toml at da86d0b3, byte for byte except
 # [board] id, which is the Raze's own ("raze"; a manifest names the board it is for, and the Raze's images name
 # raze). Do not edit it any other way: take a new copy from Lemnos when the flasher's Lemnos rev moves.
 #

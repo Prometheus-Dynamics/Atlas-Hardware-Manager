@@ -10,8 +10,8 @@ commit = "d5180309b1b66ef3b8eaccca70ad69be8e0729a1"
 [source."flasher-lemnos-busybox.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
-commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
 [source."flasher-lemnos-orion.root"]
 kind = "image"
@@ -21,8 +21,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."flasher-lemnos-orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
-commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
 [source."flasher-lemnos-restart.root"]
 kind = "image"
@@ -32,8 +32,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."flasher-lemnos-restart.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
-commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
 [source."flasher-lemnosd.root"]
 kind = "image"
@@ -43,8 +43,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."flasher-lemnosd.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
-commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
 [source."flasher-orion.root"]
 kind = "image"

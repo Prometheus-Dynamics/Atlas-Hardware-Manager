@@ -1,7 +1,7 @@
 //! The first-flash write over Orion (D6), for `atlas-flash-flow`'s [`Flasher`](atlas_flash_flow::Flasher) and
 //! [`FirstFlash`](atlas_flash_flow::FirstFlash) seams.
 //!
-//! The board's side is Lemnos's (next 4b5be3a5, FLASH-BCM2712; `docs/slots.md`, "First flash"), and Orion's (next
+//! The board's side is Lemnos's (next da86d0b3, FLASH-BCM2712; `docs/slots.md`, "First flash"), and Orion's (next
 //! 3f60576c: a flasher runs `orion-comm` and `orion-node` with `hello.state = flasher`):
 //! - [`OrionFlasher`] takes the node [`Reach`] gives once its signed hello says `state = flasher` and its `serial`
 //!   is the target's. Another board is refused; a node not yet the flasher is waited for.

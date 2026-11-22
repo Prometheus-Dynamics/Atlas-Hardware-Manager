@@ -193,7 +193,7 @@ cargo_lemnos_rev() {  # <Cargo.toml>
 # Only slot products (a recipe of SLOT_RECIPES): Atlas reads their slot bundles, so their Lemnos must be the one
 # whose bundle format Atlas was built with. A product that makes no slot (the flasher's initramfs-boot) is held to its
 # own one Lemnos rev by the one-rev rule, and may be on another Lemnos than the slot products (D6: the bcm2712 flasher
-# on Lemnos 4b5be3a5 while raze-base stays on 31e0f736).
+# on Lemnos da86d0b3 while raze-base stays on its own pin).
 # A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot and slot-disk are
 # the slot with its bundle and boot partition: L2d). The Cargo pin rule and the slot chain read it.
 SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"

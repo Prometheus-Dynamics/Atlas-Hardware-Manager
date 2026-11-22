@@ -1,4 +1,4 @@
-# BusyBox applets for the flasher's init, Lemnos's init scripts (packaging/init, 4b5be3a5) and Orion's
+# BusyBox applets for the flasher's init, Lemnos's init scripts (packaging/init, da86d0b3) and Orion's
 # (packaging/busybox, 3f60576c). From B9 (b2efaf42), with the four Orion's scripts add, and the network's (flasher-lemnos0).
 # Gaia's Buildroot base is allnoconfig, so an applet is on only when this file says so. Each line:
 # ash        /bin/sh: the Lemnos scripts are POSIX sh run under ash, and rcS runs them

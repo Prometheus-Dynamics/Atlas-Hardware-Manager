@@ -3,8 +3,8 @@
 # 3f60576c, confirmed by the coordinator for the D6 flasher only; the Raze product's orion stays at 455a956e.
 #
 # shm: this Orion takes its shared-memory ring crates from Lemnos 0d37cc55 (its Cargo.toml), and the flasher's
-# Lemnos is 4b5be3a5. The seven crates (shm/ring, ring-time, ring-doorbell, ring-buffers, ring-holds, fdpass,
-# sample-time) are the same git trees at both revs (Lemnos 0d37cc55 and 4b5be3a5, read 2026-11-22: shm/ differs only in
+# Lemnos is da86d0b3. The seven crates (shm/ring, ring-time, ring-doorbell, ring-buffers, ring-holds, fdpass,
+# sample-time) are the same git trees at both revs (Lemnos 0d37cc55 and da86d0b3, read 2026-11-22: shm/ differs only in
 # README.md and shm/measure). No check reads Orion's Cargo.toml yet, so this is the named exception, written here;
 # docs/prs/D6.md says what a check needs.
 version = 1

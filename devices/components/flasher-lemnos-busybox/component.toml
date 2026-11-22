@@ -1,5 +1,5 @@
 # Lemnos's packaging for the bcm2712 flasher, a RAM-only initramfs with BusyBox init. These are the files
-# Lemnos's packaging/files.txt (4b5be3a5) marks busybox, orion, always and soc: the three init scripts, the
+# Lemnos's packaging/files.txt (da86d0b3) marks busybox, orion, always and soc: the three init scripts, the
 # environment files, the bcm2712 SoC map, and the users. It supersedes B9's unlanded lemnos-busybox (b0bf0101).
 #
 # Not installed, and why:
@@ -14,7 +14,7 @@ description = "Lemnos for the bcm2712 flasher's BusyBox init: the restart helper
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"  # Lemnos next, FLASH-BCM2712: the flasher's one Lemnos rev
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"  # Lemnos next, FLASH-ANSWERS: the flasher's one Lemnos rev
 
 [[install]]
 from = { source = "src", path = "packaging/init/S49lemnos-restart" }

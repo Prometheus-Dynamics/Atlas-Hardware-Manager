@@ -7,7 +7,7 @@
 #     alone: the recovery comm core refuses file pushes and actions.
 #   - The board file is the flasher's own (raze-flasher-board: Lemnos bcm2712-flasher.toml with the Raze's id),
 #     because only a flasher's board file sets allow_first_flash.
-#   - Every Lemnos part is at Lemnos next 4b5be3a5 and Orion at next 3f60576c (flasher-* components), confirmed for
+#   - Every Lemnos part is at Lemnos next da86d0b3 and Orion at next 3f60576c (flasher-* components), confirmed for
 #     this work only. The Raze product's pins do not move.
 #
 # Recipe: Gaia's initramfs-boot (at Atlas's Gaia pin 9efa797f): the built tree as a plain newc archive. What it does

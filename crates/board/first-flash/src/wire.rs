@@ -1,9 +1,10 @@
 //! What goes to the board and what comes back, as Lemnos's bridge and `system.flash/1` define them (Lemnos next
-//! 4b5be3a5, `docs/slots.md` "First flash"). No I/O here.
+//! da86d0b3, `docs/slots.md` "First flash"). No I/O here.
 //!
 //! - The image goes to `lemnos/<device>/<name>`, its transport manifest first to `<name>.json`.
 //! - The committed image's answer is fields: `raw_bytes=<n> outcome=<code>`.
-//! - `verify`'s result is the byte count checked, a `u64` little-endian, which the bridge passes as the run's output.
+//! - `verify`'s result is fields too: `raw_bytes=<n>`, the byte count checked, which the bridge passes as the run's
+//!   output.
 
 use atlas_flash_flow::{ImagePlan, Stream};
 
@@ -150,32 +151,34 @@ pub fn committed(detail: &str) -> Result<Committed, String> {
     }
 }
 
-/// Reads `verify`'s result: the byte count checked, a `u64` little-endian. The bridge passes a job's result as the
-/// run's output as it is when it is UTF-8 and as hex otherwise, so eight bytes are the count and sixteen hex digits
-/// are its hex.
+/// Reads `verify`'s result: `raw_bytes=<n>`, the byte count checked, in the same fields as the commit's answer. Fields
+/// this build does not know are skipped.
 ///
 /// # Errors
 ///
-/// When the output is neither.
+/// When the output is not text, or `raw_bytes` is missing, given twice or not a byte count.
 pub fn verified(output: &[u8]) -> Result<u64, String> {
-    let bytes: [u8; 8] = match output.len() {
-        8 => output.try_into().map_err(|_| "unreachable".to_owned())?,
-        16 if output.iter().all(u8::is_ascii_hexdigit) => {
-            let mut bytes = [0u8; 8];
-            for (i, byte) in bytes.iter_mut().enumerate() {
-                let pair =
-                    std::str::from_utf8(&output[2 * i..2 * i + 2]).map_err(|e| e.to_string())?;
-                *byte = u8::from_str_radix(pair, 16).map_err(|e| e.to_string())?;
+    let text = std::str::from_utf8(output)
+        .map_err(|_| "the board's verify answered bytes that are not text".to_owned())?;
+    let mut raw_bytes = None;
+    for (key, value) in text
+        .split(' ')
+        .filter_map(|field| field.trim().split_once('='))
+    {
+        if key == "raw_bytes" {
+            let n = value
+                .parse::<u64>()
+                .map_err(|_| format!("the board's raw_bytes {value:?} is not a byte count"))?;
+            if raw_bytes.replace(n).is_some() {
+                return Err("the board's verify gave raw_bytes twice".to_owned());
             }
-            bytes
         }
-        n => {
-            return Err(format!(
-                "the board's verify answered {n} bytes, not a byte count"
-            ));
-        }
-    };
-    Ok(u64::from_le_bytes(bytes))
+    }
+    raw_bytes.ok_or_else(|| {
+        format!(
+            "the board's verify answered without raw_bytes (its answer: {text:?}); its Lemnos is older than FLASH-ANSWERS"
+        )
+    })
 }
 
 #[cfg(test)]
@@ -272,12 +275,14 @@ mod tests {
     }
 
     #[test]
-    fn verify_s_count_reads_as_bytes_or_as_the_bridge_s_hex() {
-        let n: u64 = 8_388_608;
-        assert_eq!(verified(&n.to_le_bytes()), Ok(n));
-        let hex: String = n.to_le_bytes().iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(verified(hex.as_bytes()), Ok(n));
+    fn verify_s_count_is_read_from_its_field_and_nothing_else() {
+        assert_eq!(verified(b"raw_bytes=8388608"), Ok(8_388_608));
+        assert_eq!(verified(b"raw_bytes=5 checked_ms=12\n"), Ok(5));
+        // The answer before FLASH-ANSWERS: eight bytes of a u64, never read as a count again.
+        assert!(verified(&8_388_608u64.to_le_bytes()).is_err());
+        assert!(verified(b"0000800000000000").is_err());
         assert!(verified(b"").is_err());
-        assert!(verified(b"zzzzzzzzzzzzzzzz").is_err());
+        assert!(verified(b"raw_bytes=x").is_err());
+        assert!(verified(b"raw_bytes=1 raw_bytes=2").is_err());
     }
 }

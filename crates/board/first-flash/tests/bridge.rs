@@ -1,4 +1,4 @@
-//! The first-flash write against a board that answers as Lemnos's bridge does (next 4b5be3a5).
+//! The first-flash write against a board that answers as Lemnos's bridge does (next da86d0b3).
 
 use std::io::Read;
 use std::sync::Mutex;
@@ -35,7 +35,7 @@ impl Board {
         Self {
             seen: Mutex::new(Vec::new()),
             committed: committed.to_owned(),
-            verify: Ok(RAW.to_le_bytes().to_vec()),
+            verify: Ok(format!("raw_bytes={RAW}").into_bytes()),
             reboot: Ok(Vec::new()),
         }
     }
@@ -192,7 +192,7 @@ async fn a_count_that_is_not_the_image_s_is_refused() {
     ));
 
     let mut board = Board::answering("raw_bytes=8388608 outcome=0");
-    board.verify = Ok(4096u64.to_le_bytes().to_vec());
+    board.verify = Ok(b"raw_bytes=4096".to_vec());
     let misread = BridgeFlash::new(board);
     assert!(matches!(
         write(&misread, &image(&dir)).await.0,

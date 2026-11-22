@@ -1,14 +1,14 @@
 # The bcm2712 flasher's lemnosd, in the same form as components/lemnosd, at the flasher's own Lemnos rev.
-# Its own component, not a shared one, because the flasher is pinned at Lemnos next 4b5be3a5 (FLASH-BCM2712, with
+# Its own component, not a shared one, because the flasher is pinned at Lemnos next da86d0b3 (FLASH-BCM2712, with
 # reboot_to from 4a65e473), confirmed by the coordinator for the D6 flasher only, while the Raze product and build10
 # stay on 31e0f736. Gaia has no per-product source override at Atlas's pin (9efa797f), so the rev lives here.
 version = 1
 name = "flasher-lemnosd"
-description = "the bcm2712 flasher's lemnosd (Lemnos 4b5be3a5, service profile)"
+description = "the bcm2712 flasher's lemnosd (Lemnos da86d0b3, service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"  # Lemnos next, FLASH-BCM2712
+ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"  # Lemnos next, FLASH-ANSWERS
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
