@@ -43,7 +43,7 @@ pub const LINK_KINDS: [LinkKind; 3] = [
 pub struct BoardDriver {
     manifest: DriverManifest,
     seeds: Vec<Seed>,
-    sessions: Sessions,
+    sessions: Arc<Sessions>,
     /// Nodes that have published Lemnos facts or offers. Once one has, it is expected to answer
     /// for Lemnos from then on, even while its facts are gone (after its own restart).
     expects_lemnos: Mutex<BTreeSet<String>>,
@@ -78,6 +78,13 @@ impl BoardDriver {
 
     /// As [`BoardDriver::new`], with the wait between tries chosen by the caller.
     pub fn with_pause(seeds: Vec<Seed>, pause: Arc<dyn Pause>) -> Self {
+        Self::with_sessions(seeds, Arc::new(Sessions::new(pause)))
+    }
+
+    /// A driver that keeps its nodes' sessions in `sessions`, which the caller shares. Readings,
+    /// actions, slots and files reach a node through the same registry, so a node has one
+    /// connection whoever asks: the scan here, a page there.
+    pub fn with_sessions(seeds: Vec<Seed>, sessions: Arc<Sessions>) -> Self {
         Self {
             manifest: DriverManifest {
                 family: Family::new(FAMILY),
@@ -87,11 +94,17 @@ impl BoardDriver {
                 priority: 0,
             },
             seeds,
-            sessions: Sessions::new(pause),
+            sessions,
             expects_lemnos: Mutex::new(BTreeSet::new()),
             known_keys: Mutex::new(BTreeMap::new()),
             known: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    /// The session registry this driver keeps its nodes in.
+    #[must_use]
+    pub fn sessions(&self) -> &Arc<Sessions> {
+        &self.sessions
     }
 
     /// Says which key the node at `address` is known by. Its session is pinned to that key from

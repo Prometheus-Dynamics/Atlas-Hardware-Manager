@@ -43,6 +43,10 @@ CONFIG_ENV_MMC_USE_DT=y
 # lists them). Each is U-Boot v2026.10's name, as Lemnos checked it against the Kconfig files (testing/board-runs/I5i7.md).
 #   The boot script (packaging/uboot/boot.cmd): hush with while and for, sysboot, fdt, sleep, saveenv, and the FAT boot partition.
 #   The fastboot gadget on USB (the pause and the offer for flashing) and the watchdog the loop services (cmd/fastboot.c:115).
+#   The fastboot buffer address has no U-Boot default on RK3566/RK3568/RK3576/RK3588 and differs by SoC (DRAM starts at
+#   0x40000000 on the RK3576): it is in u-boot-<soc>.fragment beside this file, and each board lists the family fragment and
+#   its SoC's (RK-FASTBOOT). scripts/check-uboot-fragments.sh refuses a board whose resolved configuration leaves a hex or
+#   int symbol empty, the state that made syncconfig ask without end (287e2195).
 CONFIG_CMD_SAVEENV=y
 CONFIG_EFI_PARTITION=y
 CONFIG_HUSH_PARSER=y

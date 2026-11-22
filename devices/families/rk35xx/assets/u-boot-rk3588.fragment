@@ -1,0 +1,11 @@
+# RK3588 and RK3588S (U-Boot's ROCKCHIP_RK3588): the fastboot download buffer (RK-FASTBOOT).
+# The family fragment turns the fastboot gadget on (the Lemnos boot path's flashing offer). U-Boot v2026.10 gives
+# FASTBOOT_BUF_ADDR no default on this SoC (drivers/fastboot/Kconfig:52-62). Left empty, U-Boot's syncconfig asks for
+# it without end and the build never finishes (287e2195; Gaia's rock-5c proof hung 85 min).
+# The value is U-Boot's own for an RK3588S board with the gadget: khadas-edge2-rk3588s_defconfig:53, 0xc00800, its
+# CONFIG_SYS_LOAD_ADDR (line 11), the same as rock-5c-rk3588s_defconfig:10. Of the 11 RK3588 defconfigs with the
+# gadget, 9 turn fastboot off; the other two keep it and set the address (coolpi-cm5-genbook-rk3588_defconfig:55 uses
+# 0x800800). DRAM starts at 0 (include/configs/rk3588_common.h). The size stays U-Boot's Rockchip default, 0x8000000
+# (khadas-edge2 states 0x7000000). The boot script runs from a copy (common/cli.c run_command_list), so a download over
+# scriptaddr does not touch it. UNVERIFIED on a board.
+CONFIG_FASTBOOT_BUF_ADDR=0xc00800

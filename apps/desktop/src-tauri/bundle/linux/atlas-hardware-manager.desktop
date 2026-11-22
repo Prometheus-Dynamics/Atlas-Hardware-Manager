@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Atlas Hardware Manager
+Comment=Find, flash, update and watch your boards
+Exec=atlas-app
+Icon=atlas-app
+Terminal=false
+Categories=Utility;
+StartupWMClass=atlas-app

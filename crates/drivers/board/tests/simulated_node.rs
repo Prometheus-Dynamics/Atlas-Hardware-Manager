@@ -477,3 +477,29 @@ async fn a_board_whose_offers_are_missing_reports_them_not_reported_and_no_slots
         "Orion's own are not offers"
     );
 }
+
+#[tokio::test]
+async fn a_caller_that_shares_the_sessions_reaches_the_node_on_the_drivers_own_session() {
+    let dir = scratch("board-shared-sessions");
+    let node = start(&dir, &running_board(), None);
+    let port = node.network().port();
+    let sessions = std::sync::Arc::new(atlas_session::Sessions::new(std::sync::Arc::new(
+        Delays::default(),
+    )));
+    let address = format!("orion+tcp://127.0.0.1:{port}");
+    let seed = Seed::new(LinkId::new(LINK), &address).unwrap();
+    let driver = BoardDriver::with_sessions(vec![seed], std::sync::Arc::clone(&sessions));
+    // Nobody has asked yet: the registry holds no session for the node.
+    assert!(sessions.existing(&address).is_none());
+    let candidate = offered(&driver, &usb_link()).await;
+    let identity = identify(&driver, &candidate).await;
+    // The scan started one, and the caller's handle is that same session: its number and the
+    // node key it found are the driver's.
+    let mine = sessions
+        .existing(&identity.address)
+        .expect("the shared session");
+    let theirs = driver.sessions().existing(&identity.address).unwrap();
+    assert_eq!(mine.session(), theirs.session());
+    assert!(mine.node_key().is_some());
+    assert_eq!(mine.node_key(), theirs.node_key());
+}

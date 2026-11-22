@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Prometheus Dynamics",
+    "category": "Utility",
+    "shortDescription": "Find, flash, update and watch your boards",
+    "longDescription": "Atlas Hardware Manager finds every board on your computer and your robot, flashes it, updates it and manages its slots, and gets you in when it is broken.",
+    "externalBin": ["binaries/atlas-helper"],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "pkexec | policykit-1"],
+        "files": {
+          "/usr/lib/atlas-hardware-manager/install-kind": "bundle/linux/install-kind-deb"
+        }
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3", "polkit"],
+        "files": {
+          "/usr/lib/atlas-hardware-manager/install-kind": "bundle/linux/install-kind-rpm"
+        }
+      }
+    }
+  }
+}

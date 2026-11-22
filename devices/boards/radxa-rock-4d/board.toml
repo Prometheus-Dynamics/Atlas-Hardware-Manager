@@ -22,6 +22,8 @@ device_tree_dir = "assets/dts"
 # checked).
 [bootloader]
 defconfig = "rock-4d-rk3576"
+# The family's U-Boot fragment, then the RK3576 one: the fastboot buffer address (RK-FASTBOOT). The list replaces the family's.
+fragments = ["../../families/rk35xx/assets/u-boot.fragment", "../../families/rk35xx/assets/u-boot-rk3576.fragment"]
 
 # The 4D's own rkbin pin: 3e288fe, the commit dev pinned for this board (dev's
 # fetch.lock). It is also the family's current pin, written out here so that a
