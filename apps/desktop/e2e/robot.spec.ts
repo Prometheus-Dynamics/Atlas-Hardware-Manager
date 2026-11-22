@@ -31,10 +31,6 @@ test("the tree and the list lead to the robot, and the robot to its controller a
   await expect(app.locator("header.top .crumb")).toHaveText(`Devices / ${ROBOT} /`);
   await expect(side.locator("a.nav.on")).toHaveText(DEMO.controller.name);
 
-  // The radio in the tree leads to its robot, not to a board screen.
-  await side.getByText(DEMO.radio.name, { exact: true }).click();
-  await expect(app.locator("header.top h1")).toHaveText(ROBOT);
-
   // And from the list.
   await side.getByText("All devices").click();
   await app.locator(".tr.dev", { hasText: DEMO.controller.name }).click();
@@ -73,15 +69,17 @@ test("a robot device that stops answering is not reporting, and reports again wh
   await expect(radio.locator(".chip")).toHaveText("reporting");
   await bridge.call("sim.set_online", { id: DEMO.radio.id, online: false });
   await expect(radio.locator(".chip")).toHaveText("not reporting", SEEN);
-  // It stays in its robot, in the tree too: it is not moved to Offline.
+  // It stays in its robot: nothing of it is moved to Offline in the tree.
   await expect(app.locator("aside.side .sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
-  await expect(app.locator("aside.side a.nav.off")).toHaveCount(1);
+  await expect(app.locator("aside.side a.nav.off")).toHaveText([DEMO.offline.name]);
   await bridge.call("sim.set_online", { id: DEMO.radio.id, online: true });
   await expect(radio.locator(".chip")).toHaveText("reporting", SEEN);
 
   // The controller gone: its screen says so and offers no page to open.
   await bridge.call("sim.set_online", { id: DEMO.controller.id, online: false });
   await expect(app.locator('[data-panel="controller"] .chip')).toHaveText("Offline", SEEN);
+  // In the tree it stays under its robot, drawn as an offline row is: faint, with the grey dot.
+  await expect(app.locator("aside.side a.nav.off")).toHaveText([DEMO.controller.name, DEMO.offline.name]);
   await app.locator('[data-panel="controller"]').getByText("Open SystemCore").click();
   await expect(app.locator("header.top .chip")).toHaveText([DEMO.controller.name, "Offline"]);
   await expect(app.locator("header.top").getByRole("button")).toHaveCount(0);

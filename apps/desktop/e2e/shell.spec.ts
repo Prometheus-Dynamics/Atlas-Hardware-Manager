@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, startBridge, test } from "./bridge";
+import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, holdSnapshot, startBridge, test } from "./bridge";
 
 test("the simulated devices arrive by events and fill the tree", async ({ app }) => {
   const side = app.locator("aside.side");
@@ -14,7 +14,7 @@ test("the simulated devices arrive by events and fill the tree", async ({ app })
   await expect(side.locator("a.nav .dot.acc")).toHaveCount(1); // the board in its boot ROM
   // The robot, its controller under it, then the boards on this computer.
   await expect(side.locator("a.nav .t")).toHaveText([
-    "All devices", "Practice field", "sc-practice", "field-radio", "bench-a", "bench-b", "bench-c", "old-bench", "SD card 64 GB", "Flash a board", "Settings",
+    "All devices", "Practice field", "sc-practice", "bench-a", "bench-b", "bench-c", "old-bench", "SD card 64 GB", "Flash a board", "Settings",
   ]);
 });
 
@@ -60,6 +60,68 @@ test("it opens with the last known inventory before any scan answers", async ({ 
   await page.close();
   await second.stop();
   rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("before the core's first answer every screen shows bars, and none says there is nothing", async ({ page, bridge }) => {
+  const release = await holdSnapshot(page);
+  await page.goto(bridge.url);
+  const side = page.locator("aside.side");
+  await expect(side.locator("[data-loading] .ph-skel")).toHaveCount(2);
+  await expect(side).not.toContainText("No devices yet");
+  const NONE = /No devices yet|Nothing found yet|no record of this board|There is no robot named|knows no controller|none chosen yet|No board is in its boot ROM|No removable disk|Nothing has been|None yet|None seen/;
+  const screens = ["#/devices", `#/board/${encodeURIComponent(DEMO.running.id)}`, "#/robot/Practice%20field", `#/systemcore/${encodeURIComponent(DEMO.controller.id)}`, "#/flash", "#/disk", "#/settings"];
+  for (const hash of screens) {
+    await page.evaluate((to) => (location.hash = to), hash);
+    await expect.poll(() => page.evaluate(() => location.hash), { message: hash }).toBe(hash);
+    await expect(page.locator(".main .ph-skel").first(), hash).toBeVisible();
+    await expect(page.locator(".main"), hash).not.toContainText(NONE);
+    await expect(page.locator(".main .empty-box"), hash).toHaveCount(0);
+  }
+  // A switch with no value yet is the disabled one, and cannot be pressed.
+  const security = page.locator('[data-panel="security"]').getByRole("switch");
+  await expect(security).toHaveClass(/\bdis\b/);
+  await expect(security).toBeDisabled();
+  release();
+  await demoSettled(page);
+  await expect(page.locator("[data-loading]")).toHaveCount(0);
+  await expect(security).not.toHaveClass(/\bdis\b/);
+  await expect(security).toBeEnabled();
+});
+
+test("a core that cannot be reached is said in words, and the screen fills in when it answers", async ({ page, bridge }) => {
+  await page.route("**/call", (route) => route.abort());
+  await page.goto(bridge.url);
+  const note = page.locator('[data-panel="unreachable"] .note.err');
+  await expect(note).toContainText("Atlas cannot reach its own core");
+  await expect(note).toContainText("It keeps trying");
+  await expect(page.locator("aside.side")).not.toContainText("No devices yet");
+  await expect(page.locator(".main")).not.toContainText("Nothing found yet");
+  await page.unroute("**/call");
+  await demoSettled(page);
+  await expect(page.locator('[data-panel="unreachable"]')).toHaveCount(0);
+  await expect(page.locator(".tr.dev")).toHaveCount(7);
+});
+
+test("a robot's own devices are rows of its screen, not of the tree", async ({ app }) => {
+  const side = app.locator("aside.side");
+  await demoSettled(app);
+  await expect(app.locator(".tr.dev")).toHaveCount(7);
+  await expect(side.getByText(DEMO.radio.name, { exact: true })).toHaveCount(0);
+  await side.getByText(DEMO.controller.name, { exact: true }).click();
+  await expect(side.locator("a.nav.on")).toHaveText(DEMO.controller.name);
+  await side.getByText("Practice field", { exact: true }).click();
+  await expect(app.locator(`[data-robot-device="${DEMO.radio.id}"]`)).toBeVisible();
+});
+
+test("on a short window the devices scroll inside the rail and the tools stay in reach", async ({ app }) => {
+  await demoSettled(app);
+  await app.setViewportSize({ width: 1024, height: 240 });
+  const side = app.locator("aside.side");
+  const settings = side.getByText("Settings", { exact: true });
+  await expect(settings).toBeInViewport({ ratio: 1 });
+  expect(await side.locator("[data-tree]").evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await settings.click();
+  await expect(app.locator("header.top h1")).toHaveText("Settings");
 });
 
 for (const size of SIZES) {

@@ -132,12 +132,16 @@ export const DEMO = {
 } as const;
 
 /** Waits until the demo world has settled in the tree: every record found, named, and the old
- *  board gone offline. */
+ *  board gone offline. The robot's own device (the radio) is a row of the robot's screen and of
+ *  the device list, not of the tree; its robot is. */
 export async function demoSettled(page: Page) {
   const side = page.locator("aside.side");
-  await expect(side.locator("a.nav .dot")).toHaveCount(7);
+  await expect(side.locator("a.nav .dot")).toHaveCount(6);
   await expect(side.locator(".sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
-  for (const record of Object.values(DEMO)) await expect(side.getByText(record.name, { exact: true })).toBeVisible();
+  await expect(side.getByText("Practice field", { exact: true })).toBeVisible();
+  for (const record of Object.values(DEMO)) {
+    if (record !== DEMO.radio) await expect(side.getByText(record.name, { exact: true })).toBeVisible();
+  }
 }
 
 /** Holds the page's first snapshot back until the returned function is called: the app as it is

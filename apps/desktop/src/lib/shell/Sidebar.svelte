@@ -15,55 +15,68 @@
 </script>
 
 <aside class="side">
-  <div class="brand"><b>Atlas</b><span class="ell" title={app.version}>{shortVersion}</span></div>
+  <!-- The whole version, with its commit, is on the Settings screen. -->
+  <div class="brand"><b>Atlas</b><span class="ell">{shortVersion}</span></div>
 
-  <div class="sec up">Devices</div>
-  <a class="nav" class:on={route.page === "devices"} href={href("devices")} style="--d:0">
-    <Icon name="chip" /><span class="t">All devices</span>
-  </a>
-  {#if inventory().devices.length === 0}
-    <a class="nav off" href={href("devices")} style="--d:1"><span class="t">No devices yet</span></a>
-  {/if}
-  {#each groups.robots as robot (robot.name)}
-    <a class="nav" class:on={on("robot", robot.name)} href={href("robot", robot.name)} style="--d:1">
-      <Icon name="robot" /><span class="t">{robot.name}</span><span class="meta">robot</span>
+  <!-- The devices scroll inside the rail when there are more than it holds; the brand above
+       and the tools below stay where they are. -->
+  <div class="rows" style="flex:0 1 auto" data-tree>
+    <div class="sec up">Devices</div>
+    <a class="nav" class:on={route.page === "devices"} href={href("devices")} style="--d:0">
+      <Icon name="chip" /><span class="t">All devices</span>
     </a>
-    {#each robot.entries as entry (entry.device.id)}
-      {@const state = stateOf(entry.device)}
-      <a
-        class="nav"
-        class:on={entry.page !== "robot" && on(entry.page, entry.device.id)}
-        href={href(entry.page, argOf(entry.device))}
-        style="--d:{2 + entry.depth}"
-      >
-        <span class="dot {state.dot}"></span><span class="t">{nameOf(entry.device)}</span>
+    {#if !app.ready}
+      <!-- Not read yet: a bar, not the word for "none" (states.html, Sidebar item / Loading). -->
+      {#each [70, 52] as width (width)}
+        <div style="height:22px;display:flex;align-items:center;padding:0 12px 0 26px" data-loading><div class="ph-skel" style="width:{width}%"></div></div>
+      {/each}
+    {:else if inventory().devices.length === 0}
+      <a class="nav off" href={href("devices")} style="--d:1"><span class="t">No devices yet</span></a>
+    {/if}
+    {#each groups.robots as robot (robot.name)}
+      <a class="nav" class:on={on("robot", robot.name)} href={href("robot", robot.name)} style="--d:1">
+        <Icon name="robot" /><span class="t">{robot.name}</span><span class="meta">robot</span>
+      </a>
+      <!-- Under a robot: its controller and the boards behind it. The robot's own devices are
+           rows of the robot's screen, not of the tree. -->
+      {#each robot.entries.filter((entry) => entry.page !== "robot") as entry (entry.device.id)}
+        {@const state = stateOf(entry.device)}
+        <a
+          class="nav"
+          class:off={entry.device.presence === "offline"}
+          class:on={on(entry.page, entry.device.id)}
+          href={href(entry.page, argOf(entry.device))}
+          style="--d:{2 + entry.depth}"
+        >
+          <span class="dot {state.dot}"></span><span class="t">{nameOf(entry.device)}</span>
+        </a>
+      {/each}
+    {/each}
+    {#each groups.boards as device (device.id)}
+      {@const state = stateOf(device)}
+      <a class="nav" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
+        <span class="dot {state.dot}"></span><span class="t">{nameOf(device)}</span>
       </a>
     {/each}
-  {/each}
-  {#each groups.boards as device (device.id)}
-    {@const state = stateOf(device)}
-    <a class="nav" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
-      <span class="dot {state.dot}"></span><span class="t">{nameOf(device)}</span>
-    </a>
-  {/each}
 
-  {#if groups.offline.length > 0}
-    <div class="sec up">Offline</div>
-    {#each groups.offline as device (device.id)}
-      <a class="nav off" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
-        <span class="dot off"></span><span class="t">{nameOf(device)}</span>
-      </a>
-    {/each}
-  {/if}
+    {#if groups.offline.length > 0}
+      <div class="sec up">Offline</div>
+      {#each groups.offline as device (device.id)}
+        <a class="nav off" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
+          <span class="dot off"></span><span class="t">{nameOf(device)}</span>
+        </a>
+      {/each}
+    {/if}
 
-  {#if groups.disks.length > 0}
-    <div class="sec up">Disks</div>
-    {#each groups.disks as device (device.id)}
-      <a class="nav" class:on={on("disk", device.id)} href={href("disk", device.id)} style="--d:1">
-        <span class="dot info"></span><span class="t">{nameOf(device)}</span>
-      </a>
-    {/each}
-  {/if}
+    {#if groups.disks.length > 0}
+      <div class="sec up">Disks</div>
+      {#each groups.disks as device (device.id)}
+        <a class="nav" class:on={on("disk", device.id)} href={href("disk", device.id)} style="--d:1">
+          <span class="dot info"></span><span class="t">{nameOf(device)}</span>
+        </a>
+      {/each}
+    {/if}
+  </div>
 
   <div class="sec up">Tools</div>
   <a class="nav" class:on={route.page === "flash"} href={href("flash")} style="--d:0">
