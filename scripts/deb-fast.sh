@@ -65,7 +65,7 @@ if [ "$build" -eq 1 ]; then
   (cd $app && bun install --frozen-lockfile >/dev/null && bun run build >/dev/null)
   echo "==> deb-fast: atlas-app and atlas-helper ($profile profile)"
   # custom-protocol: the UI is inside the program. No `sim`: a package has no simulated devices.
-  ATLAS_VERSION=$version cargo build --locked --release -p atlas-app --bin atlas-app -p atlas-helper --features atlas-app/custom-protocol
+  ATLAS_VERSION=$version cargo build --locked --release -p atlas-app --bin atlas-app -p atlas-helper --bin atlas-helper --features atlas-app/custom-protocol
 fi
 for bin in atlas-app atlas-helper; do
   [ -x "$target/release/$bin" ] || { echo "deb-fast: $target/release/$bin is not built" >&2; exit 1; }
