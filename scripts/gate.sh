@@ -8,7 +8,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Every temp file of the gate and of the scripts it runs lands under one scratch root, never /tmp (PR G12). mktemp
 # and ${TMPDIR:-/tmp} both follow TMPDIR, which is set here for every step; the directory is removed on exit.
-scratch_root=${ATLAS_SCRATCH_ROOT:-$(pwd)/.scratch}
+# The default scratch root is beside the work tree, not in it: a test that needs a directory outside any repository
+# (atlas-next bench_key) takes TMPDIR as that directory.
+scratch_root=${ATLAS_SCRATCH_ROOT:-$(git rev-parse --show-toplevel).scratch}
 mkdir -p "$scratch_root"
 gate_tmp=$(mktemp -d "$scratch_root/gate-XXXXXX")
 export TMPDIR=$gate_tmp

@@ -34,7 +34,9 @@ for a in "$@"; do
   esac
 done
 
-scratch_root=${ATLAS_SCRATCH_ROOT:-$(pwd)/.scratch}
+# The default scratch root is beside the work tree, not in it: a test that needs a directory outside any repository
+# (atlas-next bench_key) takes TMPDIR as that directory.
+scratch_root=${ATLAS_SCRATCH_ROOT:-$(git rev-parse --show-toplevel).scratch}
 mkdir -p "$scratch_root"
 export TMPDIR
 TMPDIR=$(mktemp -d "$scratch_root/scoped-XXXXXX")
