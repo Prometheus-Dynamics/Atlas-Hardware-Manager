@@ -9,7 +9,7 @@ description = "ZERO 3E slot board: the Lemnos board file (U-Boot record), the ge
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "0a51f5d0522bc5134ee571a44fb5fc9205420479"  # Lemnos 0a51f5d0 (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + slot-init waits for the boot disk), coordinator 2026-11-22, pin move 2
+ref = "cb436d2a592a9d2cb4421c2a10f5224605586db7"  # Lemnos cb436d2a (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks), coordinator 2026-11-22, pin move 3
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
 [sources.root]
