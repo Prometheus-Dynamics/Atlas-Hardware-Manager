@@ -1,0 +1,99 @@
+#!/bin/sh
+# /etc/init.d/S39flasher-net: the bcm2712 flasher's way in from the PC, under BusyBox init. It runs before
+# S40orion-comm. The PC reaches the flasher's node with orion+tcp on the gadget's NCM function (lemnos0), on
+# the board's own address, which the Raze image's scheme gives (serial-hash-v1, components/lemnos0-addressing).
+#
+# start:
+#   1. Runs the scheme's one script, /usr/lib/lemnos/lemnos0-address, unchanged, with its network file put under
+#      /run/lemnos0/net. It writes the board's address and DHCP pool there, and ORION_PEER_LISTEN to
+#      /run/lemnos0/orion-peer.env.
+#   2. Writes the comm core's settings, /run/orion/orion.conf (which /etc/orion/orion.conf links to): the flasher's
+#      fixed settings, /etc/orion/flasher.conf, then `peer.listen = <address>:<port>`, never a wildcard. If the
+#      address cannot be made, the settings go without peer.listen and the reason is in the log: the comm core
+#      still starts, and the console is the way in.
+#   3. Lets the comm core bind the address before lemnos0 exists (lemnosd builds the gadget after S40), as the Raze
+#      image's interim sysctl does: net.ipv4.ip_nonlocal_bind = 1.
+#   4. Makes the first-flash sink's directory, /run/lemnos-flash (LEMNOS_ORION_FILES=flash=/run/lemnos-flash).
+#   5. Starts a supervisor that waits for lemnos0, gives it the address, and runs udhcpd on the rest of the /29
+#      for the PC. When udhcpd ends or lemnos0 goes (the cable), it starts again 1 s later. It never gives up.
+#
+# Plain POSIX sh for BusyBox ash.
+
+ADDRESS=/usr/lib/lemnos/lemnos0-address
+RUN=/run/lemnos0
+NET=$RUN/net
+IFACE=lemnos0
+PIDFILE=$RUN/supervisor.pid
+LOG=/var/log/flasher-net.log
+FLASH_DIR=/run/lemnos-flash
+
+value() {  # <key> <network file>: the value of the first `key=` line
+	while IFS= read -r line; do
+		case "$line" in "$1="*) echo "${line#*=}"; return 0 ;; esac
+	done < "$2"
+	return 1
+}
+
+udhcpd_conf() {  # <address/prefix> <pool offset> <pool size> <lease s> <conf>
+	a=${1%/*}
+	base=${a%.*}
+	last=${a##*.}
+	net=$((last - 1))
+	start=$((net + $2))
+	end=$((start + $3 - 1))
+	{
+		echo "interface $IFACE"
+		echo "start $base.$start"
+		echo "end $base.$end"
+		echo "max_leases $3"
+		echo "option subnet 255.255.255.248"
+		echo "option lease $4"
+		echo "lease_file $RUN/udhcpd.leases"
+		echo "pidfile $RUN/udhcpd.pid"
+	} > "$5"
+}
+
+supervise() {  # <address/prefix>
+	while :; do
+		if [ -d "/sys/class/net/$IFACE" ]; then
+			ip addr replace "$1" dev "$IFACE" && ip link set "$IFACE" up && udhcpd -f "$RUN/udhcpd.conf"
+		fi
+		sleep 1
+	done
+}
+
+start() {
+	mkdir -p "$RUN" "$NET" /run/orion
+	mkdir -p "$FLASH_DIR"
+	chown lemnos-orion:lemnos-orion "$FLASH_DIR"
+	chmod 0750 "$FLASH_DIR"
+	echo 1 > /proc/sys/net/ipv4/ip_nonlocal_bind
+	cp /etc/orion/flasher.conf /run/orion/orion.conf.tmp
+	if LEMNOS0_OUT=$NET "$ADDRESS" >> "$LOG" 2>&1 && [ -r "$RUN/orion-peer.env" ]; then
+		listen=$(value ORION_PEER_LISTEN "$RUN/orion-peer.env")
+		echo "peer.listen = $listen" >> /run/orion/orion.conf.tmp
+		file=$NET/10-$IFACE.network
+		udhcpd_conf "$(value Address "$file")" "$(value PoolOffset "$file")" "$(value PoolSize "$file")" \
+			"$(value DefaultLeaseTimeSec "$file")" "$RUN/udhcpd.conf"
+		touch "$RUN/udhcpd.leases"
+		supervise "$(value Address "$file")" >> "$LOG" 2>&1 < /dev/null &
+		echo $! > "$PIDFILE"
+	else
+		echo "flasher-net: no board address (see above): the comm core starts without its TCP way in" >> "$LOG"
+	fi
+	chmod 0644 /run/orion/orion.conf.tmp
+	mv /run/orion/orion.conf.tmp /run/orion/orion.conf
+}
+
+stop() {
+	[ -f "$PIDFILE" ] && kill "$(cat "$PIDFILE")" 2>/dev/null
+	[ -f "$RUN/udhcpd.pid" ] && kill "$(cat "$RUN/udhcpd.pid")" 2>/dev/null
+	rm -f "$PIDFILE"
+}
+
+case "${1:-}" in
+	start) start ;;
+	stop) stop ;;
+	restart) stop; start ;;
+	*) echo "Usage: $0 {start|stop|restart}" >&2; exit 1 ;;
+esac

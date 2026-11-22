@@ -1,0 +1,18 @@
+# The bcm2712 flasher's way in from the PC: orion+tcp on the gadget's NCM function (lemnos0), on the board's own
+# address. Lemnos and Orion ruled it (2026-11-22, through Helios): the FunctionFS orion-link is a device link and
+# never carries node actions or file sinks. The address is the Raze image's scheme (serial-hash-v1): its one script
+# and data file come from the lemnos0-addressing component, which the product includes beside this one (Gaia takes
+# a component's files from its own directory only), so there is one copy. BusyBox has no networkd, so
+# S39flasher-net reads the network file the script writes, gives lemnos0 the address, and runs udhcpd for the PC on
+# the rest of the /29. A stock host takes the lease with no configuration.
+#
+# lemnos0-addressing's systemd unit and sysctl.d file come along and do nothing here (no systemd, no sysctl at
+# boot; S39flasher-net sets the same sysctl). Two small text files, carried so the scheme stays one component.
+version = 1
+name = "flasher-lemnos0"
+description = "the bcm2712 flasher's USB network: the board's serial-hash-v1 address on lemnos0, udhcpd for the PC, and the comm core's settings with its TCP way in"
+
+[[install]]
+from = { file = "files/S39flasher-net" }
+to = "/etc/init.d/S39flasher-net"
+mode = "0755"

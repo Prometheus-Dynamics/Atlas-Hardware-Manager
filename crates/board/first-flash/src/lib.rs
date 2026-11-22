@@ -12,11 +12,16 @@
 //! - [`OrionBoard`] is the node's session as the write needs it: pushes as `atlas-files` jobs, calls through
 //!   `atlas-actions`. [`FlasherBoard`] is the seam, so the write is tested without a node.
 //!
+//! - [`SerialReach`] is the way to the flasher: its board's own address on the USB network (serial-hash-v1, the
+//!   board's data file built in), from the target's serial, so the PC needs no configuration.
+//!
 //! Nothing here names a family or a board; the device ids are the flasher board file's.
 
+mod address;
 mod bridge;
 mod orion;
 pub mod wire;
 
+pub use address::{SCHEME, SCHEME_FILE, Scheme, SerialReach};
 pub use bridge::{BridgeFlash, Bytes, CallError, FLASH_DEVICE, FlasherBoard, REBOOT_DEVICE};
 pub use orion::{FLASHER_STATE, OrionBoard, OrionFlasher, Reach, SERIAL_FACT, is_flasher_of};

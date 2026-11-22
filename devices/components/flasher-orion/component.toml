@@ -53,10 +53,16 @@ from = { source = "src", path = "packaging/busybox/orion-supervise" }
 to = "/usr/lib/orion/orion-supervise"
 mode = "0755"
 
+# The fixed settings. The comm core and node logic read /etc/orion/orion.conf, a link to /run/orion/orion.conf, which
+# flasher-lemnos0's S39flasher-net writes at boot: these settings, then peer.listen on the board's own address.
 [[install]]
-from = { file = "files/orion.conf" }
-to = "/etc/orion/orion.conf"
+from = { file = "files/flasher.conf" }
+to = "/etc/orion/flasher.conf"
 mode = "0644"
+
+[[install]]
+from = { link = "/run/orion/orion.conf" }
+to = "/etc/orion/orion.conf"
 
 # The orion user and group, uid and gid 901, as components/orion (orion-supervise runs node logic as uid 901).
 [[groups]]

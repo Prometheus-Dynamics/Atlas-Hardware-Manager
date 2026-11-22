@@ -15,10 +15,12 @@
 # boot_ramdisk's ramdisk lines, and cmdline.txt) with the outer config.txt beside it. Gaia is writing that recipe;
 # until then the flasher's boot set cannot be built.
 #
-# Needed of the board's kernel and not given by this product (boards/raze/kernel, unchanged here): the initramfs has
-# no modules, so USB_CONFIGFS, USB_F_FS, I2C_CHARDEV, I2C_DESIGNWARE_PLATFORM and RP1_PIO must be =y (B9's list,
-# checked against bcm2712_defconfig and raze.config). Moving the Raze's kernel options is the Raze's change, not
-# this product's.
+# The board's kernel (boards/raze/kernel, unchanged here) already builds in everything the flasher needs:
+# USB_CONFIGFS, USB_CONFIGFS_F_FS, USB_CONFIGFS_NCM, I2C_CHARDEV, I2C_DESIGNWARE_PLATFORM and RP1_PIO are =y on next.
+# So the flasher needs no kernel fragment and no modules, and raze-base's plan is unchanged.
+#
+# The PC reaches the node with orion+tcp on lemnos0 at the board's serial-hash-v1 address (flasher-lemnos0), which
+# Atlas computes from the serial: no configuration on the PC.
 version = 1
 name = "flasher-bcm2712"
 description = "bcm2712 flasher: a RAM-only initramfs with lemnosd, the Lemnos bridge and Orion in the flasher state (BusyBox init)"
@@ -34,10 +36,12 @@ flasher-lemnos-restart = "../../components/flasher-lemnos-restart/component.toml
 flasher-lemnos-busybox = "../../components/flasher-lemnos-busybox/component.toml"
 raze-flasher-board = "../../components/raze-flasher-board/component.toml"
 flasher-orion = "../../components/flasher-orion/component.toml"
+flasher-lemnos0 = "../../components/flasher-lemnos0/component.toml"
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 
 [[images]]
 name = "flasher-bcm2712"
 board = "../../boards/raze/board.toml"
-components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion"]
+components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
 recipe = "initramfs-boot"

@@ -37,12 +37,12 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # lemnosd, never through the root. Left unset: BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW (off, Gaia's default).
 
 # -- Kernel modules ------------------------------------------------------------------------------------
-# No kernel modules in the image: the initramfs has no /lib/modules, and nothing loads one. Everything the
-# flasher needs is built into the board's kernel, or it is a gap named in the PR text (usb_f_fs is m on the
-# Raze; lemnos.ko is a module and needs Gaia's kernel-module builder).
+# No kernel module is loaded: everything the flasher needs is built into the board's kernel (boards/raze/kernel on
+# next sets USB_CONFIGFS, USB_CONFIGFS_F_FS, USB_CONFIGFS_NCM, USB_CONFIGFS_ACM, I2C_CHARDEV, I2C_DESIGNWARE_PLATFORM,
+# RP1_PIO and BCM2835_WDT =y), so the Raze's kernel options do not move for the flasher.
 # BR2_LINUX_KERNEL_INSTALL_TARGET is not set
 
 # -- Network -------------------------------------------------------------------------------------------
-# None. The board's link to a person is Orion's USB link (a FunctionFS function that lemnosd builds) and the
-# console above. The NCM network function is in the gadget, for Orion's network use after the flash, not
-# for the flasher itself. No ifupdown, no DHCP.
+# The PC's way in is orion+tcp on the gadget's NCM function (lemnos0, Lemnos's default composition), at the board's
+# serial-hash-v1 address, with udhcpd giving the PC the rest of the /29 (flasher-lemnos0's S39flasher-net). The
+# FunctionFS link is a device link only. No ifupdown: the one interface is set by S39flasher-net.
