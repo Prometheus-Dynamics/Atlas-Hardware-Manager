@@ -29,6 +29,17 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
+[source."lemnos-restart.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-restart.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+
 [source."lemnos-slot-init.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
