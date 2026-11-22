@@ -189,6 +189,38 @@ export const SCREENS: Screen[] = [
       await expect(page.locator(".empty-box")).toBeVisible();
     },
   },
+  // States of the device list the mockups do not draw: scanning switched off (the dashed chip,
+  // and the box's own sentence when nothing is there), and a link that is not answering.
+  {
+    name: "devices-scan-off",
+    hash: "#/devices",
+    ready: async (page) => {
+      await demoSettled(page);
+      await expect(page.locator(".tr.dev")).toHaveCount(7);
+      await page.locator(".ph").getByRole("button", { name: "Pause" }).click();
+      await expect(page.locator(".ph [data-scan]")).toHaveText("Scanning is off");
+    },
+  },
+  {
+    name: "devices-empty-scan-off",
+    hash: "#/devices",
+    scene: "empty",
+    ready: async (page) => {
+      await expect(page.locator(".empty-box")).toBeVisible();
+      await page.locator(".ph").getByRole("button", { name: "Pause" }).click();
+      await expect(page.locator(".empty-box")).toContainText("Scanning is off");
+    },
+  },
+  {
+    name: "devices-link-failing",
+    hash: "#/devices",
+    ready: async (page, bridge) => {
+      await demoSettled(page);
+      await expect(page.locator(".tr.dev")).toHaveCount(7);
+      await bridge.call("sim.disk", { broken: true });
+      await expect(page.locator(".tr[data-link]")).toHaveCount(1);
+    },
+  },
   // The board page as the mockup draws it: a slot being written, a trial running, a fallback, a
   // pinned slot and a removal being confirmed in place, with the board's log beside them.
   {

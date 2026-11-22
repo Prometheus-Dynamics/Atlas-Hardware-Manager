@@ -139,3 +139,15 @@ export async function demoSettled(page: Page) {
   await expect(side.locator(".sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
   for (const record of Object.values(DEMO)) await expect(side.getByText(record.name, { exact: true })).toBeVisible();
 }
+
+/** Holds the page's first snapshot back until the returned function is called: the app as it is
+ *  before the core has answered. Every other call goes through. Set before the page is opened. */
+export async function holdSnapshot(page: Page): Promise<() => void> {
+  let release!: () => void;
+  const held = new Promise<void>((done) => (release = done));
+  await page.route("**/call", async (route) => {
+    if ((route.request().postDataJSON() as { name?: string } | null)?.name === "snapshot") await held;
+    await route.continue();
+  });
+  return release;
+}
