@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "cb436d2a592a9d2cb4421c2a10f5224605586db7"  # Lemnos cb436d2a (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks), coordinator 2026-11-22, pin move 3
+ref = "61c370326c270d22dfbfaba49ba65e5caf60ac00"  # Lemnos 61c37032 (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses), coordinator 2026-11-22, pin move 3
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
