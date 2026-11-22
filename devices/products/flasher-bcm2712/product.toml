@@ -37,12 +37,13 @@ flasher-lemnos-busybox = "../../components/flasher-lemnos-busybox/component.toml
 raze-flasher-board = "../../components/raze-flasher-board/component.toml"
 flasher-orion = "../../components/flasher-orion/component.toml"
 flasher-lemnos0 = "../../components/flasher-lemnos0/component.toml"
+flasher-init = "../../components/flasher-init/component.toml"
 lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 
 [[images]]
 name = "flasher-bcm2712"
 board = "../../boards/raze/board.toml"
-components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing"]
+components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing", "flasher-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
 recipe = "rpi-ramdisk-boot-generated"
 
@@ -72,7 +73,7 @@ order = ["flasher-lemnos-busybox", "raze-flasher-board", "os"]
 #                 Not carried from the Raze's config: vc4-kms-v3d (no display here). No dwc2: the overlay's fragment@7
 #                 makes the controller a peripheral.
 #  cmdline        the Raze's kernel base words (boards/raze/board.toml [kernel] cmdline: the hash table sizes) and
-#                 panic=5 (the Raze's: a panic restarts in 5 s, then the eMMC boots). rdinit is the initramfs's /init.
+#                 panic=5 (the Raze's: a panic restarts in 5 s, then the eMMC boots). rdinit=/init is flasher-init's /init.
 [images.settings]
 board_overlay = "overlays/lemnos-board.dtbo"
 device_trees = "bcm2712-rpi-cm5-cm5io.dtb bcm2712d0.dtbo=overlays/bcm2712d0.dtbo hat_map.dtb=overlays/hat_map.dtb overlay_map.dtb=overlays/overlay_map.dtb ramoops-pi5.dtbo=overlays/ramoops-pi5.dtbo"

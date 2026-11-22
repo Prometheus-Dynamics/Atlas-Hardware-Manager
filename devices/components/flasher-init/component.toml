@@ -1,0 +1,12 @@
+# The bcm2712 flasher's /init. Gaia's initramfs is the built tree as it is (gaia.initramfs), without the /init that
+# Buildroot's own cpio image would add, and the kernel's devtmpfs automount does not apply to an initramfs. Without
+# it the kernel finds no /init and the board does not boot: /dev must be devtmpfs before mdev (S10mdev) and the
+# console getty on ttyGS0 can work.
+version = 1
+name = "flasher-init"
+description = "the bcm2712 flasher's /init: devtmpfs on /dev, the console, then BusyBox init"
+
+[[install]]
+from = { file = "files/init" }
+to = "/init"
+mode = "0755"
