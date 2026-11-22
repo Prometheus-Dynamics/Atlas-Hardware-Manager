@@ -1,10 +1,10 @@
 # Orion's board image: package orion-bin (binary orion), run as Orion's packaging runs it (C52, in the pin since
 # 19be7e04): orion comm as orion-comm (uid 902, group orion, CAP_SYS_TIME and CAP_NET_BIND_SERVICE only), orion node as
 # orion, and the login helper (orion-login.socket, root, socket-activated), the one process that becomes another user. Board-neutral. Built from Orion at
-# 19be7e04ccd8ea850bf22cd3f48d2536e34856a5 (Orion next, I58: its shm crates pinned at Lemnos 7b4fdb25, the image's own Lemnos; pin move 10). The
+# 47bfd7f3cec16d028f03c58a7ab42b75d61bc68d (Orion next, I59-I65 on I58: its shm crates pinned at Lemnos a6251ecf, the image's own Lemnos; pin move 11). The
 # workspace pins the same rev (Cargo.toml), so the board's Orion and the PC's speak one ring layout.
 # The shm exception of pin moves 2-9 is closed (pin move 10): Orion's shm crates and the rest of the image are on one
-# Lemnos rev, 7b4fdb25.
+# Lemnos rev, a6251ecf (pin move 11).
 #
 # Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
 # 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
@@ -20,7 +20,7 @@ description = "Orion: the orion binary as the board's comm core and node logic (
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5"  # Orion 19be7e04 (I58, interface level 6), sent by Orion 2026-11-22, coordinator-confirmed, pin move 10; before: d4010a45
+ref = "47bfd7f3cec16d028f03c58a7ab42b75d61bc68d"  # Orion 47bfd7f3 (I59 hello facts up to 1024 bytes, I60-I65; interface level 6, no wire change), coordinator 2026-11-22, pin move 11; before: 19be7e04
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
