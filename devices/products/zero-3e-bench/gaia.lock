@@ -59,8 +59,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "47bfd7f3cec16d028f03c58a7ab42b75d61bc68d"
-commit = "47bfd7f3cec16d028f03c58a7ab42b75d61bc68d"
+ref = "30d0bc02b22ff66613d6a9e790869a7ca4429e20"
+commit = "30d0bc02b22ff66613d6a9e790869a7ca4429e20"
 
 [source."orion.tools"]
 kind = "download"

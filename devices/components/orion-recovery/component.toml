@@ -9,7 +9,7 @@ description = "Orion recovery: orion-recovery-bin (binary orion-recovery), the c
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "47bfd7f3cec16d028f03c58a7ab42b75d61bc68d"
+ref = "30d0bc02b22ff66613d6a9e790869a7ca4429e20"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
