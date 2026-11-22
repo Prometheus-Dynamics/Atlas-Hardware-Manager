@@ -1,0 +1,64 @@
+# Lemnos's packaging for the bcm2712 flasher, a RAM-only initramfs with BusyBox init. These are the files
+# Lemnos's packaging/files.txt (4b5be3a5) marks busybox, orion, always and soc: the three init scripts, the
+# environment files, the bcm2712 SoC map, and the users. It supersedes B9's unlanded lemnos-busybox (b0bf0101).
+#
+# Not installed, and why:
+#   - init/mdev.conf.fragment (files.txt: append to /etc/mdev.conf). A component cannot append to a file the
+#     OS owns: this is Gaia's field wanted (Gaia docs/prs/F12.md, "a file assembled from several owners").
+#     Until Gaia has it, mdev gives lemnosd's device nodes no group lemnos, and the daemon cannot open them.
+#     That BLOCKS the flasher (docs/prs/D6.md).
+#   - The systemd, udev and kmod files: the image has none of the three.
+version = 1
+name = "flasher-lemnos-busybox"
+description = "Lemnos for the bcm2712 flasher's BusyBox init: the restart helper, lemnosd and bridge init scripts, their environment files, the SoC map, and the lemnos users"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"  # Lemnos next, FLASH-BCM2712: the flasher's one Lemnos rev
+
+[[install]]
+from = { source = "src", path = "packaging/init/S49lemnos-restart" }
+to = "/etc/init.d/S49lemnos-restart"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/init/S50lemnosd" }
+to = "/etc/init.d/S50lemnosd"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/init/S51lemnos-orion" }
+to = "/etc/init.d/S51lemnos-orion"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+[[install]]
+from = { file = "files/lemnos-orion.env" }
+to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "socs/bcm2712-rp1.toml" }
+to = "/usr/share/lemnos/socs/bcm2712-rp1.toml"
+mode = "0644"
+
+# The ids are the image's choice; nothing keys on them. orion is flasher-orion's group (gid 901), which the
+# bridge joins for the comm core's socket.
+[[groups]]
+name = "lemnos"
+
+[[groups]]
+name = "lemnos-orion"
+
+[[users]]
+name = "lemnos"
+group = "lemnos"
+
+[[users]]
+name = "lemnos-orion"
+group = "lemnos-orion"
+groups = ["lemnos", "orion"]

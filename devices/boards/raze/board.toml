@@ -125,3 +125,5 @@ firmware = "rpi-tryboot"
 # carries lemnosd.
 [descriptions]
 lemnos = "lemnos-board.toml"
+# The flasher's board file (products/flasher-bcm2712, D6): Lemnos bcm2712-flasher.toml with the Raze's id.
+flasher-lemnos = "flasher-lemnos-board.toml"

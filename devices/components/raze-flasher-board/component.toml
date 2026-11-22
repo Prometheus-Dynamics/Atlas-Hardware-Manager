@@ -1,0 +1,21 @@
+# The Raze's board file for its bcm2712 flasher (the board's description flasher-lemnos, boards/raze/flasher-lemnos-board.toml),
+# and the key list the board file's [security] keys names. The
+# Raze's running board file (raze-lemnos-board) is not used: system-flash's write is refused unless the board
+# file sets allow_first_flash, which only a flasher's sets (Lemnos docs/slots.md, "First flash"). This supersedes
+# B9's reuse of raze-lemnos-board.
+#
+# The key list is the Raze image's (raze-lemnos-board/files/slot-keys, the bench key): a bench-signed image then
+# verifies (outcome 0), and an unsigned one is accepted as not checked (outcome 1) while the security switch is off.
+version = 1
+name = "raze-flasher-board"
+description = "the Raze's flasher board file (Lemnos bcm2712-flasher.toml with the Raze's id) and its key list"
+
+[[install]]
+from = { description = "flasher-lemnos" }
+to = "/etc/lemnos/board.toml"
+mode = "0644"
+
+[[install]]
+from = { file = "files/slot-keys" }
+to = "/etc/lemnos/slot-keys"
+mode = "0644"

@@ -1,0 +1,70 @@
+# Orion for the bcm2712 flasher: package orion-bin (binary orion), run as the comm core and node logic under BusyBox
+# init, from Orion's packaging/busybox (S40orion-comm, S41orion-node and their supervisor). Pinned at Orion next
+# 3f60576c, confirmed by the coordinator for the D6 flasher only; the Raze product's orion stays at 455a956e.
+#
+# shm: this Orion takes its shared-memory ring crates from Lemnos 0d37cc55 (its Cargo.toml), and the flasher's
+# Lemnos is 4b5be3a5. The seven crates (shm/ring, ring-time, ring-doorbell, ring-buffers, ring-holds, fdpass,
+# sample-time) are the same git trees at both revs (Lemnos 0d37cc55 and 4b5be3a5, read 2026-11-22: shm/ differs only in
+# README.md and shm/measure). No check reads Orion's Cargo.toml yet, so this is the named exception, written here;
+# docs/prs/D6.md says what a check needs.
+version = 1
+name = "flasher-orion"
+description = "Orion for the bcm2712 flasher: orion-bin as comm core and node logic with hello.state = flasher, under BusyBox init"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "3f60576c45ab49222b4eea095432469da6ca193d"  # Orion next, wire level 6
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+# The zig 0.15.2 that cc (scripts/zigcc) runs, as for components/orion.
+[sources.tools]
+download = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "orion-bin"
+profile = "service"
+cc = "/src/scripts/zigcc"
+env = "ZIG_GLOBAL_CACHE_DIR=/build/zig-cache\nZIG_LOCAL_CACHE_DIR=/build/zig-cache"
+
+[[install]]
+from = "bin/orion"
+to = "/usr/bin/orion"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/busybox/S40orion-comm" }
+to = "/etc/init.d/S40orion-comm"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/busybox/S41orion-node" }
+to = "/etc/init.d/S41orion-node"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/busybox/orion-supervise" }
+to = "/usr/lib/orion/orion-supervise"
+mode = "0755"
+
+[[install]]
+from = { file = "files/orion.conf" }
+to = "/etc/orion/orion.conf"
+mode = "0644"
+
+# The orion user and group, uid and gid 901, as components/orion (orion-supervise runs node logic as uid 901).
+[[groups]]
+name = "orion"
+gid = 901
+
+[[users]]
+name = "orion"
+uid = 901
+group = "orion"
+home = "/var/lib/orion"

@@ -1,0 +1,75 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."flasher-bcm2712.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
+commit = "d5180309b1b66ef3b8eaccca70ad69be8e0729a1"
+
+[source."flasher-lemnos-busybox.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+
+[source."flasher-lemnos-orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."flasher-lemnos-orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+
+[source."flasher-lemnos-restart.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."flasher-lemnos-restart.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+
+[source."flasher-lemnosd.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."flasher-lemnosd.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+commit = "4b5be3a5bd1016214170259dc6e7d5076c0b1699"
+
+[source."flasher-orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."flasher-orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "3f60576c45ab49222b4eea095432469da6ca193d"
+commit = "3f60576c45ab49222b4eea095432469da6ca193d"
+
+[source."flasher-orion.tools"]
+kind = "download"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+digest = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+
+[source."raze.linux"]
+kind = "git"
+url = "https://github.com/raspberrypi/linux.git"
+ref = "b005af6699cc67413be78028a201e87fe40dcb50"
+commit = "b005af6699cc67413be78028a201e87fe40dcb50"
+
+[source."raze.rpi-firmware"]
+kind = "git"
+url = "https://github.com/raspberrypi/firmware.git"
+ref = "6f0881cba8bea8ec24956a5718714730e9936ec5"
+commit = "6f0881cba8bea8ec24956a5718714730e9936ec5"
