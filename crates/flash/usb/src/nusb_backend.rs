@@ -281,7 +281,12 @@ impl UsbBus for NusbBus {
             .map(|address| interface.endpoint::<Bulk, In>(address))
             .transpose()
             .map_err(|error| UsbError::Other(error.to_string()))?;
+        let serial_index = device
+            .device_descriptor()
+            .serial_number_string_index()
+            .map_or(0, std::num::NonZeroU8::get);
         let io: Box<dyn UsbIo> = Box::new(NusbIo {
+            serial_index,
             interface,
             out,
             input,
@@ -294,6 +299,7 @@ impl UsbBus for NusbBus {
 
 /// An open, claimed device. Dropping it releases the interface.
 pub struct NusbIo {
+    serial_index: u8,
     interface: Interface,
     out: Option<Endpoint<Bulk, Out>>,
     input: Option<Endpoint<Bulk, In>>,
@@ -311,6 +317,10 @@ impl std::fmt::Debug for NusbIo {
 
 #[async_trait]
 impl UsbIo for NusbIo {
+    fn serial_index(&self) -> u8 {
+        self.serial_index
+    }
+
     fn max_packet_out(&self) -> usize {
         self.out
             .as_ref()

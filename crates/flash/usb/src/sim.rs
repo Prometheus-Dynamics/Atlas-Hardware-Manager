@@ -80,6 +80,8 @@ struct Slot {
     interfaces: Vec<InterfaceSummary>,
     string_requests: StringRequests,
     claimed: Vec<u8>,
+    /// The device descriptor's `iSerialNumber`, 0 unless set.
+    serial_index: u8,
     /// The next opens fail with these errors, in order, before one succeeds.
     open_failures: VecDeque<UsbError>,
     pipe: Arc<Pipe>,
@@ -155,6 +157,7 @@ impl SimBus {
                 interfaces: Vec::new(),
                 string_requests: StringRequests::Answer,
                 claimed: Vec::new(),
+                serial_index: 0,
                 open_failures: VecDeque::new(),
                 pipe: Arc::new(Pipe::new()),
             },
@@ -173,6 +176,19 @@ impl SimBus {
         match lock(&self.state).slots.get_mut(location) {
             Some(slot) => {
                 slot.answers.extend(answers);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Gives the device at `location` the descriptor index `index` for its
+    /// serial string (`iSerialNumber`), until it is attached again. `false` if
+    /// no device is there.
+    pub fn set_serial_index(&self, location: &str, index: u8) -> bool {
+        match lock(&self.state).slots.get_mut(location) {
+            Some(slot) => {
+                slot.serial_index = index;
                 true
             }
             None => false,
@@ -356,7 +372,7 @@ impl UsbBus for SimBus {
         location: &str,
         options: &OpenOptions,
     ) -> Result<Box<dyn UsbIo>, UsbError> {
-        let (generation, pipe) = {
+        let (generation, pipe, serial_index) = {
             let mut state = lock(&self.state);
             let slot = state
                 .slots
@@ -379,9 +395,10 @@ impl UsbBus for SimBus {
                 let number = chosen.number;
                 slot.claimed.push(number);
             }
-            (slot.generation, Arc::clone(&slot.pipe))
+            (slot.generation, Arc::clone(&slot.pipe), slot.serial_index)
         };
         let io: Box<dyn UsbIo> = Box::new(SimIo {
+            serial_index,
             state: Arc::clone(&self.state),
             location: location.to_string(),
             generation,
@@ -409,6 +426,7 @@ enum Outcome {
 
 /// One open handle on a simulated device.
 pub struct SimIo {
+    serial_index: u8,
     state: Arc<Mutex<State>>,
     location: String,
     generation: u64,
@@ -508,6 +526,10 @@ fn short_write(took: usize, transfer: &Transfer) -> Result<Vec<u8>, UsbError> {
 
 #[async_trait]
 impl UsbIo for SimIo {
+    fn serial_index(&self) -> u8 {
+        self.serial_index
+    }
+
     fn into_halves(self: Box<Self>, options: &LinkOptions) -> Result<crate::Halves, UsbError> {
         let SimIo { pipe, _tracked, .. } = *self;
         let tracked = Arc::new(_tracked);

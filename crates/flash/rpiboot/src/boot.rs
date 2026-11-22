@@ -36,6 +36,14 @@ impl Default for BootSettings {
 /// device resets between the rounds and comes back on the same port, so the
 /// second round selects it by its port alone.
 ///
+/// Which round the device wants is read from its device descriptor's
+/// `iSerialNumber` index, as `rpiboot` (usbboot faf4fb9d, `main()`) decides it:
+/// 0 or 3 is a boot ROM, which gets the second stage; any other index is a
+/// bootloader already running its file server, which is served at once. A
+/// BCM2712 put into USB boot by its EEPROM (the one-shot, or the button on a
+/// board with a bootloader) comes up as the file server, index 4: it never
+/// asks for the second stage.
+///
 /// Round one needs `expected` on the port: another identity there is refused
 /// and nothing is sent. Missing second-stage files are reported before the
 /// device is touched. `cancelled` is checked between steps and before every
@@ -74,6 +82,10 @@ pub async fn boot_device(
     .await
     .into_result()
     .map_err(RpiBootError::Stop)?;
+    if !wants_second_stage(io.serial_index()) {
+        let outcome = file_server(io.as_mut(), files, chip, on_event, cancelled).await;
+        return observed_serve(bus, &port, bound, outcome).await;
+    }
     observed(
         bus,
         &port,
@@ -106,6 +118,13 @@ pub async fn boot_device(
     .map_err(RpiBootError::Stop)?;
     let outcome = file_server(io.as_mut(), files, chip, on_event, cancelled).await;
     observed_serve(bus, &port, bound, outcome).await
+}
+
+/// Whether a device with this `iSerialNumber` index is a boot ROM waiting for
+/// its second stage. `rpiboot` sends the second stage for 0 and 3 and serves
+/// files to every other index.
+pub(crate) fn wants_second_stage(serial_index: u8) -> bool {
+    matches!(serial_index, 0 | 3)
 }
 
 /// A USB error inside a round becomes the stop the bus shows on the port.

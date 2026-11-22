@@ -104,6 +104,10 @@ impl Traced {
 
 #[async_trait]
 impl UsbIo for Traced {
+    fn serial_index(&self) -> u8 {
+        self.inner.serial_index()
+    }
+
     fn max_packet_out(&self) -> usize {
         self.inner.max_packet_out()
     }

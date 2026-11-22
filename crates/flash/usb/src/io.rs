@@ -38,6 +38,14 @@ pub trait UsbIo: Send {
     /// return fewer bytes; a short read is not an error.
     async fn bulk_in(&mut self, max: usize) -> Result<Vec<u8>, UsbError>;
 
+    /// The device descriptor's `iSerialNumber`: the index of its serial string,
+    /// 0 when it has none. The Pi boot ROM and the bootloader it runs tell
+    /// their two USB roles apart by this index, not by the string. 0 where a
+    /// handle cannot tell.
+    fn serial_index(&self) -> u8 {
+        0
+    }
+
     /// The bulk OUT endpoint's packet size. A write that fills its last
     /// packet exactly needs a zero-length packet after it.
     fn max_packet_out(&self) -> usize {
