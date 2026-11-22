@@ -48,7 +48,45 @@ async function diskReady(page: Page, bridge: Bridge) {
 const ROBOT = `#/robot/${encodeURIComponent("Practice field")}`;
 const SYSTEMCORE = `#/systemcore/${encodeURIComponent(DEMO.controller.id)}`;
 
+async function settingsOpen(page: Page) {
+  await demoSettled(page);
+  await expect(page.locator('[data-panel="keys"] [data-key]')).toHaveCount(1);
+  await expect(page.locator('[data-panel="support"] dd').first()).toContainText("atlas.log");
+}
+
 export const SCREENS: Screen[] = [
+  {
+    name: "settings",
+    hash: "#/settings",
+    mockup: "settings.html",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      // A key of the person's own, and one check on record, as the mockup shows a filled page.
+      await bridge.call("sim.pick_key", {});
+      await page.getByRole("button", { name: "Add key…" }).click();
+      await expect(page.locator('[data-panel="keys"] [data-key]')).toHaveCount(2);
+      await bridge.call("sim.pick_image", {});
+      await page.evaluate(() => (location.hash = "#/flash"));
+      await page.getByRole("button", { name: "Choose image…" }).click();
+      await expect(page.locator('[data-panel="image"]')).toHaveAttribute("data-image", "ready");
+      await page.evaluate(() => (location.hash = "#/settings"));
+      await expect(page.locator('[data-panel="checks"] .tr')).toHaveCount(1);
+    },
+  },
+  {
+    name: "settings-key",
+    hash: "#/settings",
+    ready: async (page, bridge) => {
+      await settingsOpen(page);
+      await bridge.call("sim.pick_key", {});
+      await page.getByRole("button", { name: "Add key…" }).click();
+      await page.locator('[data-key="0807060504030201"]').getByRole("button", { name: "Details" }).click();
+      await page.getByRole("button", { name: "Remove…" }).click();
+      await page.locator('[data-panel="security"]').getByRole("switch").click();
+      await page.getByRole("button", { name: "Make support bundle" }).click();
+      await expect(page.locator("[data-bundle]")).toBeVisible();
+    },
+  },
   {
     name: "robot",
     hash: ROBOT,

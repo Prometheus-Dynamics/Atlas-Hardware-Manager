@@ -34,6 +34,17 @@
   const ready = $derived(image?.state === "ready" && board !== undefined && rom !== undefined && !active);
 
   let busy = $state(false);
+  /** The support bundle's file, once one was made from here. */
+  let bundled = $state("");
+  async function bundle() {
+    try {
+      const made = await call<{ path: string }>("support.make_bundle");
+      bundled = `Support bundle written to ${made.path}`;
+    } catch (error) {
+      bundled = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   async function ask(name: string, args?: unknown) {
     if (busy) return;
     busy = true;
@@ -192,8 +203,11 @@
               <button class="btn sm pri" onclick={start}><Icon name="retry" />Start again</button>
             {/if}
             <span class="sp"></span>
+            <button class="btn sm quiet" onclick={bundle}><Icon name="bundle" />Make support bundle</button>
           </div>
-          <div class="faint ell" style="font-size:11px">Stop retrying is a manual off. Nothing starts again until you press Retry.</div>
+          <div class="faint ell" style="font-size:11px" title={bundled}>
+            {bundled || "Stop retrying is a manual off. Nothing starts again until you press Retry."}
+          </div>
         </div>
       </section>
       <section class="panel" data-panel="log">

@@ -162,6 +162,7 @@ struct Inner {
     sessions: Option<Arc<atlas_session::Sessions>>,
     boards: crate::board::Boards,
     flashes: crate::flash::Flashes,
+    trust: crate::trust::Trust,
     /// What nothing-opened-yet falls back to, and what a test reads.
     remembered: Arc<crate::open::Remembered>,
     opener: Mutex<Option<Arc<dyn crate::open::Opener>>>,
@@ -302,6 +303,7 @@ impl Core {
         if let Some(world) = &sim {
             boards.set_picker(world.picker());
         }
+        let trust = crate::trust::Trust::new(dirs.as_ref().map(|dirs| dirs.data.as_path()));
         let core = Self {
             inner: Arc::new(Inner {
                 mode,
@@ -324,6 +326,7 @@ impl Core {
                 sessions,
                 boards,
                 flashes,
+                trust,
                 remembered: Arc::new(crate::open::Remembered::default()),
                 opener: Mutex::new(None),
                 #[cfg(feature = "sim")]
@@ -334,6 +337,7 @@ impl Core {
         core.publish_scan();
         core.publish_jobs();
         core.publish_settings();
+        crate::trust::publish(&core);
 
         // Subscribe before the scan starts, so its first event is not missed.
         let receiver = events.subscribe();
@@ -391,6 +395,12 @@ impl Core {
     #[must_use]
     pub fn boards(&self) -> &crate::board::Boards {
         &self.inner.boards
+    }
+
+    /// The trusted keys and the record of signature checks.
+    #[must_use]
+    pub fn trust(&self) -> &crate::trust::Trust {
+        &self.inner.trust
     }
 
     /// What opens a folder or a page outside the app: the window's, else one that only

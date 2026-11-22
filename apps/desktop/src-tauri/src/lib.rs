@@ -27,6 +27,8 @@ pub mod robot;
 pub mod settings;
 #[cfg(feature = "sim")]
 pub mod sim;
+pub mod support;
+pub mod trust;
 pub mod view;
 pub mod window;
 

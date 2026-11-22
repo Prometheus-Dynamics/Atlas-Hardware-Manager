@@ -152,6 +152,8 @@ pub struct SimDisks {
     disks: Mutex<Vec<Disk>>,
     /// While set, a write to the card waits: how a test looks at a write in progress.
     hold: Arc<AtomicBool>,
+    /// Set while a write is waiting on `hold`: the write has opened the card and is at a write.
+    held: AtomicBool,
     /// Where the card's bytes are kept.
     backing: Mutex<Option<PathBuf>>,
 }
@@ -197,8 +199,10 @@ impl RawDisk for SimCard {
     fn write_at(&mut self, offset: u64, data: &[u8]) -> std::io::Result<()> {
         use std::os::unix::fs::FileExt;
         while self.disks.hold.load(Ordering::Relaxed) && self.disks.present(&self.disk) {
+            self.disks.held.store(true, Ordering::Relaxed);
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
+        self.disks.held.store(false, Ordering::Relaxed);
         self.check()?;
         self.file.write_all_at(data, offset)
     }
@@ -797,6 +801,16 @@ impl World {
         }
     }
 
+    /// Queues a file as the next one the simulated person chooses.
+    pub fn queue_pick(&self, path: PathBuf) {
+        self.inner
+            .picks
+            .queued
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(path);
+    }
+
     /// What stands in for the file dialog.
     #[must_use]
     pub fn picker(&self) -> Arc<dyn crate::board::Picker> {
@@ -1054,8 +1068,26 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 hold: Option<bool>,
                 /// Plugs a second removable disk in (a USB stick), or takes it out.
                 stick: Option<bool>,
+                /// Answers once a write is waiting on the hold: the card is open and being
+                /// written, so pulling it now is pulling it mid-write.
+                #[serde(default)]
+                wait_held: bool,
             }
-            let Card { hold, stick } = args(name, arguments)?;
+            let Card {
+                hold,
+                stick,
+                wait_held,
+            } = args(name, arguments)?;
+            if wait_held {
+                let waiting = async {
+                    while !world.inner.disks.held.load(Ordering::Relaxed) {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                };
+                tokio::time::timeout(std::time::Duration::from_secs(20), waiting)
+                    .await
+                    .map_err(|_| CallError::from("no write reached the held card"))?;
+            }
             if let Some(hold) = hold {
                 world.inner.disks.hold.store(hold, Ordering::Relaxed);
             }
@@ -1080,6 +1112,47 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 }
             }
             Ok(Value::Null)
+        }
+        // Queues a trusted-key file as the next file the person chooses: a sample key made for
+        // this (the Ed25519 base point; nothing is signed with it), or a file that is not one.
+        "sim.pick_key" => {
+            #[derive(Deserialize)]
+            struct Pick {
+                #[serde(default)]
+                broken: bool,
+            }
+            let Pick { broken } = args(name, arguments)?;
+            let dir = core
+                .dirs()
+                .map(|dirs| dirs.data.join("sim-files"))
+                .ok_or_else(|| CallError::from("the app has no data directory"))?;
+            let text = if broken {
+                "{ this is not a key file".to_string()
+            } else {
+                serde_json::json!({ "keys": [{
+                    "name": "Lab bench (local)",
+                    "kind": "minisign",
+                    "key_id": "0807060504030201",
+                    "public_key": "RWQBAgMEBQYHCFhmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZm",
+                    "owner": "This computer's operator",
+                    "contact": "bench@example.invalid",
+                    "purpose": "dev",
+                    "created": "2026-11-01",
+                    "expires": null,
+                    "note": "Lab test images only."
+                }]})
+                .to_string()
+            };
+            let path = dir.join(if broken {
+                "notes.json"
+            } else {
+                "lab-bench-key.json"
+            });
+            std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::write(&path, text))
+                .map_err(|error| CallError(error.to_string()))?;
+            world.queue_pick(path.clone());
+            Ok(Value::String(path.display().to_string()))
         }
         // What the app was asked to open outside itself (a folder, a page), where there is no
         // window to open it.

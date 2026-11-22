@@ -478,6 +478,9 @@ async fn a_card_is_written_and_read_back_through_a_removal_and_only_the_simulate
         second.is_err(),
         "a second write of the same card was started"
     );
+    // Pulled only once the write has opened the card and is at a write: a card pulled before
+    // that is a card that was never there, which is another case.
+    ask(&core, "sim.disk", json!({ "wait_held": true })).await;
     ask(
         &core,
         "sim.set_online",

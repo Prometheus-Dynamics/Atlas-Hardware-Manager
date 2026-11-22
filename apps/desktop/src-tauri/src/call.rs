@@ -104,6 +104,8 @@ async fn route(core: &Core, name: &str, arguments: Value) -> CallResult {
             core.log().breadcrumb(&message);
             Ok(Value::Null)
         }
+        _ if name.starts_with("trust.") => crate::trust::call(core, name, arguments).await,
+        _ if name.starts_with("support.") => crate::support::call(core, name, arguments).await,
         _ if name.starts_with("robot.") => crate::robot::call(core, name, arguments).await,
         _ if name.starts_with("board.") => crate::board::call(core, name, arguments).await,
         _ if name.starts_with("flash.") || name.starts_with("disk.") => {

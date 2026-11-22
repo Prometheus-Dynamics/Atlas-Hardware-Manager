@@ -265,6 +265,7 @@ dependencies = [
  "atlas-jobs",
  "atlas-log",
  "atlas-mock",
+ "atlas-release",
  "atlas-robot",
  "atlas-rockchip",
  "atlas-session",

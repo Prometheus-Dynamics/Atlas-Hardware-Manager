@@ -947,6 +947,22 @@ async fn pick_image(core: &Core) -> CallResult {
         })
         .await
         .unwrap_or_else(|error| Err(error.to_string()));
+        // The file's own signature (`<file>.minisig`) against the trusted keys: with security
+        // on, a file without a good one is refused here, before anything is sent to a board.
+        let read = match read {
+            Ok(image) => {
+                let (work, checked) = (core.clone(), path.clone());
+                let security = core.settings().security;
+                let judged = tokio::task::spawn_blocking(move || {
+                    work.trust().judge(&checked, "image to flash", security)
+                })
+                .await
+                .unwrap_or_else(|error| Err(error.to_string()));
+                crate::trust::publish(&core);
+                judged.map(|_| image)
+            }
+            Err(words) => Err(words),
+        };
         let image = match read {
             Ok(image) => Image::Ready {
                 path: shown.clone(),

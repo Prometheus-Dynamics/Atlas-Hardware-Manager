@@ -7,7 +7,7 @@
   import Disk from "./lib/flash/Disk.svelte";
   import Robot from "./lib/robot/Robot.svelte";
   import Systemcore from "./lib/robot/Systemcore.svelte";
-  import NotBuilt from "./lib/shell/NotBuilt.svelte";
+  import Settings from "./lib/settings/Settings.svelte";
   import { route } from "./lib/stores/route.svelte";
 </script>
 
@@ -26,6 +26,6 @@
   {:else if route.page === "systemcore"}
     <Systemcore id={route.arg} />
   {:else}
-    <NotBuilt title="Settings" crumb="Atlas /" item="F7" />
+    <Settings />
   {/if}
 </div>

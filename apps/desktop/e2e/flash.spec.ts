@@ -228,6 +228,7 @@ test("a card pulled while it is written is waited for, and a write can be cancel
   await expect(foot).toHaveAttribute("data-foot", "writing");
   await expect(app.getByRole("button", { name: "Choose another…" })).toHaveCount(0);
 
+  await bridge.call("sim.disk", { wait_held: true }); // pulled mid-write, not before the card was opened
   await bridge.call("sim.set_online", { id: DEMO.disk.id, online: false });
   await expect(foot).toContainText("went away", { timeout: 15_000 });
   await bridge.call("sim.disk", { hold: false });
