@@ -12,8 +12,8 @@ use atlas_session::{AnswerBound, words};
 
 /// The longest a push waits for the board to answer one request (its commit above all) while the
 /// board keeps answering pings. Mirrors the backstop of Lemnos's job wait,
-/// `service/orion/src/stream.rs:44` (`JOB_WAIT`, "a backstop, not a pace", the same at Lemnos
-/// a6251ecf and d9bea297). It is a sanity ceiling, not the pace: a board that answers within it
+/// `service/orion/src/stream.rs:48` at Lemnos bbb3c420 (`JOB_WAIT`, "a backstop, not a pace", 900 s
+/// there as at a6251ecf and d9bea297). It is a sanity ceiling, not the pace: a board that answers within it
 /// is never cut, and one that is silent for the node's idle time is lost before it.
 pub const BOARD_COMMIT_CEILING: Duration = Duration::from_secs(900);
 

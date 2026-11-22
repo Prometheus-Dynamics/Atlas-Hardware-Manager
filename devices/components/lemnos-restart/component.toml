@@ -7,7 +7,7 @@ description = "the Lemnos restart helper, lemnos-restart (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "a6251ecfb815752880f399e4e137634d022d4a2d"  # Lemnos a6251ecf (next: pin move 10's 7b4fdb25 plus WAY-BACK-TOOL, BOOTFILES-OWNER, TICK-BOUND and TRIAL-COUNT), coordinator 2026-11-22, pin move 11; before: 7b4fdb25
+ref = "bbb3c42085a5a9afacde7f3c18692a5462c1300f"  # Lemnos bbb3c420 (next: FLASH-TARGET-GRANT, FLASH-BRIDGE-PUMP, FLASH-INFO-NOTFOUND, FLASH-DATA-OFF-CALL, KEEP-SIG, T233 deadline lines naming the call and caller), coordinator 2026-11-22, pin move 12; before: a6251ecf
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
