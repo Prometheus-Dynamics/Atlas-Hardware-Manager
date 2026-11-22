@@ -55,3 +55,9 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # The PC's way in is orion+tcp on the gadget's NCM function (lemnos0, Lemnos's default composition), at the board's
 # serial-hash-v1 address, with udhcpd giving the PC the rest of the /29 (flasher-lemnos0's S39flasher-net). The
 # FunctionFS link is a device link only. No ifupdown: the one interface is set by S39flasher-net.
+
+# -- Host tools ---------------------------------------------------------------------------------------
+# dtc and fdtoverlay for the host, built by this image's Buildroot: Gaia's gaia.devicetree.overlay compiles the
+# generated board overlay with dtc -@ and checks it with fdtoverlay (rpi-ramdisk-boot-generated), and takes both from
+# the image's own host tools, never the PC's. raze-base sets the same line for the same step.
+BR2_PACKAGE_HOST_DTC=y
