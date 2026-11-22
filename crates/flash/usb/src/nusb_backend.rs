@@ -634,7 +634,7 @@ impl Stream for NusbEvents {
 mod tests {
     use super::bus_number;
 
-    /// Raze #2 on 2026-11-22: nusb listed its bus as `003`, and port
+    /// A real BCM2712 board on 2026-11-22: nusb listed its bus as `003`, and port
     /// `3-4.2.1.4.4.2` never matched.
     #[test]
     fn a_padded_linux_bus_is_named_as_sysfs_names_it() {
