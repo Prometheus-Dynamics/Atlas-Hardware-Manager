@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas mockup: Write a disk</title>
+<link rel="stylesheet" href="atlas.css">
+
+</head>
+<body>
+<div class="app">
+<aside class="side"><div class="brand"><b>Atlas</b><span>next mockups</span></div><div class="sec up">Devices</div><a class="nav" href="devices.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h10v10H7z M10 4v3 M14 4v3 M10 17v3 M14 17v3 M4 10h3 M4 14h3 M17 10h3 M17 14h3"/></svg><span class="t">All devices</span></a><a class="nav" href="robot.html" style="--d:1"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14v11H5z M12 4v4 M9 13h.01 M15 13h.01 M9 16h6"/></svg><span class="t">Practice field</span><span class="meta">robot</span></a><a class="nav" href="systemcore.html" style="--d:2"><span class="dot warn"></span><span class="t">sc-practice</span></a><a class="nav" href="board.html" style="--d:3"><span class="dot info"></span><span class="t">cam-left</span></a><a class="nav" href="board.html" style="--d:3"><span class="dot info"></span><span class="t">cam-right</span></a><a class="nav" href="board.html" style="--d:1"><span class="dot ok"></span><span class="t">bench-rock</span></a><a class="nav" href="flash.html" style="--d:1"><span class="dot acc"></span><span class="t">bench-pi</span></a><div class="sec up">Offline</div><a class="nav" href="board.html" style="--d:1"><span class="dot off"></span><span class="t">old-zero</span></a><div class="sec up">Never seen</div><a class="nav" href="devices.html" style="--d:1"><span class="dot ring"></span><span class="t">k230-lab</span></a><div class="sec up">Disks</div><a class="nav on" href="flash-disk.html" style="--d:1"><span class="dot info"></span><span class="t">SD card 64 GB</span></a><div class="sec up">Tools</div><a class="nav" href="flash.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg><span class="t">Flash a board</span></a><a class="nav" href="settings.html" style="--d:0"><svg class="i sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z M12 3v3 M12 18v3 M3 12h3 M18 12h3 M5.6 5.6l2 2 M16.4 16.4l2 2 M5.6 18.4l2-2 M16.4 7.6l2-2"/></svg><span class="t">Settings</span></a></aside>
+<div class="main">
+<header class="top"><h1>Write a disk</h1><span class="crumb">Flash /</span><div class="grow"><span class="chip info"><span class="dot info"></span>sdb selected</span></div><div class="right"></div></header>
+<div class="body" style="grid-template-rows:auto minmax(0,1fr); grid-template-columns:minmax(0,1fr);">
+
+<section class="panel">
+  <div class="ph"><h2>Image</h2><span class="grow"></span><span class="chip neu">first-flash image</span></div>
+  <div class="pb"><dl class="kv">
+    <dt>File</dt><dd>heliOS-2026.11.02-rock.img.xz · 412 MB</dd>
+    <dt>Written as</dt><dd>the whole disk image, same as the first flash on a board</dd>
+    <dt>Verify</dt><dd>reads the card back after writing</dd>
+  </dl></div>
+</section>
+<section class="panel" style="min-height:0">
+  <div class="ph"><h2>Disk</h2><span class="grow"></span><span class="kicker">system and internal disks are not listed</span></div>
+  <div class="pb flush tbl" style="padding:0">
+    <div class="tr h" style="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px"><div></div><div>Disk</div><div>Device</div><div>Bus</div><div>Kind</div></div>
+    <div class="tr sel" style="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px"><div><span class="dot acc" style="background:var(--accent);border:0"></span></div><div><b>SD card 64 GB</b></div><div class="faint">sdb</div><div>card reader · removable</div><div><span class="chip info"><span class="dot info"></span>Removable</span></div></div><div class="tr " style="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px"><div><span class="dot off" style="background:transparent;border:1.5px solid var(--offline)"></span></div><div><b>USB stick 16 GB</b></div><div class="faint">sdc</div><div>USB 3 · removable</div><div><span class="chip info"><span class="dot info"></span>Removable</span></div></div>
+  </div>
+  <div style="margin-top:auto;border-top:1px solid var(--hairline);padding:8px 10px;min-height:52px">
+    <div class="confirm-line" style="height:auto;min-height:24px;padding:4px 8px;background:var(--err-bg);border-left:2px solid var(--err);border-radius:2px">
+      <span class="q">Erase sdb (SD card 64 GB) and write heliOS-2026.11.02-rock.img.xz? This cannot be undone.</span>
+      <button class="btn sm">Cancel</button><button class="btn sm danger">Erase and write</button>
+    </div>
+  </div>
+</section>
+
+</div>
+</div>
+</div>
+</body>
+</html>
