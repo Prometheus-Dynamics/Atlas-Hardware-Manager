@@ -13,7 +13,7 @@ use atlas_sim_node::slots::trial::Config;
 use atlas_sim_node::{DEADLINE, Kind, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::Orion;
-use orion::actions::{ActionCall, Finished, Outcome};
+use orion::actions::{Finished, Outcome};
 use serde_json::Value;
 
 /// A node for one test, in its own directory.
@@ -67,14 +67,7 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
     }
     push(orion, BUNDLE, bundle);
     let args = format!("{BUNDLE} {pin} {keep_old}");
-    orion
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL_FILE,
-            target: atlas_sim_node::node::target(),
-            args: args.as_bytes(),
-            deadline_ms: 0,
-            detached: false,
-        })
+    atlas_sim_node::bridge::run(orion, names::SLOTS_INSTALL_FILE, args.as_bytes(), 0, false)
         .expect("the install starts")
         .finish(DEADLINE)
         .expect("the install ends")

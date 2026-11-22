@@ -18,6 +18,11 @@ orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "47bfd
 # Lemnos's slot-bundle format: the signing record, the signed message, the manifest's bytes and the bundle rules.
 # Its rev is the image's Lemnos pin (devices/); scripts/check-devices.sh holds the two equal. Moving it is its own PR.
 lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "a6251ecfb815752880f399e4e137634d022d4a2d", default-features = false }
+# The contract crates Atlas reads a method's tag and names from (the same rev, no new rev): `lemnos-core` is their trait.
+lemnos-core = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "a6251ecfb815752880f399e4e137634d022d4a2d", default-features = false }
+lemnos-contract-system-slots = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "a6251ecfb815752880f399e4e137634d022d4a2d", default-features = false }
+lemnos-contract-system-reboot = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "a6251ecfb815752880f399e4e137634d022d4a2d", default-features = false }
+lemnos-contract-system-flash = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "a6251ecfb815752880f399e4e137634d022d4a2d", default-features = false }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

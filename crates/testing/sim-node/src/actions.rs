@@ -18,8 +18,8 @@ pub const CATALOG: &str = "actions.list";
 /// steps (1 to 100), runs one step per tick, and reports how many it ran.
 pub const DRY_RUN: &str = "vendor.dry-run";
 
-/// The actions this module adds to the node.
-pub const NAMES: &[&str] = &[CATALOG, DRY_RUN];
+/// The actions this module adds to the node: the one list the node registers (`names::ACTIONS`).
+pub const NAMES: &[&str] = crate::names::ACTIONS;
 
 /// Largest number of steps a dry run takes.
 pub const MAX_STEPS: u32 = 100;
@@ -101,8 +101,11 @@ mod tests {
         assert!(entries.len() >= 7);
         for entry in entries {
             let name = entry["name"].as_str().unwrap();
+            // A Lemnos method is registered as the bridge's device action (`crate::bridge`).
             assert!(
-                crate::names::ACTIONS.contains(&name) || NAMES.contains(&name),
+                crate::names::ACTIONS.contains(&name)
+                    || NAMES.contains(&name)
+                    || crate::bridge::request(name, b"").is_some(),
                 "{name} is listed but not registered"
             );
         }

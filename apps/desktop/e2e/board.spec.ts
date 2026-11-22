@@ -54,9 +54,12 @@ test("Locate and Reboot run at once, with no confirmation, and say what the boar
   await top.getByRole("button", { name: "Locate" }).click();
   await expect(top.locator('[data-said="ok"]')).toHaveText("locate: blinking");
   expect(await bridge.call("sim.node", { runs: "locate" })).toBe(1);
+  // The reboot is one run of the device's `.call` (`lemnos.reboot.call`), counted from before the click:
+  // the node also counts a device's description runs under that name.
+  const before = (await bridge.call("sim.node", { runs: "lemnos.reboot.call" })) as number;
   await top.getByRole("button", { name: "Reboot" }).click();
   await expect(top.locator('[data-said="ok"]')).toContainText("system.reboot.reboot");
-  expect(await bridge.call("sim.node", { runs: "system.reboot.reboot" })).toBe(1);
+  expect(await bridge.call("sim.node", { runs: "lemnos.reboot.call" })).toBe(before + 1);
 });
 
 test("slots: what each row offers, pin and unpin, and set default", async ({ app }) => {
@@ -188,7 +191,8 @@ test("the dock's tabs: hardware as the board describes it, and what is not in th
   await expect(dock.locator(".tabbar label.on")).toHaveText("Logs");
   await dock.getByText("Hardware", { exact: true }).click();
   await expect(dock.locator(".tabbar label.on")).toHaveText("Hardware");
-  await expect(dock.locator("[data-device]")).toHaveCount(5);
+  // The board lists its seven devices: the sensors, and the slot list and the restart (Lemnos devices too).
+  await expect(dock.locator("[data-device]")).toHaveCount(7);
   await expect(dock.locator('[data-device="lemnos.vane0"]')).toContainText("Wind vane");
   await expect(dock.locator('[data-device="lemnos.gauge1"] .chip.warn')).toHaveText("retrying");
   await expect(dock.locator('[data-device="lemnos.gauge1"]')).toContainText("sensor drifting");

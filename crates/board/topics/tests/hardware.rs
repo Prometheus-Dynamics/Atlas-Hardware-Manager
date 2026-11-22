@@ -98,11 +98,14 @@ fn device<'a>(snapshot: &'a Snapshot, name: &str) -> Option<&'a Device> {
 }
 
 /// Every device the node lists is here, listed, and every item has its value.
+/// The devices of the sim node that have readings: the slot list and the restart have none, and are
+/// listed without them.
 fn all_read(snapshot: &Snapshot) -> bool {
-    snapshot.devices.len() == 5
+    snapshot.devices.len() == 7
         && snapshot.devices.iter().all(|device| {
             device.listed
-                && !device.readings.is_empty()
+                && (matches!(device.name.as_str(), "lemnos.slots" | "lemnos.reboot")
+                    || !device.readings.is_empty())
                 && device.readings.iter().all(|item| item.value.is_some())
         })
 }
@@ -624,7 +627,7 @@ async fn a_session_drop_is_stale_since_its_last_read_and_the_return_says_everyth
         panic!("stale");
     };
     assert!(!reason.is_empty(), "the reason is said");
-    assert_eq!(stale.devices.len(), 5, "a lost session removes nothing");
+    assert_eq!(stale.devices.len(), 7, "a lost session removes nothing");
     for device in &stale.devices {
         assert_eq!(
             device.freshness,
@@ -651,7 +654,7 @@ async fn a_session_drop_is_stale_since_its_last_read_and_the_return_says_everyth
         },
     )
     .await;
-    assert_eq!(back.devices.len(), 5);
+    assert_eq!(back.devices.len(), 7);
 
     // A line written on the new node reaches a subscriber that has just been made. A line
     // written before the subscription is live is not sent to a network subscriber (see the
@@ -692,7 +695,7 @@ async fn a_republish_that_withdraws_the_devices_is_held_not_faulted_and_not_remo
         device(snapshot, "lemnos.vane0").is_some_and(|device| !device.listed)
     })
     .await;
-    assert_eq!(held.devices.len(), 5, "the blip removes no device");
+    assert_eq!(held.devices.len(), 7, "the blip removes no device");
     let vane = device(&held, "lemnos.vane0").expect("still here");
     assert!(matches!(vane.freshness, Freshness::Stale { .. }));
     assert_eq!(
@@ -744,7 +747,7 @@ async fn a_device_withdrawn_for_longer_than_the_grace_is_removed() {
         },
     )
     .await;
-    assert_eq!(held.devices.len(), 5, "held within the grace, none removed");
+    assert_eq!(held.devices.len(), 7, "held within the grace, none removed");
 
     clock.advance(grace + Duration::from_millis(1));
     read_until(

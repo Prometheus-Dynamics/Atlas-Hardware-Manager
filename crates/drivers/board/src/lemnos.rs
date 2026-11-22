@@ -2,9 +2,10 @@
 //! stops answering is faulted and restarting. A node that never ran it is a plain Orion node,
 //! which is normal. The four states are [`LemnosState`] on the identity, not text in an error.
 
+use atlas_session::lemnos;
 use atlas_types::LemnosState;
 use orion::Orion;
-use orion::actions::{ActionCall, Outcome, Target};
+use orion::actions::{ActionCall, Outcome};
 use orion::node::Node;
 
 /// The hello facts that say a node runs Lemnos. A node that publishes one of them, or that
@@ -18,9 +19,6 @@ const LEMNOS_FACTS: [&str; 6] = [
     "version.product",
 ];
 
-/// The read-only Lemnos call the driver asks a node that is expected to run Lemnos. Its answer
-/// is what decides whether Lemnos answers. The name is Lemnos's contract name, not a board's.
-pub const PROBE: &str = "system.slots.list";
 /// How long the probe may take before it counts as not answering.
 pub const PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
@@ -38,19 +36,40 @@ pub fn from_probe(outcome: Outcome, detail: &str) -> LemnosState {
     }
 }
 
-/// Asks Lemnos its read-only question. A session that breaks during it is an error; any other
-/// failure is Lemnos not answering, with the reason.
-pub fn probe(orion: &Orion, node: &Node) -> Result<LemnosState, orion::Error> {
-    let Ok(name) = node.name.parse() else {
+/// Asks Lemnos its read-only question: `system.slots/1`'s `list`, on the device that carries that
+/// contract (the names are Lemnos's, not a board's). A node with no
+/// such device is not answering, and nothing is sent. A session that breaks during it is an error;
+/// any other failure is Lemnos not answering, with the reason.
+pub fn probe(orion: &Orion, session: u64) -> Result<LemnosState, orion::Error> {
+    let resource = match lemnos::resource_for(orion, session, lemnos::SLOTS)? {
+        lemnos::Lookup::Found(resource) => resource,
+        lemnos::Lookup::NoContract => {
+            return Ok(LemnosState::NotAnswering {
+                reason: format!("this board has no {}", lemnos::SLOTS),
+            });
+        }
+        lemnos::Lookup::Unanswered(reason) => {
+            return Ok(LemnosState::NotAnswering {
+                reason: reason.to_string(),
+            });
+        }
+        lemnos::Lookup::NoDevices => {
+            return Ok(LemnosState::NotAnswering {
+                reason: "this board lists no Lemnos devices: Lemnos is up but has published none"
+                    .into(),
+            });
+        }
+    };
+    let Ok(call) = lemnos::method_call(&resource, lemnos::SLOTS, "list", b"") else {
         return Ok(LemnosState::NotAnswering {
-            reason: format!("the node's name {:?} is not a valid name", node.name),
+            reason: format!("this board has no {}", lemnos::SLOTS),
         });
     };
     let answered = orion
         .run(&ActionCall {
-            name: PROBE,
-            target: Target::Node(name),
-            args: b"",
+            name: &call.name,
+            target: call.target,
+            args: &call.args,
             deadline_ms: 0,
             detached: false,
         })

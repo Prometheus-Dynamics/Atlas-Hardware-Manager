@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use orion::actions::{ActionCall, Target};
+use orion::actions::ActionCall;
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError, Orion};
 use tokio::sync::watch;
@@ -247,16 +247,17 @@ pub(crate) fn device_for_renewal(orion: &Orion) -> Result<Option<String>, OrionE
 ///
 /// [`OrionError`] when the session is gone or the run could not be sent. The caller checks
 /// [`OrionError::is_lost`].
-pub(crate) fn renew(orion: &Orion, node: &NodeName, device: &str) -> Result<(), OrionError> {
-    // LOCK: Lemnos I6h describe. The renewal is `describe` with no other arguments: the bridge
-    // answers the device description as text, a read. The session calls this only while the lease
-    // is in force (see `LEASE_IN_FORCE`); at the locked revision nothing is sent.
-    const RENEW_ARGS: &[u8] = b"describe";
-    let name = format!("{device}.call");
+pub(crate) fn renew(orion: &Orion, _node: &NodeName, device: &str) -> Result<(), OrionError> {
+    // The renewal is the bridge's `describe` with no other argument: the device's description as
+    // text, a read. The session calls this only while the lease is in force (see `LEASE_IN_FORCE`).
+    // The call is built in one place (`crate::lemnos`): the device's resource, the bridge's `describe`.
+    let Ok(call) = crate::lemnos::describe_call(device) else {
+        return Ok(());
+    };
     let mut run = orion.run(&ActionCall {
-        name: &name,
-        target: Target::Node(node.clone()),
-        args: RENEW_ARGS,
+        name: &call.name,
+        target: call.target,
+        args: &call.args,
         deadline_ms: 0,
         detached: false,
     })?;

@@ -13,6 +13,14 @@ pub enum ActionError {
     /// The board does not list this action, so it is not sent.
     #[error("the board does not list {0}")]
     NotListed(String),
+    /// No device on the board carries this contract, so nothing is sent.
+    #[error("this board has no {0}")]
+    NoContract(String),
+    /// The board lists no Lemnos device, so nothing is sent. Once Lemnos is up this is a fault.
+    #[error(
+        "this board lists no Lemnos devices, so nothing was sent: Lemnos is up but has published none"
+    )]
+    NoDevices,
     /// The board's list is there but is not a list Atlas reads.
     #[error("the board's action list cannot be read: {0}")]
     BadCatalog(String),

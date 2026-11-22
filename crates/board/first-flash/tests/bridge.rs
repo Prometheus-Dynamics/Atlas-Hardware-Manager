@@ -5,7 +5,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use atlas_files::PushSource;
-use atlas_first_flash::{BridgeFlash, Bytes, CallError, FlasherBoard};
+use atlas_first_flash::{BridgeFlash, Bytes, CallError, FlasherBoard, VERIFY};
 use atlas_flash_flow::{FirstFlash, ImagePlan, StepError, Stream, WritePhase, WriteProgress};
 
 const RAW: u64 = 8_388_608;
@@ -17,7 +17,7 @@ enum Seen {
         bytes: Vec<u8>,
     },
     Call {
-        device: String,
+        name: String,
         words: Vec<String>,
         job: bool,
     },
@@ -72,17 +72,17 @@ impl FlasherBoard for Board {
 
     async fn call(
         &self,
-        device: &str,
+        name: &str,
         words: &[&str],
         job: bool,
         progress: &Bytes<'_>,
     ) -> Result<Vec<u8>, CallError> {
         self.seen.lock().unwrap().push(Seen::Call {
-            device: device.to_owned(),
+            name: name.to_owned(),
             words: words.iter().map(|w| (*w).to_owned()).collect(),
             job,
         });
-        if words == ["verify"] {
+        if name == VERIFY {
             progress(RAW, RAW);
             self.verify.clone()
         } else {
@@ -148,8 +148,8 @@ async fn the_manifest_then_the_image_then_verify_and_the_answer_is_the_board_s_f
     assert_eq!(
         seen[2],
         Seen::Call {
-            device: "flash".into(),
-            words: vec!["verify".into()],
+            name: "system.flash.verify".into(),
+            words: vec![],
             job: true
         }
     );
@@ -228,8 +228,8 @@ async fn a_restart_that_takes_the_session_is_the_restart() {
         assert_eq!(
             flash.board().seen(),
             [Seen::Call {
-                device: "reboot".into(),
-                words: vec!["reboot".into()],
+                name: "system.reboot.reboot".into(),
+                words: vec![],
                 job: false
             }]
         );

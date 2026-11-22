@@ -896,3 +896,93 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
         other => panic!("the lapse is reported as a lapse, not {other:?}"),
     }
 }
+
+/// A Lemnos method as Atlas names it (`system.<contract>.<method>`), with no declared arguments.
+fn lemnos_action(name: &str) -> Action {
+    Action {
+        name: name.to_owned(),
+        label: Reported::NotReported,
+        description: Reported::NotReported,
+        args: Reported::NotReported,
+        long_running: Reported::Known(false),
+    }
+}
+
+/// The Lemnos call goes to the device that carries the contract, as the bridge takes it: `lemnos.slots`
+/// with `system.slots/1:list`. On the old code the node name `system.slots.list` answered "not found".
+#[tokio::test]
+async fn a_lemnos_method_answers_through_the_device_that_carries_its_contract() {
+    let rig = Rig::start("lemnos-answers", &lemnos_kind()).await;
+    let done = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .unwrap_or_else(|error| panic!("list: {error}"));
+    assert!(String::from_utf8_lossy(&done.output).contains("\"slots\""));
+    // The second call finds the device in the session's cache: its description is not asked again, so
+    // the only new device call is the list itself.
+    let before = rig.node.runs_started("lemnos.slots.call");
+    rig.board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .unwrap_or_else(|error| panic!("list again: {error}"));
+    assert_eq!(
+        rig.node.runs_started("lemnos.slots.call"),
+        before + 1,
+        "no describe for a known device"
+    );
+    assert_eq!(rig.node.runs_started("system.slots.list"), 2);
+}
+
+/// No device on the node can say it carries `system.slots/1`: its describe is refused, so the call is not
+/// sent, and the board's own words say why. ("this board has no system.slots/1" is the answer when the
+/// devices answer their descriptions and none carries the contract; the sim does not model that case.)
+#[tokio::test]
+async fn a_board_without_the_contract_says_so_and_sends_nothing() {
+    let rig = Rig::start("lemnos-no-contract", &lemnos_kind()).await;
+    rig.node.refuse_describe(true);
+    // Every device refused its description, so the refusal's own words are the answer: nothing is sent.
+    let error = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .expect_err("no contract, nothing sent");
+    assert_eq!(
+        error.to_string(),
+        "the node did not answer: this board does not answer describe"
+    );
+    assert_eq!(
+        rig.node.runs_started("system.slots.list"),
+        0,
+        "nothing was sent"
+    );
+    rig.node.refuse_describe(false);
+}
+
+/// A word the bridge cannot take (one with whitespace) is refused before anything is sent, and the
+/// reason names the argument.
+#[tokio::test]
+async fn a_word_with_whitespace_is_refused_before_it_is_sent() {
+    let rig = Rig::start("lemnos-whitespace", &lemnos_kind()).await;
+    let error = rig
+        .board
+        .run(
+            &lemnos_action("system.slots.set_default"),
+            &["slot 2".to_owned(), "false".to_owned()],
+        )
+        .await
+        .expect_err("refused");
+    assert!(matches!(error, ActionError::BadArguments(_)), "{error:?}");
+    assert!(error.to_string().contains("argument 1"), "{error}");
+    let empty = rig
+        .board
+        .run(&lemnos_action("system.slots.set_default"), &[String::new()])
+        .await
+        .expect_err("refused");
+    assert!(empty.to_string().contains("argument 1 is empty"), "{empty}");
+    assert_eq!(
+        rig.node.runs_started("system.slots.set_default"),
+        0,
+        "nothing was sent"
+    );
+}

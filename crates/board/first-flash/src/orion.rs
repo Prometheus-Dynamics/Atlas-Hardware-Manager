@@ -122,13 +122,13 @@ impl FlasherBoard for OrionBoard {
 
     async fn call(
         &self,
-        device: &str,
+        name: &str,
         words: &[&str],
         job: bool,
         progress: &Bytes<'_>,
     ) -> Result<Vec<u8>, CallError> {
         let actions = BoardActions::new(self.handle.clone());
-        let call = action(format!("lemnos.{device}.call"), job);
+        let call = action(name.to_owned(), job);
         let words: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
         if !job {
             return actions

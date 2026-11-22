@@ -17,16 +17,19 @@ use atlas_types::{CapabilityKind, CapabilitySet, Reading};
 
 use crate::SlotError;
 
-/// Lemnos's `system.slots/1` method names, as the bridge names them. The list method is the only
-/// one whose reply is an out buffer (`list`, L1/M8a); it is called in ONE place: [`BoardSlots::list`].
+/// Lemnos's `system.slots/1` methods, named `system.<contract>.<method>` with the method as the
+/// contract names it (`engine` contracts/system-slots: `set_default`, `install_file`, ...). The
+/// board node runs each one on the device that carries the contract (see `atlas_session::lemnos`).
+/// The list method is the only one whose reply is an out buffer (`list`, L1/M8a); it is called in
+/// ONE place: [`BoardSlots::list`].
 pub const LIST: &str = "system.slots.list";
 pub const ACCEPT: &str = "system.slots.accept";
-pub const INSTALL_FILE: &str = "system.slots.install-file";
-pub const SET_DEFAULT: &str = "system.slots.set-default";
+pub const INSTALL_FILE: &str = "system.slots.install_file";
+pub const SET_DEFAULT: &str = "system.slots.set_default";
 pub const TRIAL: &str = "system.slots.trial";
 pub const REMOVE: &str = "system.slots.remove";
 pub const PIN: &str = "system.slots.pin";
-pub const SET_KEEP: &str = "system.slots.set-keep";
+pub const SET_KEEP: &str = "system.slots.set_keep";
 
 /// One short action the board names, with its argument kinds. Not reported as long, so it runs
 /// as a call, not a job.

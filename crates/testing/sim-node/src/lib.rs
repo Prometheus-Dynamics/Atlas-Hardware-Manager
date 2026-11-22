@@ -36,6 +36,7 @@
 
 pub mod access;
 pub mod actions;
+pub mod bridge;
 pub mod bundle;
 pub mod describe;
 mod lease;

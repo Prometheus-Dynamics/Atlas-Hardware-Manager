@@ -655,6 +655,10 @@ version = "2026.1.0-dev"
 dependencies = [
  "atlas-sim-node",
  "atlas-types",
+ "lemnos-contract-system-flash",
+ "lemnos-contract-system-reboot",
+ "lemnos-contract-system-slots",
+ "lemnos-core",
  "orion",
  "tokio",
 ]
@@ -1680,6 +1684,21 @@ name = "embed_plist"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
+
+[[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
+name = "embedded-hal-async"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c4c685bbef7fe13c3c6dd4da26841ed3980ef33e841cddfa15ce8a8fb3f1884"
+dependencies = [
+ "embedded-hal",
+]
 
 [[package]]
 name = "endi"
@@ -2937,6 +2956,64 @@ checksum = "0fbe853b403ae61a04233030ae8a79d94975281ed9770a1f9e246732b534b28d"
 dependencies = [
  "bitflags 2.13.2",
  "serde",
+]
+
+[[package]]
+name = "lemnos-abi"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+
+[[package]]
+name = "lemnos-contract-system-flash"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "lemnos-core",
+]
+
+[[package]]
+name = "lemnos-contract-system-reboot"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "lemnos-core",
+]
+
+[[package]]
+name = "lemnos-contract-system-slots"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "lemnos-core",
+]
+
+[[package]]
+name = "lemnos-core"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "lemnos-abi",
+ "lemnos-hal",
+ "lemnos-macros",
+]
+
+[[package]]
+name = "lemnos-hal"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "embedded-hal",
+ "embedded-hal-async",
+]
+
+[[package]]
+name = "lemnos-macros"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=a6251ecfb815752880f399e4e137634d022d4a2d#a6251ecfb815752880f399e4e137634d022d4a2d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
 ]
 
 [[package]]

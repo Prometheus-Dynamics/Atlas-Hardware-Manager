@@ -86,10 +86,16 @@ pub fn target() -> Target {
 ///
 /// If the connection breaks. A refused or failed run is an `Ok` with its outcome.
 pub fn call(orion: &Orion, name: &str, args: &[u8]) -> Result<Finished, orion::Error> {
+    // A Lemnos method is named here by its simulated action; it goes to the node as the bridge takes it:
+    // the device's `call` on its resource, with `TAG:METHOD` and the words (see `crate::bridge`).
+    let (name, target, args) = match crate::bridge::request(name, args) {
+        Some((name, target, args)) => (name, target, args),
+        None => (name.to_owned(), target(), args.to_vec()),
+    };
     let mut run = orion.run(&ActionCall {
-        name,
-        target: target(),
-        args,
+        name: &name,
+        target,
+        args: &args,
         deadline_ms: 0,
         detached: false,
     })?;
@@ -775,8 +781,7 @@ impl Node {
         let orion = Orion::connect(&Address::Local(socket.to_path_buf()), "sim-node")
             .map_err(|error| error.to_string())?;
         let mut registration = None;
-        let all = names::ACTIONS.iter().chain(crate::actions::NAMES.iter());
-        for name in all.filter(|name| offered(kind, name)) {
+        for name in names::ACTIONS.iter().filter(|name| offered(kind, name)) {
             let policy = action_policy();
             let decl = ActionDecl {
                 name,
@@ -787,22 +792,6 @@ impl Node {
                 .register_action(&decl, policy)
                 .map_err(|e| e.to_string())?;
             registration.get_or_insert(handle);
-        }
-        // A node with Lemnos names each device's `.call` the way the bridge does: `lemnos.<device>.call`.
-        if matches!(kind, Kind::WithLemnos(_)) {
-            for device in readings::DEVICES {
-                let name = format!("lemnos.{}.call", device.id);
-                let policy = action_policy();
-                let decl = ActionDecl {
-                    name: &name,
-                    target: target(),
-                    description: "the device's call, as the bridge names it",
-                };
-                let handle = orion
-                    .register_action(&decl, policy)
-                    .map_err(|e| e.to_string())?;
-                registration.get_or_insert(handle);
-            }
         }
         let logs = orion
             .declare(&TopicDecl {
@@ -828,6 +817,8 @@ impl Node {
             }
             Kind::Plain => None,
         };
+        // A node with Lemnos declares its devices' actions with the devices (`readings::Devices`), as the
+        // bridge does; see `crate::bridge::VERBS`.
         // Only a node with Lemnos has readings, a hardware description and hello facts.
         let mut readings = None;
         let mut hello_topics = Vec::new();
@@ -1002,12 +993,28 @@ impl Node {
         }
     }
 
-    fn start(&mut self, call: u64, name: &str, args: Vec<u8>, caller: &str) {
-        *lock(&self.shared.runs).entry(name.to_string()).or_default() += 1;
+    fn start(&mut self, call: u64, orion_name: &str, args: Vec<u8>, caller: &str) {
+        *lock(&self.shared.runs)
+            .entry(orion_name.to_string())
+            .or_default() += 1;
         if self.shared.leases.take_note(caller) {
             self.noted.insert(call);
         }
-        if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
+        // A device action is the bridge's: its words are checked and routed here. Anything else is a board
+        // action the node registered under its own name.
+        let routed = crate::bridge::route(orion_name, &args);
+        let device_run = routed.is_some();
+        let (name, args): (String, Vec<u8>) = match &routed {
+            Some(Ok(crate::bridge::Routed::Action { name, args })) => {
+                *lock(&self.shared.runs)
+                    .entry((*name).to_string())
+                    .or_default() += 1;
+                ((*name).to_string(), args.clone())
+            }
+            _ => (orion_name.to_owned(), args),
+        };
+        if (names::is_lemnos(&name) || device_run) && self.shared.lemnos_down.load(Ordering::SeqCst)
+        {
             // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
             self.finish_status(
                 call,
@@ -1015,44 +1022,46 @@ impl Node {
             );
             return;
         }
-        if is_device_call(name) && args.is_empty() {
-            // The bridge's `.call` with no method: refused before anything is read or written.
-            self.finish(call, Outcome::Rejected, &[], "call needs a method");
-            return;
-        }
-        if is_device_call(name) && args == b"describe" {
-            // The session ends with this call unanswered: the node is published again on a new
-            // session, as a node that reconnects is (the old connection is closed by the drop).
-            let dropped = {
-                let mut armed = lock(&self.shared.drop_session_at_describe);
-                if armed.as_deref() == Some(device_id(name)) {
-                    *armed = None;
-                    true
-                } else {
-                    false
-                }
-            };
-            if dropped {
-                self.reopen = true;
+        match routed {
+            Some(Err(reason)) => {
+                self.finish(call, Outcome::Rejected, &[], &reason);
                 return;
             }
-            // `.call describe`: the device's description as `describe 1` text (Lemnos I6h, e5c0ff0e).
-            // It changes nothing, so the session's lease renewal is the same call.
-            let answer = match self.devices.as_ref() {
-                Some(devices) => devices.describe(device_id(name)),
-                None => Err("no such device".to_owned()),
-            };
-            match answer {
-                Ok(text) => self.finish(call, Outcome::Succeeded, text.as_bytes(), ""),
-                Err(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
+            Some(Ok(crate::bridge::Routed::Reply(bytes))) => {
+                self.finish(call, Outcome::Succeeded, &bytes, "");
+                return;
             }
-            return;
+            Some(Ok(crate::bridge::Routed::Describe { device })) => {
+                // The session ends with this call unanswered: the node is published again on a new
+                // session, as a node that reconnects is (the old connection is closed by the drop).
+                let dropped = {
+                    let mut armed = lock(&self.shared.drop_session_at_describe);
+                    if armed.as_deref() == Some(device) {
+                        *armed = None;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if dropped {
+                    self.reopen = true;
+                    return;
+                }
+                // The device's description as `describe 1` text (Lemnos I6h, e5c0ff0e). It changes
+                // nothing, so the session's lease renewal is the same call.
+                let answer = match self.devices.as_ref() {
+                    Some(devices) => devices.describe(device),
+                    None => Err("no such device".to_owned()),
+                };
+                match answer {
+                    Ok(text) => self.finish(call, Outcome::Succeeded, text.as_bytes(), ""),
+                    Err(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
+                }
+                return;
+            }
+            Some(Ok(crate::bridge::Routed::Action { .. })) | None => {}
         }
-        if is_device_call(name) && args.starts_with(b"describe ") {
-            self.finish(call, Outcome::Rejected, &[], "describe takes no arguments");
-            return;
-        }
-        let behaviour = lock(&self.shared.script).take_action(name);
+        let behaviour = lock(&self.shared.script).take_action(&name);
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
@@ -1078,7 +1087,7 @@ impl Node {
                 self.install_start(call, caller, &args);
             }
             Behaviour::Answer => {
-                let total = crate::actions::ticks(name, &args).unwrap_or_else(|| ticks_for(name));
+                let total = crate::actions::ticks(&name, &args).unwrap_or_else(|| ticks_for(&name));
                 self.active.push(Run {
                     call,
                     name: name.to_string(),
@@ -1401,19 +1410,12 @@ impl Node {
     }
 }
 
-/// The path a pushed bundle is kept at on the shelf.
-/// A device's `.call` action: `lemnos.<device>.call`, the bridge's name for it.
+/// Whether `name` is a device action of this node (`lemnos.<device>.<verb>`).
 fn is_device_call(name: &str) -> bool {
-    name.starts_with("lemnos.") && name.ends_with(".call")
+    crate::bridge::split(name).is_some()
 }
 
-/// The device a `.call` action names: `lemnos.<device>.call` is `<device>`.
-fn device_id(name: &str) -> &str {
-    name.strip_prefix("lemnos.")
-        .and_then(|rest| rest.strip_suffix(".call"))
-        .unwrap_or_default()
-}
-
+/// The path a pushed bundle is kept at on the shelf.
 fn pushed(name: &str) -> String {
     format!("{}{name}", names::INCOMING)
 }

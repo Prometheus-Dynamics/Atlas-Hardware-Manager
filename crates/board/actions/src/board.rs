@@ -34,13 +34,14 @@
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 
+use atlas_session::lemnos;
 use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, RunHandle, Target, Update};
 use orion::types::NodeName;
-use orion::{ClientError, Error as OrionError, Feature};
+use orion::{ClientError, Error as OrionError, Feature, Orion};
 
 use crate::args;
-use crate::catalog::{Action, Catalog, Route};
+use crate::catalog::{Action, Catalog, Reported, Route};
 use crate::error::ActionError;
 
 /// The name the board answers its action list to. A provisional name, agreed with Lemnos with the
@@ -107,6 +108,101 @@ enum Direct {
     Ended(Finished),
     Refused(Failure),
     Late,
+    /// Nothing was sent: see [`Missing`].
+    Missing(Missing),
+}
+
+/// Where a run goes: the name, target and arguments the node's session takes.
+struct Aim {
+    name: String,
+    target: Target,
+    args: Vec<u8>,
+}
+
+/// Where a run of `name` with `encoded` arguments goes, read on the node's session. A Lemnos method
+/// (`system.<contract>.<method>`, see [`lemnos::method_of`]) is the call on the device that carries
+/// its contract, built in one place (`atlas_session::lemnos`): the device's resource and the
+/// bridge's `TAG:METHOD` form. Any other name runs on the node, as before.
+///
+/// Refuses, before anything is sent, a word of a Lemnos call that the bridge cannot take. The bridge
+/// splits a call's words on whitespace with no quoting or escape (`service/orion/src/calls.rs`,
+/// `serve`), so a word that is empty or has whitespace in it would arrive as a different call.
+/// Nothing is sent, and the reason names the argument.
+fn refuse_unsplit(action: &Action, words: &[String]) -> Result<(), ActionError> {
+    if lemnos::method_of(&action.name).is_none() {
+        return Ok(());
+    }
+    for (index, word) in words.iter().enumerate() {
+        let problem = if word.is_empty() {
+            "empty"
+        } else if word.chars().any(char::is_whitespace) {
+            "a word with whitespace in it"
+        } else {
+            continue;
+        };
+        let arg = match &action.args {
+            Reported::Known(args) => args
+                .get(index)
+                .map_or_else(|| format!("argument {}", index + 1), |arg| arg.name.clone()),
+            Reported::NotReported => format!("argument {}", index + 1),
+        };
+        return Err(ActionError::BadArguments(format!(
+            "{arg} is {problem}: the board's call takes its words split on spaces, with no quoting, so it is not sent"
+        )));
+    }
+    Ok(())
+}
+
+/// Why a Lemnos call is not sent: no device carries its contract, or the node lists no device.
+#[derive(Debug)]
+enum Missing {
+    Contract(String),
+    NoDevices,
+    /// Every device refused its description: the device's failure, its words and its kind.
+    Unanswered(atlas_session::Failure),
+}
+
+/// `Err` when nothing is to be sent: no device carries the contract, or there are no devices.
+fn aim(
+    orion: &Orion,
+    session: u64,
+    name: &str,
+    encoded: &[u8],
+    node: &NodeName,
+) -> Result<Result<Aim, Missing>, OrionError> {
+    let Some((contract, method)) = lemnos::method_of(name) else {
+        return Ok(Ok(Aim {
+            name: name.to_owned(),
+            target: Target::Node(node.clone()),
+            args: encoded.to_vec(),
+        }));
+    };
+    let resource = match lemnos::resource_cached(orion, session, &contract)? {
+        lemnos::Lookup::Found(resource) => resource,
+        lemnos::Lookup::NoContract => return Ok(Err(Missing::Contract(contract))),
+        lemnos::Lookup::NoDevices => return Ok(Err(Missing::NoDevices)),
+        lemnos::Lookup::Unanswered(words) => return Ok(Err(Missing::Unanswered(words))),
+    };
+    // A resource the node lists under the bridge's prefix is a name the bridge can have.
+    let Ok(call) = lemnos::method_call(&resource, &contract, &method, encoded) else {
+        return Ok(Err(Missing::Contract(contract)));
+    };
+    Ok(Ok(Aim {
+        name: call.name,
+        target: call.target,
+        args: call.args,
+    }))
+}
+
+/// The error a [`Missing`] call gives: nothing was sent.
+fn not_sent(missing: Missing) -> ActionError {
+    match missing {
+        Missing::Contract(contract) => ActionError::NoContract(contract),
+        Missing::NoDevices => ActionError::NoDevices,
+        // A node that turns this client away says so as a refusal, which the caller can act on (enrol).
+        Missing::Unanswered(failure) if failure.is_denied() => ActionError::Refused(failure),
+        Missing::Unanswered(failure) => ActionError::NotAnswering(failure.to_string()),
+    }
 }
 
 impl BoardActions {
@@ -168,6 +264,7 @@ impl BoardActions {
         if action.route() == Route::Job {
             return Err(ActionError::NeedsJob(action.name.clone()));
         }
+        refuse_unsplit(action, words)?;
         args::check(action, words)?;
         self.direct(&action.name, args::encode(words)).await
     }
@@ -184,6 +281,7 @@ impl BoardActions {
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// [`ActionError::Refused`] with the board's reason, or [`ActionError::StartInDoubt`].
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
+        refuse_unsplit(action, words)?;
         args::check(action, words)?;
         self.start_encoded(&action.name, args::encode(words)).await
     }
@@ -204,10 +302,14 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name)? {
+                    Ok(aimed) => aimed,
+                    Err(missing) => return Ok(Started::Missing(missing)),
+                };
                 let mut run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
+                    name: &aimed.name,
+                    target: aimed.target,
+                    args: &aimed.args,
                     deadline_ms: DETACHED_DEADLINE_MS,
                     detached: true,
                 })?;
@@ -252,6 +354,7 @@ impl BoardActions {
         match sent {
             Ok(Started::Issued(issued)) => Ok(issued),
             Ok(Started::Refused(reason)) => Err(ActionError::Refused(reason)),
+            Ok(Started::Missing(missing)) => Err(not_sent(missing)),
             Err(SessionError::Gone(reason)) => Err(ActionError::StartInDoubt {
                 name: name.to_owned(),
                 reason,
@@ -481,13 +584,18 @@ impl BoardActions {
         let node_name = self.node_name()?;
         let wait = self.direct_wait();
         let owned = name.to_owned();
+        let session = self.handle.session();
         let answered = self
             .handle
             .with_bridge(move |orion| {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name)? {
+                    Ok(aimed) => aimed,
+                    Err(missing) => return Ok(Direct::Missing(missing)),
+                };
                 let mut run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
+                    name: &aimed.name,
+                    target: aimed.target,
+                    args: &aimed.args,
                     deadline_ms: 0,
                     detached: false,
                 })?;
@@ -508,6 +616,7 @@ impl BoardActions {
         match answered {
             Ok(Direct::Ended(finished)) => ended(finished),
             Ok(Direct::Refused(reason)) => Err(ActionError::Refused(reason)),
+            Ok(Direct::Missing(found)) => Err(not_sent(found)),
             Ok(Direct::Late) => Err(ActionError::NotFinished {
                 name: name.to_owned(),
                 wait,
@@ -541,6 +650,8 @@ impl Seen {
 enum Started {
     Issued(Issued),
     Refused(Failure),
+    /// Nothing was sent: see [`Missing`].
+    Missing(Missing),
 }
 
 /// Comes back to a detached run: by its handle when the node gave one, so that no other run under

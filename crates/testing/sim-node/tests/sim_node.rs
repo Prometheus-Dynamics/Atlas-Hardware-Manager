@@ -10,7 +10,7 @@ use atlas_sim_node::slots::code;
 use atlas_sim_node::slots::parse_keys;
 use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, NODE_NAME, SimNode, call};
 use ed25519_dalek::SigningKey;
-use orion::actions::{ActionCall, Finished, Outcome, Update};
+use orion::actions::{Finished, Outcome, Update};
 use orion::topics::FieldId;
 use orion::{Address, Options, Orion, Patience};
 use serde_json::Value;
@@ -86,14 +86,7 @@ fn push(orion: &Orion, name: &str, bytes: &[u8]) {
 /// Starts the install job for a pushed bundle.
 fn start_install(orion: &Orion, name: &str, pin: bool, keep_old: bool) -> orion::actions::Run {
     let args = format!("{name} {pin} {keep_old}");
-    orion
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL_FILE,
-            target: atlas_sim_node::node::target(),
-            args: args.as_bytes(),
-            deadline_ms: 0,
-            detached: false,
-        })
+    atlas_sim_node::bridge::run(orion, names::SLOTS_INSTALL_FILE, args.as_bytes(), 0, false)
         .expect("the install starts")
 }
 
@@ -338,14 +331,7 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
     let orion = node.connect("stall").expect("a session");
     node.script()
         .push_action(names::SELF_TEST, Behaviour::Stall);
-    let mut run = orion
-        .run(&ActionCall {
-            name: names::SELF_TEST,
-            target: atlas_sim_node::node::target(),
-            args: b"",
-            deadline_ms: 0,
-            detached: false,
-        })
+    let mut run = atlas_sim_node::bridge::run(&orion, names::SELF_TEST, b"".as_ref(), 0, false)
         .expect("the run starts");
     wait_for("the self-test to stall", || {
         (node.stalled_runs() == 1).then_some(())
@@ -369,15 +355,9 @@ fn a_plain_cancel_ends_its_own_run_and_the_session_carries_on() {
     let other = node.connect("other").expect("a session");
     node.script()
         .push_action(names::SELF_TEST, Behaviour::Stall);
-    let mut run = cancelling
-        .run(&ActionCall {
-            name: names::SELF_TEST,
-            target: atlas_sim_node::node::target(),
-            args: b"",
-            deadline_ms: 0,
-            detached: false,
-        })
-        .expect("the run starts");
+    let mut run =
+        atlas_sim_node::bridge::run(&cancelling, names::SELF_TEST, b"".as_ref(), 0, false)
+            .expect("the run starts");
     wait_for("the self-test to stall", || {
         (node.stalled_runs() == 1).then_some(())
     });
@@ -465,16 +445,14 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
     );
     push(&starter, BUNDLE, &bundle);
     let args = format!("{BUNDLE} false false");
-    let run = starter
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL_FILE,
-            target: atlas_sim_node::node::target(),
-            args: args.as_bytes(),
-            // A detached run needs a deadline (Orion's `NoDeadline`): its longest, an hour.
-            deadline_ms: 60 * 60 * 1000,
-            detached: true,
-        })
-        .expect("the detached install starts");
+    let run = atlas_sim_node::bridge::run(
+        &starter,
+        names::SLOTS_INSTALL_FILE,
+        args.as_bytes(),
+        60 * 60 * 1000,
+        true,
+    )
+    .expect("the detached install starts");
     let call_number = run.call();
     drop(run);
     drop(starter);

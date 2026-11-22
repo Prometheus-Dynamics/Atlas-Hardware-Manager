@@ -123,6 +123,8 @@ pub struct MethodSpec {
     pub returns: &'static str,
     /// Whether it is a long job.
     pub job: bool,
+    /// Whether it returns through an out buffer: its caller may give the buffer's size as the last word.
+    pub out_buffer: bool,
 }
 
 /// One simulated device as the node describes it: the description's fields, and its items.
@@ -186,6 +188,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -193,6 +196,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[("value", "f64")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 3,
@@ -200,6 +204,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[("on", "bool")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 4,
@@ -207,6 +212,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -282,6 +288,7 @@ const GAUGE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -289,6 +296,7 @@ const GAUGE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -337,6 +345,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -344,6 +353,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 3,
@@ -351,6 +361,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 4,
@@ -358,6 +369,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "[f64]",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 5,
@@ -365,6 +377,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[("mm", "f64")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 6,
@@ -372,6 +385,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "str",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -480,6 +494,7 @@ const OFF_METHODS: &[MethodSpec] = &[MethodSpec {
     params: &[],
     returns: "f64",
     job: false,
+    out_buffer: false,
 }];
 
 const OFF: &[Item] = &[Item {
@@ -515,6 +530,105 @@ const BARE: &[Item] = &[Item {
 /// The devices a simulated Lemnos node describes. One is healthy; one is retrying with a reason;
 /// one is a three-axis unit with every reading kind; one is off with a reason; one has every
 /// optional field unknown.
+/// `system.slots/1`'s methods the node answers, with the bridge's ids (Lemnos contracts/system-slots).
+const SLOTS_METHODS: &[MethodSpec] = &[
+    MethodSpec {
+        id: 1,
+        name: "list",
+        params: &[],
+        returns: "text",
+        job: false,
+        out_buffer: true,
+    },
+    MethodSpec {
+        id: 4,
+        name: "set_default",
+        params: &[("id", "text"), ("force", "bool")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 5,
+        name: "trial",
+        params: &[
+            ("id", "text"),
+            ("keep_default", "bool"),
+            ("keep_old", "bool"),
+            ("force", "bool"),
+        ],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 6,
+        name: "confirm",
+        params: &[],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 7,
+        name: "remove",
+        params: &[("id", "text")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 8,
+        name: "pin",
+        params: &[("id", "text"), ("pinned", "bool")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 9,
+        name: "set_keep",
+        params: &[("keep", "u32")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 10,
+        name: "accept",
+        params: &[("size", "u64")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 11,
+        name: "install_file",
+        params: &[("name", "text"), ("pin", "bool"), ("keep_old", "bool")],
+        returns: "text",
+        job: true,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 14,
+        name: "info",
+        params: &[],
+        returns: "text",
+        job: false,
+        out_buffer: true,
+    },
+];
+
+/// `system.reboot/1`'s methods the node answers, with the bridge's ids (Lemnos contracts/system-reboot).
+const REBOOT_METHODS: &[MethodSpec] = &[MethodSpec {
+    id: 1,
+    name: "reboot",
+    params: &[],
+    returns: "()",
+    job: false,
+    out_buffer: false,
+}];
+
 pub const DEVICES: &[Spec] = &[
     Spec {
         id: "vane0",
@@ -585,6 +699,34 @@ pub const DEVICES: &[Spec] = &[
         methods: &[],
         status: None,
         items: BARE,
+    },
+    Spec {
+        id: "slots",
+        label: "Slots",
+        bus: "",
+        address: None,
+        location: "",
+        kind: "slots",
+        state: Some(0),
+        reason: "",
+        contract: Some(("system.slots/1", "slots", 0x5107)),
+        methods: SLOTS_METHODS,
+        status: Some(("ok", "")),
+        items: &[],
+    },
+    Spec {
+        id: "reboot",
+        label: "Restart",
+        bus: "",
+        address: None,
+        location: "",
+        kind: "system",
+        state: Some(0),
+        reason: "",
+        contract: Some(("system.reboot/1", "reboot", 0x5e01)),
+        methods: REBOOT_METHODS,
+        status: Some(("ok", "")),
+        items: &[],
     },
 ];
 
@@ -671,7 +813,9 @@ impl Model {
 struct Listed {
     model: usize,
     resource: Resource,
-    values: Publisher,
+    /// The values topic, when the device has an item that publishes a value. A device with none (a slot
+    /// list, a restart) declares no values topic, as a board does.
+    values: Option<Publisher>,
     status: Option<Publisher>,
     description: Publisher,
 }
@@ -742,7 +886,9 @@ impl Devices {
             let published = spec.items.iter().filter(|item| item.field.is_some());
             for (field, item) in published.enumerate() {
                 let payload = payload(item.sample, tick);
-                let _ = listed.values.publish(FieldId(field as u16), now, &payload);
+                if let Some(values) = listed.values.as_mut() {
+                    let _ = values.publish(FieldId(field as u16), now, &payload);
+                }
             }
             // LOCK: provider topics have no `on_subscribe` at dbd5fc08; see the module note. The
             // status and the generation are written on every tick until they can declare Latest.
@@ -855,7 +1001,7 @@ fn described(spec: &Spec) -> describe::Device {
                             .map(|(name, shape)| ((*name).to_owned(), (*shape).to_owned()))
                             .collect(),
                         returns: method.returns.to_owned(),
-                        out_buffer: false,
+                        out_buffer: method.out_buffer,
                         job: method.job,
                     })
                     .collect(),
@@ -935,9 +1081,15 @@ fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
             })
             .collect();
         let mut builder = builder;
-        let values = builder
-            .topic("values", &fields, HISTORY, MAX_PAYLOAD)
-            .map_err(|error| error.to_string())?;
+        let values = if fields.is_empty() {
+            None
+        } else {
+            Some(
+                builder
+                    .topic("values", &fields, HISTORY, MAX_PAYLOAD)
+                    .map_err(|error| error.to_string())?,
+            )
+        };
         let generation_field = [Field {
             name: "generation",
             ty: FieldType::Int,
@@ -969,6 +1121,13 @@ fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
             }
             None => None,
         };
+        // The device's actions are declared on its resource, as the bridge declares them: `set`, `call`
+        // and `power`, each `lemnos.<device>.<verb>` on `Target::Resource("lemnos.<device>")`.
+        for (verb, description) in crate::bridge::VERBS {
+            builder
+                .action(verb, description, crate::bridge::policy())
+                .map_err(|error| error.to_string())?;
+        }
         let resource = builder
             .publish(resource_state(spec.state.unwrap_or(0)))
             .map_err(|error| error.to_string())?;

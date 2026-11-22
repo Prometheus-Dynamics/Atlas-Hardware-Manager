@@ -55,6 +55,7 @@ pub mod backoff;
 pub mod double;
 mod failure;
 pub mod lease;
+pub mod lemnos;
 pub mod long;
 pub mod monitor;
 mod seed;

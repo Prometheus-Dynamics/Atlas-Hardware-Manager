@@ -12,9 +12,13 @@ use atlas_flash_flow::{
 use crate::wire;
 
 /// The flasher board file's first-flash device (Lemnos `testing/boards/bcm2712-flasher.toml`, `id = "flash"`).
+/// It names the image's file sink (`lemnos/<device>/<name>`) only: the calls are made by contract
+/// (see [`VERIFY`] and [`REBOOT`]), never by this id.
 pub const FLASH_DEVICE: &str = "flash";
-/// The flasher board file's restart device (`id = "reboot"`).
-pub const REBOOT_DEVICE: &str = "reboot";
+/// `system.flash/1`'s `verify`: the job that checks the written image (Lemnos's contract method).
+pub const VERIFY: &str = "system.flash.verify";
+/// `system.reboot/1`'s `reboot`: the restart after the write.
+pub const REBOOT: &str = "system.reboot.reboot";
 
 /// How a call to the board went wrong.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,11 +55,12 @@ pub trait FlasherBoard: Send + Sync {
         progress: &Bytes<'_>,
     ) -> Result<String, StepError>;
 
-    /// Runs `<device>`'s method with `words` through the bridge (`lemnos.<device>.call`) and returns its output.
-    /// `job` follows a long job to its end, with its bytes as progress.
+    /// Runs the Lemnos method `name` (`system.<contract>.<method>`) with `words` through the bridge,
+    /// on the device that carries its contract, and returns its output. `job` follows a long job to
+    /// its end, with its bytes as progress.
     async fn call(
         &self,
-        device: &str,
+        name: &str,
         words: &[&str],
         job: bool,
         progress: &Bytes<'_>,
@@ -67,21 +72,19 @@ pub trait FlasherBoard: Send + Sync {
 pub struct BridgeFlash<B> {
     board: B,
     flash: String,
-    reboot: String,
 }
 
 impl<B: FlasherBoard> BridgeFlash<B> {
-    /// The write on `board`, to the flasher board file's [`FLASH_DEVICE`] and [`REBOOT_DEVICE`].
+    /// The write on `board`, with the flasher board file's [`FLASH_DEVICE`] as the file sink's device.
     pub fn new(board: B) -> Self {
-        Self::with_devices(board, FLASH_DEVICE, REBOOT_DEVICE)
+        Self::with_device(board, FLASH_DEVICE)
     }
 
-    /// The write on `board`, with the board file's own device ids.
-    pub fn with_devices(board: B, flash: &str, reboot: &str) -> Self {
+    /// The write on `board`, with the board file's own device id for the file sink.
+    pub fn with_device(board: B, flash: &str) -> Self {
         Self {
             board,
             flash: flash.to_owned(),
-            reboot: reboot.to_owned(),
         }
     }
 
@@ -148,7 +151,7 @@ impl<B: FlasherBoard> FirstFlash for BridgeFlash<B> {
         };
         let output = self
             .board
-            .call(&self.flash, &["verify"], true, &verifying)
+            .call(VERIFY, &[], true, &verifying)
             .await
             .map_err(CallError::into_step)?;
         let verified = wire::verified(&output).map_err(StepError::Refused)?;
@@ -169,11 +172,7 @@ impl<B: FlasherBoard> FirstFlash for BridgeFlash<B> {
     }
 
     async fn reboot(&self, say: &Say<'_>) -> Result<(), StepError> {
-        match self
-            .board
-            .call(&self.reboot, &["reboot"], false, &|_, _| {})
-            .await
-        {
+        match self.board.call(REBOOT, &[], false, &|_, _| {}).await {
             Ok(_) => Ok(()),
             // A restart takes the session with it: an answer lost after the request went is the restart.
             Err(CallError::Lost(words)) => {

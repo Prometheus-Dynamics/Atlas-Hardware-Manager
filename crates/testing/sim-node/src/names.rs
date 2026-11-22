@@ -93,19 +93,13 @@ pub const SURFACE: &[Method] = &[
     },
 ];
 
-/// Actions the simulated node registers: the I5 surface, then the board's own.
+/// The board's own actions the node registers on its node target, the one list the node registers
+/// (`actions.list` and `vendor.dry-run` included). None of them is a Lemnos method, and Lemnos at
+/// a6251ecf does not publish them. The Lemnos methods are NOT here: they are the bridge's device
+/// actions (`crate::bridge`).
+// LOCK: no publisher at Lemnos a6251ecf; removed from the default sim in the next commit. The design
+// profile keeps them until then.
 pub const ACTIONS: &[&str] = &[
-    SLOTS_LIST,
-    SLOTS_ACCEPT,
-    SLOTS_INSTALL_FILE,
-    SLOTS_SET_DEFAULT,
-    SLOTS_TRIAL,
-    SLOTS_CONFIRM,
-    SLOTS_REMOVE,
-    SLOTS_PIN,
-    SLOTS_SET_KEEP,
-    SLOTS_INFO,
-    REBOOT,
     STATUS,
     LOCATE,
     SELF_TEST,
@@ -117,6 +111,8 @@ pub const ACTIONS: &[&str] = &[
     FS_READ,
     FS_WRITE,
     FS_REMOVE,
+    crate::actions::CATALOG,
+    crate::actions::DRY_RUN,
 ];
 
 /// Topics the simulated node publishes.
@@ -246,11 +242,11 @@ mod tests {
     }
 
     #[test]
-    fn every_surface_method_is_registered() {
+    fn every_surface_method_is_a_device_action() {
         for method in SURFACE {
             assert!(
-                ACTIONS.contains(&method.action),
-                "{} is not registered",
+                crate::bridge::request(method.action, b"").is_some(),
+                "{} is not a device method of this node",
                 method.action
             );
         }
