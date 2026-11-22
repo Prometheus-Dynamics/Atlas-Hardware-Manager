@@ -1,9 +1,20 @@
 #!/bin/sh
 # /init, the first program of the bcm2712 flasher's initramfs (the kernel runs it: rdinit=/init). The kernel does not
 # mount devtmpfs for an initramfs, so this does, gives init the console on stdin, stdout and stderr when there is
-# one, and hands over to BusyBox init, which reads /etc/inittab.
+# one, arms the return, and hands over to BusyBox init, which reads /etc/inittab.
 mount -t devtmpfs devtmpfs /dev
 if (exec 0</dev/console) 2>/dev/null; then
 	exec 0</dev/console 1>/dev/console 2>&1
+fi
+# The return (HeliOS rule, 2026-11-22: a RAM boot of an image not yet proven on the board carries its own way back).
+# Before the real init, RETURN arms the firmware's one-shot RPIBOOT (mailbox tag 0x0003808b, value 0x3), so the
+# board's next restart, from a hang, the watchdog or a power-safe reboot, comes back to the PC's USB boot and never
+# to a half-state. The tool is Lemnos's (asked for 2026-11-22); until an image installs it here, the boot says so on
+# the console and this image is not RAM-booted on a board (docs/prs/D6.md, "The return").
+RETURN=/usr/lib/flasher/arm-return
+if [ -x "$RETURN" ]; then
+	"$RETURN" || echo "flasher /init: $RETURN failed: NO RETURN ARMED"
+else
+	echo "flasher /init: no $RETURN in this image: NO RETURN ARMED"
 fi
 exec /sbin/init "$@"

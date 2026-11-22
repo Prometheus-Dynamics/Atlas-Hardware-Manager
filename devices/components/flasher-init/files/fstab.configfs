@@ -1,0 +1,4 @@
+# The flasher's configfs: lemnosd's gadget needs it mounted at /sys/kernel/config and never mounts it itself
+# (Lemnos docs/daemon.md). systemd images get it from sys-kernel-config.mount; under BusyBox init only this line,
+# read by inittab's `mount -a`, after the OS's sysfs line, mounts it. scripts/check-lemnos-gadget.py checks it.
+configfs	/sys/kernel/config	configfs	defaults	0	0

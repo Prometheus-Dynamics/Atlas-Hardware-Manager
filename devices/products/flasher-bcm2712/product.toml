@@ -54,6 +54,14 @@ recipe = "rpi-ramdisk-boot-generated"
 path = "/etc/mdev.conf"
 order = ["flasher-lemnos-busybox", "raze-flasher-board", "os"]
 
+# /etc/fstab: the OS's mounts (Buildroot's skeleton, sysfs among them), then flasher-init's configfs line, which needs
+# sysfs mounted first. rule_key 2: a rule is named by its mount point, so a second /sys/kernel/config line fails the
+# build. lemnosd needs configfs and never mounts it (scripts/check-lemnos-gadget.py).
+[[images.assembled]]
+path = "/etc/fstab"
+order = ["os", "flasher-init"]
+rule_key = 2
+
 # The boot settings (recipes/rpi-ramdisk-boot-generated.toml), each with its reason:
 #  board_overlay  where the generated overlay goes; config.txt's dtoverlay=lemnos-board names it.
 #  device_trees   out of the Raze kernel build's flat device-tree output (Gaia, 2026-11-22: six files): the board's
@@ -62,9 +70,10 @@ order = ["flasher-lemnos-busybox", "raze-flasher-board", "os"]
 #  config         boot.img's config.txt:
 #                   arm_64bit, kernel, initramfs  the kernel and this tree, by the names the recipe gives them.
 #                   kernel_watchdog_timeout=15    the firmware arms the SoC watchdog, as build10 does; lemnosd's
-#                                                 hw-watchdog keepalive (the board file, 15 s) feeds it. A flasher that
-#                                                 hangs resets, and the board then boots its eMMC (failure rule: the
-#                                                 board recovers by itself).
+#                                                 hw-watchdog keepalive (the board file, 15 s) feeds it. It resets a
+#                                                 hung kernel or a dead lemnosd only: a running lemnosd whose gadget
+#                                                 never comes up keeps feeding it (2026-11-22, Raze #2). The way back
+#                                                 from that is the return flasher-init's /init arms.
 #                   dtoverlay=lemnos-board        the board overlay: the CM5's USB controller as a peripheral (the gadget).
 #                   gpio=45=op,dh                 the fan line held high: the flasher's board file has no fan device,
 #                                                 so the fan runs full while it writes (build10 holds the same line).

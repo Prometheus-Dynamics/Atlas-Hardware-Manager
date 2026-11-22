@@ -4,9 +4,15 @@
 # console getty on ttyGS0 can work.
 version = 1
 name = "flasher-init"
-description = "the bcm2712 flasher's /init: devtmpfs on /dev, the console, then BusyBox init"
+description = "the bcm2712 flasher's /init (devtmpfs, the console, the return, BusyBox init) and its fstab configfs line"
 
 [[install]]
 from = { file = "files/init" }
 to = "/init"
 mode = "0755"
+
+# /etc/fstab's configfs line (the product assembles /etc/fstab: the OS's lines, then this one). Without it the
+# gadget never binds the UDC; the first RAM boot on Raze #2 (2026-11-22) hung so.
+[[fragments]]
+from = { file = "files/fstab.configfs" }
+to = "/etc/fstab"
