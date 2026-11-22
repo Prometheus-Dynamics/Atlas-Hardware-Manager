@@ -60,7 +60,8 @@ jobs:
       # board file that moves no kernel pin fetches nothing. Saved at the end even when a later step fails
       # (see the save step), so a tree that was fetched once is not fetched again. The pinned LLVM and Rust tools of a
       # board with [kernel] toolchain = "llvm" (and of the check's self-test) live in it too, under llvm-tools/<pins key>
-      # (scripts/kernel-llvm-tools.sh, about 1.7 GB): a change of their pins moves the key.
+      # (scripts/kernel-llvm-tools.sh, about 1.7 GB): a change of their pins moves the key. The pinned U-Boot trees of
+      # scripts/check-uboot-fragments.sh are kept in it as well, under u-boot/ (their pins are in the same files).
       - uses: actions/cache/restore@v4
         id: kernel-cache
         with:

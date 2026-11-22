@@ -1,0 +1,10 @@
+# RK3576 (U-Boot's ROCKCHIP_RK3576): the fastboot download buffer (RK-FASTBOOT).
+# The family fragment turns the fastboot gadget on (the Lemnos boot path's flashing offer). U-Boot v2026.10 gives
+# FASTBOOT_BUF_ADDR no default on this SoC (drivers/fastboot/Kconfig:52-62), and no RK3576 defconfig sets it: the 4 of
+# 7 with the gadget all turn fastboot off. Left empty, U-Boot's syncconfig asks for it without end and the build never
+# finishes (287e2195).
+# DRAM starts at 0x40000000 on this SoC (include/configs/rk3576_common.h, CFG_SYS_SDRAM_BASE), so the RK3568/RK3588
+# value (0xc00800) is not memory here. The value: the board's own load address, CONFIG_SYS_LOAD_ADDR=0x40c00800
+# (rock-4d-rk3576_defconfig:11), where khadas-edge2-rk3588s_defconfig:11,53 puts its buffer. The size stays U-Boot's
+# Rockchip default, 0x8000000. The boot script runs from a copy (common/cli.c run_command_list). UNVERIFIED on a board.
+CONFIG_FASTBOOT_BUF_ADDR=0x40c00800
