@@ -48,7 +48,7 @@ use crate::backoff::Backoff;
 use crate::failure::Failure;
 use crate::lease::{self, Clock, Hold, Lease, Shared as LeaseShared};
 use crate::long::{
-    Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
+    AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
 
 /// The program name this crate connects as.
@@ -56,7 +56,7 @@ pub const PROGRAM: &str = "atlas";
 /// How long one wait on the session lasts before the thread looks at its calls again.
 const POLL: Duration = Duration::from_millis(100);
 /// How long one connect and its hello may take.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long a call waits for its answer by default, before the caller is told the node did not
 /// answer. A [`Sessions`](crate::Sessions) may be built with another wait.
 pub const CALL_WAIT: Duration = Duration::from_secs(5);
@@ -158,21 +158,30 @@ trait Job: Send {
     }
 }
 
-/// The reply bound the session needs while `ops` run: the largest ceiling any of them asks for,
-/// as [`Reply::Alive`], or the session's own bound ([`Reply::Timeout`]) when none asks for one.
-/// Computed from the operations running now, so one that ends does not reset another's.
-fn reply_for(ops: &[Box<dyn Op>]) -> Reply {
-    match ops.iter().filter_map(|op| op.reply_ceiling()).max() {
-        Some(ceiling) => Reply::Alive {
+/// The reply an operation's step needs: [`Reply::Alive`] with its ceiling, or the session's own
+/// bound ([`Reply::Timeout`]) when it asks for none.
+fn step_reply(op: &dyn Op) -> Reply {
+    op.reply_ceiling()
+        .map_or(Reply::Timeout, |ceiling| Reply::Alive {
             ceiling: Some(ceiling),
-        },
-        None => Reply::Timeout,
+        })
+}
+
+/// The bound a step's answers wait under, in Atlas's words: `wanted` as the session set it, with
+/// `own` the session's bound on one answer.
+fn answer_bound(wanted: Reply, own: Duration) -> AnswerBound {
+    match wanted {
+        Reply::Alive {
+            ceiling: Some(ceiling),
+        } => AnswerBound::Alive { ceiling },
+        _ => AnswerBound::Each(own),
     }
 }
 
-/// Sets the session's reply bound to what `ops` need, when it is not that already.
-fn sync_reply(orion: &Orion, current: &mut Reply, ops: &[Box<dyn Op>]) {
-    let wanted = reply_for(ops);
+/// Sets the session's reply for the next wait, when it is not that already. Every wait reads the
+/// reply when it runs, so the session sets it around each thing it does: the short bound before a
+/// call, the operation's own before its step. `current` is the reply the connection has now.
+fn set_reply(orion: &Orion, current: &mut Reply, wanted: Reply) {
     if *current != wanted {
         orion.set_reply(wanted);
         *current = wanted;
@@ -181,8 +190,9 @@ fn sync_reply(orion: &Orion, current: &mut Reply, ops: &[Box<dyn Op>]) {
 
 /// A long operation running on the session, advanced one turn at a time.
 trait Op {
-    /// Takes one step (or notices a cancel), and says what became of the operation.
-    fn turn(&mut self) -> Turn;
+    /// Takes one step (or notices a cancel) under `bound`, the wait the session set for its
+    /// answers, and says what became of the operation.
+    fn turn(&mut self, bound: AnswerBound) -> Turn;
     /// The session ends under the operation: its caller is told `reason`.
     fn end(self: Box<Self>, reason: &str);
     /// The reply ceiling the operation needs (see [`SteppedTransfer::reply_ceiling`]).
@@ -313,7 +323,7 @@ impl<T: Send + 'static> Op for Running<T> {
         self.transfer.reply_ceiling()
     }
 
-    fn turn(&mut self) -> Turn {
+    fn turn(&mut self, bound: AnswerBound) -> Turn {
         let Some(reply) = self.reply.take() else {
             return Turn::Finished;
         };
@@ -323,6 +333,7 @@ impl<T: Send + 'static> Op for Running<T> {
             let _ = reply.send(Ok(Outcome::Cancelled));
             return Turn::Finished;
         }
+        self.transfer.answer_bound(bound);
         match self.transfer.step(STEP_WAIT) {
             Ok(Step::Progress) => {
                 self.reply = Some(reply);
@@ -561,7 +572,10 @@ impl Handle {
             Ok(Err(_)) => Err(SessionError::Gone(
                 "the session ended before it answered".into(),
             )),
-            Err(_) => Err(SessionError::Gone("the node did not answer in time".into())),
+            Err(_) => Err(SessionError::Gone(format!(
+                "the node did not answer in time (the call waited {}, its own wait)",
+                crate::words::duration(self.call_wait)
+            ))),
         }
     }
 }
@@ -631,6 +645,33 @@ impl Monitor {
         clock: Clock,
         secret: [u8; 32],
     ) -> Self {
+        Self::start_bounded(
+            address,
+            pin,
+            pause,
+            call_wait,
+            lease,
+            clock,
+            secret,
+            CONNECT_TIMEOUT,
+        )
+    }
+
+    /// As [`Monitor::start_identified`], with the session's bound on one answer chosen by the
+    /// caller. It is the bound a call that is not a push's step waits for its answer (see
+    /// `turns`), and it bounds connecting too. Production uses [`CONNECT_TIMEOUT`]; a test passes a
+    /// short one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_bounded(
+        address: Address,
+        pin: Option<[u8; 32]>,
+        pause: Arc<dyn Pause>,
+        call_wait: Duration,
+        lease: Lease,
+        clock: Clock,
+        secret: [u8; 32],
+        bound: Duration,
+    ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
@@ -644,6 +685,7 @@ impl Monitor {
             .name(format!("node-{address}"))
             .spawn(move || {
                 let mut keeper = Keeper {
+                    bound,
                     address: thread_address,
                     sender,
                     calls: received,
@@ -716,6 +758,8 @@ const REPLACED_WORDS: &str = "the node at this address was replaced: it answers 
 
 /// The state the monitor thread keeps across connections.
 struct Keeper {
+    /// The bound on one answer of a call, and on connecting (see [`Monitor::start_bounded`]).
+    bound: Duration,
     address: Address,
     sender: watch::Sender<Presence>,
     calls: mpsc::Receiver<Box<dyn Job>>,
@@ -838,7 +882,7 @@ impl Keeper {
             other => other.clone(),
         };
         let options = Options {
-            timeout: CONNECT_TIMEOUT,
+            timeout: self.bound,
             identity: Some(Identity::from_secret(&self.secret)),
             // One try: the monitor keeps trying itself (its backoff, its stop, and "the node is
             // not connected" said meanwhile). Orion's default since d4010a45 tries until welcomed.
@@ -1084,6 +1128,8 @@ impl Keeper {
                 // when it was sent: a call that waits on the node must not move the stamp to its end.
                 let bridge = job.bridge();
                 let sent = self.clock.now();
+                // A call waits for its answer under the short bound, whatever a step set before.
+                set_reply(orion, reply, Reply::Timeout);
                 match job.run(orion, ops) {
                     Ok(answered) => {
                         if bridge && answered {
@@ -1099,12 +1145,13 @@ impl Keeper {
                     }
                 }
             }
-            // The reply bound follows the operations that are running now, before any of them is
-            // stepped: a step that waits on the node must not be cut by the session's short bound.
-            sync_reply(orion, reply, ops);
             let mut index = 0;
             while index < ops.len() {
-                match ops[index].turn() {
+                // A step waits on the node under its own bound (see `step_reply`), and is told which.
+                let wanted = step_reply(ops[index].as_ref());
+                set_reply(orion, reply, wanted);
+                let bound = answer_bound(wanted, self.bound);
+                match ops[index].turn(bound) {
                     Turn::Stepped => index += 1,
                     Turn::Finished => {
                         ops.remove(index);
@@ -1154,7 +1201,7 @@ mod reply_tests {
     struct Fake(Option<Duration>);
 
     impl Op for Fake {
-        fn turn(&mut self) -> Turn {
+        fn turn(&mut self, _bound: AnswerBound) -> Turn {
             Turn::Finished
         }
         fn end(self: Box<Self>, _reason: &str) {}
@@ -1166,38 +1213,33 @@ mod reply_tests {
     const CEILING: Duration = Duration::from_secs(900);
 
     #[test]
-    fn no_operation_needing_a_ceiling_keeps_the_sessions_own_bound() {
-        assert_eq!(reply_for(&[]), Reply::Timeout);
-        let ops: Vec<Box<dyn Op>> = vec![Box::new(Fake(None))];
-        assert_eq!(reply_for(&ops), Reply::Timeout);
+    fn an_operation_without_a_ceiling_steps_under_the_sessions_bound() {
+        assert_eq!(step_reply(&Fake(None)), Reply::Timeout);
     }
 
     #[test]
-    fn two_concurrent_operations_keep_the_reply_alive_until_both_end() {
+    fn two_running_operations_each_step_under_their_own_ceiling() {
+        // Each step sets the reply for itself, so one operation ending cannot reset another's.
         let alive = Reply::Alive {
             ceiling: Some(CEILING),
         };
-        let mut ops: Vec<Box<dyn Op>> =
-            vec![Box::new(Fake(Some(CEILING))), Box::new(Fake(Some(CEILING)))];
-        assert_eq!(reply_for(&ops), alive);
-        // One ends: the other still needs the ceiling, so the bound stays.
-        ops.remove(0);
-        assert_eq!(reply_for(&ops), alive);
-        // The last one ends: the session's own bound comes back.
-        ops.remove(0);
-        assert_eq!(reply_for(&ops), Reply::Timeout);
+        assert_eq!(step_reply(&Fake(Some(CEILING))), alive);
+        assert_eq!(step_reply(&Fake(Some(CEILING))), alive);
     }
 
     #[test]
-    fn the_largest_ceiling_of_the_running_operations_is_the_bound() {
+    fn a_step_takes_its_own_ceiling_and_a_step_without_one_the_short_bound() {
         let short = Duration::from_secs(30);
-        let ops: Vec<Box<dyn Op>> = vec![
-            Box::new(Fake(Some(short))),
-            Box::new(Fake(None)),
-            Box::new(Fake(Some(CEILING))),
-        ];
         assert_eq!(
-            reply_for(&ops),
+            step_reply(&Fake(Some(short))),
+            Reply::Alive {
+                ceiling: Some(short)
+            }
+        );
+        // A call, a step without a ceiling, and the next step with one: each takes its own.
+        assert_eq!(step_reply(&Fake(None)), Reply::Timeout);
+        assert_eq!(
+            step_reply(&Fake(Some(CEILING))),
             Reply::Alive {
                 ceiling: Some(CEILING)
             }

@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use atlas_jobs::JobTiming;
+use atlas_session::{AnswerBound, words};
 
 /// The longest a push waits for the board to answer one request (its commit above all) while the
 /// board keeps answering pings. Mirrors the backstop of Lemnos's job wait,
@@ -33,20 +34,48 @@ pub fn job_timing() -> JobTiming {
     }
 }
 
-/// The words for a push whose wait for the board ran past [`BOARD_COMMIT_CEILING`] while the board
-/// was still answering. `sent` of `total` bytes were held when it ran out: all of them means the
-/// commit ran past the bound, otherwise the push did before all its bytes were in.
+/// How many of the session's bounds on one answer Orion's push gives the board's commit when no
+/// ceiling is set: "twelve timeouts" (LOCK: Orion 30d0bc02, `crates/client/files/src/push.rs:349`,
+/// `self.timeout * 12` under `Reply::Timeout`).
+pub const COMMIT_WAIT_IN_BOUNDS: u32 = 12;
+
+/// The words for a push whose wait for one of the board's answers timed out, naming the bound that
+/// ran out and its value. `sent` of `total` bytes were held when it ran out: all of them means the
+/// board's answer to the commit was the one waited for, otherwise the push did not have all its
+/// bytes in yet.
+///
+/// - [`AnswerBound::Alive`]: the board was still heard from, and one answer took longer than the
+///   commit ceiling ([`BOARD_COMMIT_CEILING`], unless the session set another).
+/// - [`AnswerBound::Each`]: the session's own bound on each answer ran out (a step that waits under
+///   the short bound, not the ceiling).
 #[must_use]
-pub fn ceiling_reason(sent: u64, total: u64) -> String {
-    let bound = format!("{} s", BOARD_COMMIT_CEILING.as_secs());
-    if sent >= total {
-        format!(
-            "the board was still answering, but its commit of all {total} bytes ran past {bound}; the push ended without the board's answer"
-        )
-    } else {
-        format!(
-            "the board was still answering, but the push ran past {bound} before all {total} bytes were in ({sent} held)"
-        )
+pub fn ceiling_reason(sent: u64, total: u64, bound: AnswerBound) -> String {
+    match bound {
+        AnswerBound::Alive { ceiling } => {
+            let ceiling = words::duration(ceiling);
+            if sent >= total {
+                format!(
+                    "the board was still answering, but its commit of all {total} bytes took longer than the commit ceiling of {ceiling}; the push ended without the board's answer"
+                )
+            } else {
+                format!(
+                    "the board was still answering, but one of its answers took longer than the commit ceiling of {ceiling} before all {total} bytes were in ({sent} held)"
+                )
+            }
+        }
+        AnswerBound::Each(bound) => {
+            let each = words::duration(bound);
+            if sent >= total {
+                let commit = words::duration(bound.saturating_mul(COMMIT_WAIT_IN_BOUNDS));
+                format!(
+                    "the board did not answer the commit of all {total} bytes within {commit} ({COMMIT_WAIT_IN_BOUNDS} times {each}, the bound on each answer); the push ended without the board's answer"
+                )
+            } else {
+                format!(
+                    "the board did not answer within {each}, the bound on each answer, before all {total} bytes were in ({sent} held)"
+                )
+            }
+        }
     }
 }
 
@@ -61,14 +90,33 @@ mod tests {
     }
 
     #[test]
-    fn the_ceiling_words_name_the_bound_and_say_what_ran_past_it() {
-        let commit = ceiling_reason(10, 10);
-        assert!(commit.contains("900 s"), "{commit}");
+    fn the_words_name_the_bound_that_ran_out_and_its_value() {
+        let alive = AnswerBound::Alive {
+            ceiling: BOARD_COMMIT_CEILING,
+        };
+        let commit = ceiling_reason(10, 10, alive);
+        assert!(commit.contains("commit ceiling of 15 min"), "{commit}");
         assert!(commit.contains("still answering"), "{commit}");
-        assert!(commit.contains("commit"), "{commit}");
-        let bytes = ceiling_reason(4, 10);
-        assert!(bytes.contains("900 s"), "{bytes}");
+        assert!(commit.contains("commit of all 10 bytes"), "{commit}");
+        let bytes = ceiling_reason(4, 10, alive);
+        assert!(bytes.contains("commit ceiling of 15 min"), "{bytes}");
         assert!(bytes.contains("before all 10 bytes"), "{bytes}");
         assert!(!bytes.contains("timed out"), "{bytes}");
+        // The session's short bound ran out, not the ceiling: the words say so, with its value.
+        let each = AnswerBound::Each(Duration::from_millis(400));
+        let short = ceiling_reason(10, 10, each);
+        assert!(
+            short.contains("within 4.8 s (12 times 400 ms, the bound on each answer)"),
+            "{short}"
+        );
+        assert!(
+            !short.contains("15 min") && !short.contains("ceiling"),
+            "{short}"
+        );
+        let early = ceiling_reason(4, 10, each);
+        assert!(
+            early.contains("within 400 ms") && early.contains("(4 held)"),
+            "{early}"
+        );
     }
 }

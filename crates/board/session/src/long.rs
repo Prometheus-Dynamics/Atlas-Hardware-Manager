@@ -61,6 +61,21 @@ pub enum StepError {
 
 /// A transfer advanced in steps on the session thread. Created there by the start closure of
 /// [`crate::Handle::long`], used only there, and dropped there. It need not be `Send`.
+/// The wait the session gives each of a step's answers from the node, as it set it for that step.
+/// A transfer whose wait timed out names this bound in its words (see
+/// [`SteppedTransfer::answer_bound`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnswerBound {
+    /// Each answer within this bound: the session's own bound on one answer.
+    Each(Duration),
+    /// As long as the node is heard from meanwhile, up to this ceiling (the transfer's own, see
+    /// [`SteppedTransfer::reply_ceiling`]).
+    Alive {
+        /// The longest one answer may take.
+        ceiling: Duration,
+    },
+}
+
 pub trait SteppedTransfer<T> {
     /// Advances the transfer by at most `wait`, which the session passes as [`STEP_WAIT`].
     ///
@@ -83,6 +98,11 @@ pub trait SteppedTransfer<T> {
     fn reply_ceiling(&self) -> Option<Duration> {
         None
     }
+
+    /// The bound the session set for the next step's answers, told before each step. A transfer
+    /// whose wait times out says which bound ran out from this, not from what it asked for. The
+    /// default ignores it.
+    fn answer_bound(&mut self, _bound: AnswerBound) {}
 }
 
 /// How a long operation ended, when the session did not lose it.

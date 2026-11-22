@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use atlas_session::{Failure, Step, StepError, SteppedTransfer};
+use atlas_session::{AnswerBound, Failure, Step, StepError, SteppedTransfer};
 use orion::files::{Files, Pushing, Step as PushStep, Transfer};
 use orion::{ClientError, Orion};
 
@@ -52,6 +52,10 @@ fn stepped(
     Ok(Box::new(Stepped {
         pushing: Some(pushing),
         shared,
+        // Told before the first step; until then, the ceiling this push asks for.
+        bound: AnswerBound::Alive {
+            ceiling: BOARD_COMMIT_CEILING,
+        },
     }))
 }
 
@@ -59,9 +63,15 @@ fn stepped(
 struct Stepped {
     pushing: Option<Pushing<Guard>>,
     shared: Arc<Shared>,
+    /// The bound the session set for this step's answers (see `answer_bound`).
+    bound: AnswerBound,
 }
 
 impl SteppedTransfer<Transfer> for Stepped {
+    fn answer_bound(&mut self, bound: AnswerBound) {
+        self.bound = bound;
+    }
+
     fn reply_ceiling(&self) -> Option<Duration> {
         // The board's commit (its check of the whole file) is the one answer that takes long; the
         // session waits for it as long as the board is heard from, up to the ceiling.
@@ -92,16 +102,17 @@ impl SteppedTransfer<Transfer> for Stepped {
                 Ok(Step::Done(transfer))
             }
             Err(ClientError::Io(error)) if error.kind() == std::io::ErrorKind::TimedOut => {
-                // Under the reply ceiling (see `reply_ceiling`), a timed-out wait is the board
-                // still answering past the bound: a refusal of the push, not a lost session, so
-                // the session is kept and the words name the bound.
+                // A timed-out wait is one answer that took longer than the bound the session set
+                // for this step (see `answer_bound`): under the ceiling, the board still answering
+                // past it. A refusal of the push, not a lost session, so the session is kept and the
+                // words name the bound that ran out.
                 self.pushing = None;
                 let (sent, total) = {
                     let progress = self.shared.current();
                     (progress.sent, progress.total)
                 };
                 Err(StepError::Failed(Failure::other(ceiling_reason(
-                    sent, total,
+                    sent, total, self.bound,
                 ))))
             }
             Err(error) => {
