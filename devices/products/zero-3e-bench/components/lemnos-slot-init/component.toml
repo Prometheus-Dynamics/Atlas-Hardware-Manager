@@ -7,7 +7,7 @@ description = "the Lemnos slot init, lemnos-slot-init: it goes in the slot INITR
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "bed325fb0c695a695eae23b5e7a48993c29394a0"  # Lemnos bed325fb (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses + boot-loop fallback + module node claim + unjudged count clear), coordinator 2026-11-22, pin move 3
+ref = "ff93d360af12d97b65734c933f9b55bd3d30f3ad"  # Lemnos ff93d360 (pr/RAZE2-CAM-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses + boot-loop fallback + module node claim + unjudged count clear + Raze #2 minors + held mailbox + camera fixes), coordinator 2026-11-22, pin move 3
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

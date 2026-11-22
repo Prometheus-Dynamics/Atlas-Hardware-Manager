@@ -3,9 +3,9 @@
 # orion, and the login helper (orion-login.socket, root, socket-activated), the one process that becomes another user. Board-neutral. Built from Orion at
 # d4010a453a5399dc6007f03a6dfc32c8d39d5d2f (Orion next, I51: its shm crates pinned at Lemnos 0d37cc55; pin move 1). The
 # workspace pins the same rev (Cargo.toml), so the board's Orion and the PC's speak one ring layout.
-# Named exception (coordinator 2026-11-22, pin moves 2-7): the rest of the image is on Lemnos bed325fb (0d37cc55 plus the
-# boot-disk, set-aside, watchdog, gadget, boot-loop, node-claim and count-clear commits of pr/BOOT-DISK-WAIT-0d37); shm/ is untouched since 0d37cc55, so
-# Orion's shm crates at 0d37cc55 are byte-identical to bed325fb's and differ by rev string only. No Orion pin move for it.
+# Named exception (coordinator 2026-11-22, pin moves 2-8): the rest of the image is on Lemnos ff93d360 (0d37cc55 plus the
+# boot-disk, set-aside, watchdog, gadget, boot-loop, node-claim, count-clear, minor and camera commits of pr/RAZE2-CAM-0d37); shm/ is untouched since 0d37cc55, so
+# Orion's shm crates at 0d37cc55 are byte-identical to ff93d360's and differ by rev string only. No Orion pin move for it.
 #
 # Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
 # 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
