@@ -19,7 +19,7 @@ homepage = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager"
 orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f", default-features = false }
 # Lemnos's slot-bundle format: the signing record, the signed message, the manifest's bytes and the bundle rules.
 # Its rev is the image's Lemnos pin (devices/); scripts/check-devices.sh holds the two equal. Moving it is its own PR.
-lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "0d37cc55ffee6dacf348e3aff4e2c1ba90e2a33b", default-features = false }
+lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "0a51f5d0522bc5134ee571a44fb5fc9205420479", default-features = false }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

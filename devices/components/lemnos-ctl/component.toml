@@ -7,7 +7,7 @@ description = "the Lemnos command-line client, lemnos-ctl (service profile; the 
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "0d37cc55ffee6dacf348e3aff4e2c1ba90e2a33b"  # Lemnos 0d37cc55 (next, BAY-EXACT with BAY-CHECK and WDT-UNIT), coordinator 2026-11-21, pin move 1
+ref = "0a51f5d0522bc5134ee571a44fb5fc9205420479"  # Lemnos 0a51f5d0 (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + slot-init waits for the boot disk), coordinator 2026-11-22, pin move 2
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
