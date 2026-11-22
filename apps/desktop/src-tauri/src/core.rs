@@ -1,0 +1,680 @@
+//! The app's state and background work.
+//!
+//! [`Core::open`] reads what was saved (the inventory, the settings) and returns: the window can
+//! then show the last known inventory at once. The scan starts in the background and reports by
+//! events; [`Core`] folds those into the inventory and publishes the result as topics
+//! ([`crate::view`]). No method here waits on a device.
+//!
+//! When a device goes away: the scan's `Discovered` event is the complete list of addresses one
+//! driver found on one link. A record is marked absent only when every driver that serves each
+//! link it was seen on has answered since the app opened and none of them lists it. Until then a
+//! record from the last run is shown as it was last known, and one slow driver never makes
+//! another driver's devices look gone.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use atlas_driver::DriverRegistry;
+use atlas_inventory::{Inventory, JsonFileStore, LoadOutcome, Outcome, Presence};
+use atlas_jobs::{
+    DeviceHolds, Event, Events, JobKind, JobTiming, Jobs, LinkSource, ScanConfig, ScanControl,
+    start_scan,
+};
+use atlas_log::Logger;
+use atlas_types::{DeviceKey, Family, Link, LinkId, LinkKind};
+use serde_json::Value;
+use tokio::sync::{Notify, broadcast};
+
+use crate::paths::Dirs;
+use crate::settings::Settings;
+use crate::view::{InventoryView, ScanProblem, ScanView, Update, topic};
+
+/// Which devices the app looks at.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// The computer's own links and the real drivers.
+    Real,
+    /// Simulated devices only (feature `sim`). Nothing on the computer is touched.
+    Sim,
+}
+
+impl Mode {
+    #[must_use]
+    pub const fn word(&self) -> &'static str {
+        match self {
+            Self::Real => "real",
+            Self::Sim => "sim",
+        }
+    }
+}
+
+/// What [`Core::open`] is given.
+#[derive(Debug)]
+pub struct Options {
+    /// Where the app's files live. `None` runs without saving anything.
+    pub dirs: Option<Dirs>,
+    pub mode: Mode,
+    pub scan: ScanConfig,
+}
+
+impl Options {
+    #[must_use]
+    pub fn new(dirs: Option<Dirs>, mode: Mode) -> Self {
+        Self {
+            dirs,
+            mode,
+            scan: ScanConfig::default(),
+        }
+    }
+}
+
+/// The links the scan looks at. The host keeps the list current; the scan reads a snapshot.
+#[derive(Debug, Default)]
+pub struct Links {
+    links: Mutex<Vec<Link>>,
+}
+
+impl Links {
+    pub fn set(&self, links: Vec<Link>) {
+        *lock(&self.links) = links;
+    }
+
+    #[must_use]
+    pub fn get(&self) -> Vec<Link> {
+        lock(&self.links).clone()
+    }
+
+    fn kind_of(&self, id: &LinkId) -> Option<LinkKind> {
+        lock(&self.links)
+            .iter()
+            .find(|link| &link.id == id)
+            .map(|link| link.kind.clone())
+    }
+}
+
+impl LinkSource for Links {
+    fn links(&self) -> Vec<Link> {
+        self.get()
+    }
+}
+
+/// What the app was built from before the scan starts: the drivers, the links they look at, and
+/// the job kinds. A mode fills one in ([`crate::sim`], or the real drivers).
+#[derive(Default)]
+pub struct Parts {
+    pub registry: DriverRegistry,
+    pub links: Vec<Link>,
+    pub job_kinds: Vec<Arc<dyn JobKind>>,
+}
+
+impl std::fmt::Debug for Parts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Parts")
+            .field("links", &self.links)
+            .finish_non_exhaustive()
+    }
+}
+
+/// What the scan has said since the app opened.
+#[derive(Debug, Default)]
+struct Seen {
+    /// The addresses each driver last listed on each link.
+    present: BTreeMap<(Family, LinkId), Vec<String>>,
+    /// Who answered at each address.
+    answered: BTreeMap<(LinkId, String), DeviceKey>,
+    /// Discoveries failing now.
+    problems: BTreeMap<(Family, LinkId), ScanProblem>,
+    paused: bool,
+}
+
+struct Inner {
+    mode: Mode,
+    dirs: Option<Dirs>,
+    log: Logger,
+    events: Events,
+    updates: broadcast::Sender<Update>,
+    latest: Mutex<BTreeMap<String, Value>>,
+    inventory: Mutex<Inventory>,
+    store: Option<JsonFileStore>,
+    save_wanted: Notify,
+    settings: Mutex<Settings>,
+    links: Arc<Links>,
+    registry: DriverRegistry,
+    seen: Mutex<Seen>,
+    jobs: Jobs,
+    holds: DeviceHolds,
+    scan: Mutex<Option<ScanControl>>,
+    #[cfg(feature = "sim")]
+    sim: Option<crate::sim::World>,
+}
+
+/// The app's core. Cheap to clone; clones share one state.
+#[derive(Clone)]
+pub struct Core {
+    inner: Arc<Inner>,
+}
+
+impl std::fmt::Debug for Core {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Core")
+            .field("mode", &self.inner.mode)
+            .finish_non_exhaustive()
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|error| error.into_inner())
+}
+
+/// Milliseconds since the Unix epoch.
+#[must_use]
+pub fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
+impl Core {
+    /// Reads what was saved, starts the background work and returns. Needs a running tokio
+    /// runtime. It never fails: a file that cannot be used is put aside and said in the log, and
+    /// the app opens without it.
+    pub async fn open(options: Options) -> Self {
+        let Options { dirs, mode, scan } = options;
+        let log = dirs
+            .as_ref()
+            .and_then(|dirs| Logger::open(dirs.logs(), atlas_log::Config::default()).ok())
+            .unwrap_or_else(Logger::disabled);
+        log.breadcrumb(&format!(
+            "app opened, version {}, {} devices",
+            crate::VERSION,
+            mode.word()
+        ));
+
+        let store = dirs
+            .as_ref()
+            .map(|dirs| JsonFileStore::new(dirs.inventory()));
+        let inventory = match &store {
+            Some(store) => {
+                let (inventory, outcome) = store.load();
+                match outcome {
+                    LoadOutcome::Fresh => {}
+                    LoadOutcome::Restored {
+                        skipped_records,
+                        dropped_values,
+                    } => {
+                        if skipped_records + dropped_values > 0 {
+                            log.notice(&format!(
+                                "inventory restored: {skipped_records} records and {dropped_values} values this build does not know were left out"
+                            ));
+                        }
+                    }
+                    LoadOutcome::Reset { reason, aside } => log.notice(&format!(
+                        "the saved inventory could not be used ({reason}); starting empty, the file was kept at {aside:?}"
+                    )),
+                }
+                inventory
+            }
+            None => Inventory::new(),
+        };
+        let settings = dirs
+            .as_ref()
+            .map(|dirs| Settings::load(&dirs.settings()))
+            .unwrap_or_default();
+
+        #[cfg(feature = "sim")]
+        let (parts, sim) = if mode == Mode::Sim {
+            let mut parts = Parts::default();
+            let world = crate::sim::World::install(&mut parts);
+            (parts, Some(world))
+        } else {
+            (crate::drivers::real(), None)
+        };
+        #[cfg(not(feature = "sim"))]
+        let parts = crate::drivers::real();
+        let Parts {
+            registry,
+            links: link_list,
+            job_kinds,
+        } = parts;
+
+        let events = Events::new(1024);
+        let holds = DeviceHolds::new();
+        let jobs = open_jobs(dirs.as_ref(), job_kinds, &events, &holds, &log).await;
+        let links = Arc::new(Links::default());
+        links.set(link_list);
+        let (updates, _) = broadcast::channel(256);
+
+        let core = Self {
+            inner: Arc::new(Inner {
+                mode,
+                dirs,
+                log,
+                events: events.clone(),
+                updates,
+                latest: Mutex::new(BTreeMap::new()),
+                inventory: Mutex::new(inventory),
+                store,
+                save_wanted: Notify::new(),
+                settings: Mutex::new(settings),
+                links: Arc::clone(&links),
+                registry: registry.clone(),
+                seen: Mutex::new(Seen::default()),
+                jobs,
+                holds: holds.clone(),
+                scan: Mutex::new(None),
+                #[cfg(feature = "sim")]
+                sim,
+            }),
+        };
+        core.publish_inventory();
+        core.publish_scan();
+        core.publish_jobs();
+        core.publish_settings();
+
+        // Subscribe before the scan starts, so its first event is not missed.
+        let receiver = events.subscribe();
+        tokio::spawn(core.clone().follow(receiver));
+        tokio::spawn(core.clone().save_when_wanted());
+        let control = start_scan(registry, links, events, scan, holds);
+        *lock(&core.inner.scan) = Some(control);
+        core
+    }
+
+    #[must_use]
+    pub fn mode(&self) -> &Mode {
+        &self.inner.mode
+    }
+
+    #[must_use]
+    pub fn log(&self) -> &Logger {
+        &self.inner.log
+    }
+
+    #[must_use]
+    pub fn dirs(&self) -> Option<&Dirs> {
+        self.inner.dirs.as_ref()
+    }
+
+    /// The bus the scan and the jobs report on. A page's own job kinds report here too.
+    #[must_use]
+    pub fn events(&self) -> &Events {
+        &self.inner.events
+    }
+
+    #[must_use]
+    pub fn jobs(&self) -> &Jobs {
+        &self.inner.jobs
+    }
+
+    #[must_use]
+    pub fn holds(&self) -> &DeviceHolds {
+        &self.inner.holds
+    }
+
+    /// The simulated devices, in the simulated mode.
+    #[cfg(feature = "sim")]
+    #[must_use]
+    pub fn sim(&self) -> Option<&crate::sim::World> {
+        self.inner.sim.as_ref()
+    }
+
+    /// Reads the inventory under its lock. Keep the closure short.
+    pub fn with_inventory<T>(&self, read: impl FnOnce(&Inventory) -> T) -> T {
+        read(&lock(&self.inner.inventory))
+    }
+
+    /// Changes the inventory, then publishes and saves it.
+    pub fn change_inventory<T>(&self, change: impl FnOnce(&mut Inventory, u64) -> T) -> T {
+        let result = change(&mut lock(&self.inner.inventory), now_ms());
+        self.inventory_changed();
+        result
+    }
+
+    // ----- topics ---------------------------------------------------------------------------
+
+    /// Follows every update from now on.
+    #[must_use]
+    pub fn subscribe(&self) -> broadcast::Receiver<Update> {
+        self.inner.updates.subscribe()
+    }
+
+    /// The latest value of every topic.
+    #[must_use]
+    pub fn topics(&self) -> BTreeMap<String, Value> {
+        lock(&self.inner.latest).clone()
+    }
+
+    /// Sets a topic's value and tells every subscriber. A value equal to the current one is not
+    /// sent again.
+    pub fn publish(&self, topic: &str, data: Value) {
+        {
+            let mut latest = lock(&self.inner.latest);
+            if latest.get(topic) == Some(&data) {
+                return;
+            }
+            latest.insert(topic.to_owned(), data.clone());
+        }
+        let _ = self.inner.updates.send(Update {
+            topic: topic.to_owned(),
+            data,
+        });
+    }
+
+    /// Drops a topic (a page that closed). Subscribers are told with a null value.
+    pub fn retire(&self, topic: &str) {
+        if lock(&self.inner.latest).remove(topic).is_some() {
+            let _ = self.inner.updates.send(Update {
+                topic: topic.to_owned(),
+                data: Value::Null,
+            });
+        }
+    }
+
+    fn publish_as<T: serde::Serialize>(&self, topic: &str, value: &T) {
+        match serde_json::to_value(value) {
+            Ok(data) => self.publish(topic, data),
+            Err(error) => self.inner.log.ui_error(
+                "core",
+                &format!("topic {topic} could not be written: {error}"),
+            ),
+        }
+    }
+
+    fn publish_inventory(&self) {
+        let view = self.with_inventory(|inventory| InventoryView::of(inventory, now_ms()));
+        self.publish_as(topic::INVENTORY, &view);
+    }
+
+    fn publish_scan(&self) {
+        let links = self.inner.links.get();
+        let seen = lock(&self.inner.seen);
+        let view = ScanView {
+            paused: seen.paused,
+            links: links.iter().map(|link| link.label.clone()).collect(),
+            first_round_done: links
+                .iter()
+                .all(|link| self.link_reported(&seen, &link.id, &link.kind)),
+            problems: seen.problems.values().cloned().collect(),
+        };
+        drop(seen);
+        self.publish_as(topic::SCAN, &view);
+    }
+
+    fn publish_jobs(&self) {
+        self.publish_as(topic::JOBS, &self.inner.jobs.list());
+    }
+
+    fn publish_settings(&self) {
+        let settings = lock(&self.inner.settings).clone();
+        self.publish_as(topic::SETTINGS, &settings);
+    }
+
+    fn inventory_changed(&self) {
+        self.publish_inventory();
+        self.inner.save_wanted.notify_one();
+    }
+
+    // ----- settings -------------------------------------------------------------------------
+
+    #[must_use]
+    pub fn settings(&self) -> Settings {
+        lock(&self.inner.settings).clone()
+    }
+
+    /// Replaces the settings, publishes them and saves them. A value the app does not offer goes
+    /// back to its default.
+    pub async fn set_settings(&self, settings: Settings) -> Result<Settings, String> {
+        let settings = settings.checked();
+        *lock(&self.inner.settings) = settings.clone();
+        self.publish_settings();
+        if let Some(dirs) = self.inner.dirs.clone() {
+            let saved = settings.clone();
+            tokio::task::spawn_blocking(move || saved.save(&dirs.settings()))
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| format!("the settings could not be saved: {error}"))?;
+        }
+        Ok(settings)
+    }
+
+    // ----- the scan -------------------------------------------------------------------------
+
+    /// The manual off: the scan starts no new calls until it is resumed.
+    pub fn pause_scan(&self) {
+        if let Some(control) = lock(&self.inner.scan).as_ref() {
+            control.pause_all();
+        }
+    }
+
+    pub fn resume_scan(&self) {
+        if let Some(control) = lock(&self.inner.scan).as_ref() {
+            control.resume_all();
+        }
+    }
+
+    /// Whether every driver that serves this link has answered on it since the app opened. A
+    /// link that is not there any more has nothing left to wait for.
+    fn link_reported(&self, seen: &Seen, link: &LinkId, kind: &LinkKind) -> bool {
+        self.inner.registry.for_link(kind).iter().all(|driver| {
+            seen.present
+                .contains_key(&(driver.manifest().family.clone(), link.clone()))
+        })
+    }
+
+    async fn follow(self, mut receiver: broadcast::Receiver<Event>) {
+        loop {
+            match receiver.recv().await {
+                Ok(event) => self.take(event),
+                // Fell behind: the next round says everything again, and the job list is read whole.
+                Err(broadcast::error::RecvError::Lagged(_)) => self.publish_jobs(),
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
+    }
+
+    fn take(&self, event: Event) {
+        match event {
+            Event::Identified {
+                identity,
+                capabilities,
+            } => {
+                let kind = self
+                    .inner
+                    .links
+                    .kind_of(&identity.link)
+                    // The link went away between the answer and this event: a routed network is
+                    // the kind that claims least.
+                    .unwrap_or(LinkKind::Ethernet);
+                lock(&self.inner.seen).answered.insert(
+                    (identity.link.clone(), identity.address.clone()),
+                    identity.key.clone(),
+                );
+                let outcome =
+                    lock(&self.inner.inventory).observe(identity, kind, capabilities, now_ms());
+                if outcome == Outcome::Unchanged {
+                    // Only the time it was last seen moved: worth saving, not worth a redraw.
+                    self.inner.save_wanted.notify_one();
+                } else {
+                    self.inventory_changed();
+                }
+            }
+            Event::Discovered {
+                family,
+                link,
+                addresses,
+            } => {
+                {
+                    let mut seen = lock(&self.inner.seen);
+                    seen.present
+                        .insert((family.clone(), link.clone()), addresses);
+                    seen.problems.remove(&(family, link));
+                }
+                self.mark_absent();
+                self.publish_scan();
+            }
+            Event::ProbeFailed {
+                family,
+                link,
+                error,
+                timed_out,
+                attempt,
+                retry_in_ms,
+            } => {
+                lock(&self.inner.seen).problems.insert(
+                    (family.clone(), link.clone()),
+                    ScanProblem {
+                        family: family.to_string(),
+                        link: link.to_string(),
+                        error,
+                        timed_out,
+                        attempt,
+                        retry_in_ms,
+                    },
+                );
+                self.publish_scan();
+            }
+            Event::ProbeRecovered { family, link } => {
+                lock(&self.inner.seen).problems.remove(&(family, link));
+                self.publish_scan();
+            }
+            Event::ScanPaused { family: None } => {
+                lock(&self.inner.seen).paused = true;
+                self.publish_scan();
+            }
+            Event::ScanResumed { family: None } => {
+                lock(&self.inner.seen).paused = false;
+                self.publish_scan();
+            }
+            Event::Job { .. } => self.publish_jobs(),
+            Event::StoreFailed { message } => self.inner.log.failed_call("jobs.save", "", &message),
+            Event::Unanswered { .. }
+            | Event::Settled { .. }
+            | Event::ScanPaused { .. }
+            | Event::ScanResumed { .. } => {}
+        }
+    }
+
+    /// Marks absent the online records that no driver lists any more. See the module text for
+    /// the rule.
+    ///
+    /// A record is still there when a driver lists an address it was seen at and nobody else
+    /// has answered at that address since; an address that is listed but has not been asked who
+    /// it is yet still counts for the record last seen there.
+    fn mark_absent(&self) {
+        let links = self.inner.links.get();
+        let still_there: BTreeSet<DeviceKey> = {
+            let seen = lock(&self.inner.seen);
+            let listed = |link: &LinkId, address: &str| {
+                seen.present.iter().any(|((_, on), addresses)| {
+                    on == link && addresses.iter().any(|a| a == address)
+                })
+            };
+            self.with_inventory(|inventory| {
+                inventory
+                    .all()
+                    .into_iter()
+                    .filter(|record| record.presence == Presence::Online)
+                    .filter(|record| {
+                        record.links.iter().any(|sighting| {
+                            let answered = seen
+                                .answered
+                                .get(&(sighting.link.clone(), sighting.address.clone()));
+                            let here = listed(&sighting.link, &sighting.address)
+                                && answered.is_none_or(|key| inventory.resolve(key) == record.key);
+                            // Or a driver that serves this link has not answered yet.
+                            let waiting = links.iter().any(|link| link.id == sighting.link)
+                                && !self.link_reported(&seen, &sighting.link, &sighting.kind);
+                            here || waiting
+                        })
+                    })
+                    .map(|record| record.key.clone())
+                    .collect()
+            })
+        };
+        let gone = lock(&self.inner.inventory).mark_absent(&still_there, now_ms());
+        if !gone.is_empty() {
+            self.inventory_changed();
+        }
+    }
+
+    /// Saves the inventory when it changed, at most every two seconds, off the async threads.
+    async fn save_when_wanted(self) {
+        let Some(store) = self.inner.store.clone() else {
+            return;
+        };
+        loop {
+            self.inner.save_wanted.notified().await;
+            let inventory = lock(&self.inner.inventory).clone();
+            let store = store.clone();
+            let saved = tokio::task::spawn_blocking(move || store.save(&inventory)).await;
+            if let Ok(Err(error)) = saved {
+                self.inner
+                    .log
+                    .failed_call("inventory.save", "", &error.to_string());
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
+    /// Saves the inventory now. Called when the window closes.
+    pub async fn save_now(&self) {
+        if let Some(store) = self.inner.store.clone() {
+            let inventory = lock(&self.inner.inventory).clone();
+            let _ = tokio::task::spawn_blocking(move || store.save(&inventory)).await;
+        }
+        self.inner.log.flush();
+    }
+}
+
+/// Opens the job list. A list that cannot be read is put aside (nothing in it is lost) and the
+/// app opens with an empty one.
+async fn open_jobs(
+    dirs: Option<&Dirs>,
+    kinds: Vec<Arc<dyn JobKind>>,
+    events: &Events,
+    holds: &DeviceHolds,
+    log: &Logger,
+) -> Jobs {
+    let path = match dirs {
+        Some(dirs) => dirs.jobs(),
+        // Nowhere to save: a path that is never written unless a job is submitted.
+        None => std::env::temp_dir().join(format!("atlas-jobs-{}.json", std::process::id())),
+    };
+    let open = |path: std::path::PathBuf| {
+        Jobs::open(
+            path,
+            kinds.clone(),
+            events.clone(),
+            JobTiming::default(),
+            holds.clone(),
+        )
+    };
+    match open(path.clone()).await {
+        Ok(jobs) => jobs,
+        Err(error) => {
+            let aside = path.with_extension(format!("unreadable-{}.json", now_ms()));
+            let moved = std::fs::rename(&path, &aside).is_ok();
+            log.notice(&format!(
+                "the saved job list could not be read ({error}); starting empty, the file was {}",
+                if moved {
+                    format!("kept at {}", aside.display())
+                } else {
+                    "left in place".into()
+                }
+            ));
+            let fresh = if moved { path } else { aside };
+            match open(fresh).await {
+                Ok(jobs) => jobs,
+                Err(error) => {
+                    log.notice(&format!("the job list cannot be opened at all: {error}"));
+                    open(std::env::temp_dir().join(format!("atlas-jobs-{}.json", now_ms())))
+                        .await
+                        .expect("an empty job list at a new path always opens")
+                }
+            }
+        }
+    }
+}

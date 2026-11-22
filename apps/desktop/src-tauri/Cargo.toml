@@ -1,0 +1,53 @@
+[package]
+name = "atlas-app"
+description = "The Atlas desktop app: a Tauri window over the Atlas core. Every command is async; state reaches the UI by events."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "atlas_app"
+
+[[bin]]
+name = "atlas-app"
+path = "src/main.rs"
+
+# The UI bridge: the same calls and events as the window, served on 127.0.0.1 to a browser, with
+# the simulated devices only. It is how the click tests (scripts/ui-gate.sh) reach the real core.
+# It is never part of a bundle: it needs the `sim` feature, which no bundle is built with.
+[[bin]]
+name = "atlas-ui-bridge"
+path = "src/bin/ui_bridge.rs"
+required-features = ["sim"]
+
+[features]
+default = []
+# The simulated devices and the UI bridge. For development and the UI gate only.
+sim = ["dep:atlas-mock", "dep:tiny_http"]
+# The UI is embedded in the binary instead of read from the dev server. `cargo tauri build` sets
+# it; a plain `cargo build` needs it named to get a window that runs on its own.
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+atlas-driver = { path = "../../../crates/core/driver" }
+atlas-inventory = { path = "../../../crates/core/inventory" }
+atlas-jobs = { path = "../../../crates/core/jobs" }
+atlas-log = { path = "../../../crates/core/log" }
+atlas-types = { path = "../../../crates/core/types" }
+atlas-mock = { path = "../../../crates/drivers/mock", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tiny_http = { version = "0.12", optional = true }
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

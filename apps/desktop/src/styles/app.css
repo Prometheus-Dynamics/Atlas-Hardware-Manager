@@ -1,0 +1,27 @@
+/* What the app adds to the design language's stylesheet (atlas.css, kept byte for byte equal to
+   docs/mockups/atlas.css; scripts/ui-gate.sh checks it). Only what a running app needs and a
+   still mockup does not: the mount point, real form controls, and the pointer. No new colours. */
+
+#app { display: contents; }
+
+/* A link that is a row or a button keeps the arrow pointer, as every control does. */
+a.nav, a.btn { cursor: default; }
+a.btn { text-decoration: none; }
+
+/* Real controls take the mockup's look. */
+button.btn { font-family: inherit; line-height: 1; margin: 0; }
+button.btn:active:not(:disabled) { background: var(--accent-tint-strong); border-color: var(--accent); }
+button.btn.pri:active:not(:disabled) { background: var(--accent); filter: brightness(0.94); }
+select.sel { font: inherit; color: var(--fg); appearance: auto; }
+input.inp { color: var(--fg); }
+input.inp::placeholder { color: var(--fg-faint); }
+button.sw { border: 0; padding: 0; cursor: default; }
+button.rowbtn { all: unset; display: contents; cursor: default; }
+
+/* Rows that open something show the hover tint the states page gives a hovered row. */
+.tr.link:hover { background: var(--glass-hover); }
+.tr.link.sel:hover { background: var(--accent-tint); }
+
+/* Text can be selected where it is data a person copies (logs, terminal, keys), not elsewhere. */
+body { user-select: none; -webkit-user-select: none; }
+.lines, .term, .mono, .kv dd { user-select: text; -webkit-user-select: text; }
