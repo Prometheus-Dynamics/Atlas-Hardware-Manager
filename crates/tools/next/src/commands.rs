@@ -10,7 +10,7 @@ use atlas_actions::BUSY_CODE;
 use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
-use atlas_jobs::{DeviceHolds, Events, JobTiming};
+use atlas_jobs::{DeviceHolds, Events};
 use atlas_session::{Failure, FailureKind};
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
@@ -459,7 +459,7 @@ pub(crate) async fn install<W: Write>(
         jobs.join("jobs.json"),
         Arc::clone(&link.sessions),
         Events::new(256),
-        JobTiming::default(),
+        atlas_files::job_timing(),
         DeviceHolds::new(),
         family.clone(),
         jobs.clone(),

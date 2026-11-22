@@ -24,11 +24,13 @@
 //! Not here: a support bundle. Fetching one needs an Orion action that puts the bundle where a
 //! receiver can take it, which the locked Orion rev does not have.
 
+mod bounds;
 mod progress;
 mod push;
 mod source;
 mod transfer;
 
+pub use bounds::{BOARD_COMMIT_CEILING, JOB_STEP_TIMEOUT, STEP_MARGIN, job_timing};
 pub use progress::{Progress, Restart, Stage};
 pub use push::{KIND, PUSH_WAIT, Push, PushError, PushKind, submit};
 pub use source::{Counters, PushSource};

@@ -18,8 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use atlas_driver::DriverRegistry;
 use atlas_inventory::{Inventory, JsonFileStore, LoadOutcome, Outcome, Presence};
 use atlas_jobs::{
-    DeviceHolds, Event, Events, JobKind, JobTiming, Jobs, LinkSource, ScanConfig, ScanControl,
-    start_scan,
+    DeviceHolds, Event, Events, JobKind, Jobs, LinkSource, ScanConfig, ScanControl, start_scan,
 };
 use atlas_log::Logger;
 use atlas_types::{DeviceKey, Family, Link, LinkId, LinkKind};
@@ -793,7 +792,7 @@ async fn open_jobs(
             path,
             kinds.clone(),
             events.clone(),
-            JobTiming::default(),
+            atlas_files::job_timing(),
             holds.clone(),
         )
     };

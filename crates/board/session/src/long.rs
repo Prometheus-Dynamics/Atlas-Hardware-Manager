@@ -73,6 +73,16 @@ pub trait SteppedTransfer<T> {
     /// Stops the transfer. Called once: when it is cancelled, when its caller stops waiting, or
     /// when its session ends. It must not block. Bytes it already moved stay where they are.
     fn cancel(&mut self);
+
+    /// The longest the node may take to answer one of this transfer's requests, when the node is
+    /// heard from meanwhile. `None`, the default, keeps the session's own bound on an answer (see
+    /// `Options::timeout`). A transfer that waits on a slow answer, such as a board's commit of a
+    /// file, returns the bound it needs: while any running transfer does, the session waits for
+    /// answers as long as the node is heard from, up to the largest of those bounds, and the
+    /// bound ends the wait with a timed-out error the transfer can name.
+    fn reply_ceiling(&self) -> Option<Duration> {
+        None
+    }
 }
 
 /// How a long operation ended, when the session did not lose it.

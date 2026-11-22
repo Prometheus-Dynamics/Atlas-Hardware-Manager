@@ -9,10 +9,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use atlas_session::{Step, StepError, SteppedTransfer};
-use orion::Orion;
+use atlas_session::{Failure, Step, StepError, SteppedTransfer};
 use orion::files::{Files, Pushing, Step as PushStep, Transfer};
+use orion::{ClientError, Orion};
 
+use crate::bounds::{BOARD_COMMIT_CEILING, ceiling_reason};
 use crate::source::{Guard, PushSource, Shared};
 
 /// Starts a push of `source` to `destination` on the session's client, as a stepped transfer.
@@ -61,6 +62,12 @@ struct Stepped {
 }
 
 impl SteppedTransfer<Transfer> for Stepped {
+    fn reply_ceiling(&self) -> Option<Duration> {
+        // The board's commit (its check of the whole file) is the one answer that takes long; the
+        // session waits for it as long as the board is heard from, up to the ceiling.
+        Some(BOARD_COMMIT_CEILING)
+    }
+
     fn step(&mut self, wait: Duration) -> Result<Step<Transfer>, StepError> {
         let Some(pushing) = self.pushing.as_mut() else {
             return Err(StepError::Failed("the push already ended".into()));
@@ -83,6 +90,19 @@ impl SteppedTransfer<Transfer> for Stepped {
             Ok(PushStep::Done(transfer)) => {
                 self.pushing = None;
                 Ok(Step::Done(transfer))
+            }
+            Err(ClientError::Io(error)) if error.kind() == std::io::ErrorKind::TimedOut => {
+                // Under the reply ceiling (see `reply_ceiling`), a timed-out wait is the board
+                // still answering past the bound: a refusal of the push, not a lost session, so
+                // the session is kept and the words name the bound.
+                self.pushing = None;
+                let (sent, total) = {
+                    let progress = self.shared.current();
+                    (progress.sent, progress.total)
+                };
+                Err(StepError::Failed(Failure::other(ceiling_reason(
+                    sent, total,
+                ))))
             }
             Err(error) => {
                 self.pushing = None;

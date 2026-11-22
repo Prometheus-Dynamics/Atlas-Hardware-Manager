@@ -39,7 +39,7 @@ use std::time::{Duration, Instant};
 
 use orion::node::Node;
 use orion::types::NodeName;
-use orion::{Address, ClientError, Identity, Options, Orion, Patience};
+use orion::{Address, ClientError, Identity, Options, Orion, Patience, Reply};
 
 use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
@@ -158,12 +158,37 @@ trait Job: Send {
     }
 }
 
+/// The reply bound the session needs while `ops` run: the largest ceiling any of them asks for,
+/// as [`Reply::Alive`], or the session's own bound ([`Reply::Timeout`]) when none asks for one.
+/// Computed from the operations running now, so one that ends does not reset another's.
+fn reply_for(ops: &[Box<dyn Op>]) -> Reply {
+    match ops.iter().filter_map(|op| op.reply_ceiling()).max() {
+        Some(ceiling) => Reply::Alive {
+            ceiling: Some(ceiling),
+        },
+        None => Reply::Timeout,
+    }
+}
+
+/// Sets the session's reply bound to what `ops` need, when it is not that already.
+fn sync_reply(orion: &Orion, current: &mut Reply, ops: &[Box<dyn Op>]) {
+    let wanted = reply_for(ops);
+    if *current != wanted {
+        orion.set_reply(wanted);
+        *current = wanted;
+    }
+}
+
 /// A long operation running on the session, advanced one turn at a time.
 trait Op {
     /// Takes one step (or notices a cancel), and says what became of the operation.
     fn turn(&mut self) -> Turn;
     /// The session ends under the operation: its caller is told `reason`.
     fn end(self: Box<Self>, reason: &str);
+    /// The reply ceiling the operation needs (see [`SteppedTransfer::reply_ceiling`]).
+    fn reply_ceiling(&self) -> Option<Duration> {
+        None
+    }
 }
 
 /// What one turn of an operation did.
@@ -284,6 +309,10 @@ struct Running<T> {
 }
 
 impl<T: Send + 'static> Op for Running<T> {
+    fn reply_ceiling(&self) -> Option<Duration> {
+        self.transfer.reply_ceiling()
+    }
+
     fn turn(&mut self) -> Turn {
         let Some(reply) = self.reply.take() else {
             return Turn::Finished;
@@ -1010,7 +1039,9 @@ impl Keeper {
     /// session after its own has ended.
     fn serve(&mut self, orion: &Orion) -> Option<String> {
         let mut ops: Vec<Box<dyn Op>> = Vec::new();
-        let ended = self.turns(orion, &mut ops);
+        // A connection starts with the session's own reply bound (see `connect`).
+        let mut reply = Reply::Timeout;
+        let ended = self.turns(orion, &mut reply, &mut ops);
         let reason = ended
             .clone()
             .unwrap_or_else(|| CHANGED_BY_A_PERSON.to_owned());
@@ -1022,7 +1053,12 @@ impl Keeper {
 
     /// The session's turns, as described in [`crate::long`]: queued calls, then one step of each
     /// operation. Returns as [`Keeper::serve`] does.
-    fn turns(&mut self, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Option<String> {
+    fn turns(
+        &mut self,
+        orion: &Orion,
+        reply: &mut Reply,
+        ops: &mut Vec<Box<dyn Op>>,
+    ) -> Option<String> {
         while !self.stopped() {
             if let Ok(order) = self.orders.try_recv() {
                 self.apply(order);
@@ -1063,6 +1099,9 @@ impl Keeper {
                     }
                 }
             }
+            // The reply bound follows the operations that are running now, before any of them is
+            // stepped: a step that waits on the node must not be cut by the session's short bound.
+            sync_reply(orion, reply, ops);
             let mut index = 0;
             while index < ops.len() {
                 match ops[index].turn() {
@@ -1104,5 +1143,64 @@ impl Keeper {
         while let Ok(job) = self.calls.try_recv() {
             job.refuse(reason);
         }
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    /// An operation that needs `ceiling` for its answers, and finishes on its first turn.
+    struct Fake(Option<Duration>);
+
+    impl Op for Fake {
+        fn turn(&mut self) -> Turn {
+            Turn::Finished
+        }
+        fn end(self: Box<Self>, _reason: &str) {}
+        fn reply_ceiling(&self) -> Option<Duration> {
+            self.0
+        }
+    }
+
+    const CEILING: Duration = Duration::from_secs(900);
+
+    #[test]
+    fn no_operation_needing_a_ceiling_keeps_the_sessions_own_bound() {
+        assert_eq!(reply_for(&[]), Reply::Timeout);
+        let ops: Vec<Box<dyn Op>> = vec![Box::new(Fake(None))];
+        assert_eq!(reply_for(&ops), Reply::Timeout);
+    }
+
+    #[test]
+    fn two_concurrent_operations_keep_the_reply_alive_until_both_end() {
+        let alive = Reply::Alive {
+            ceiling: Some(CEILING),
+        };
+        let mut ops: Vec<Box<dyn Op>> =
+            vec![Box::new(Fake(Some(CEILING))), Box::new(Fake(Some(CEILING)))];
+        assert_eq!(reply_for(&ops), alive);
+        // One ends: the other still needs the ceiling, so the bound stays.
+        ops.remove(0);
+        assert_eq!(reply_for(&ops), alive);
+        // The last one ends: the session's own bound comes back.
+        ops.remove(0);
+        assert_eq!(reply_for(&ops), Reply::Timeout);
+    }
+
+    #[test]
+    fn the_largest_ceiling_of_the_running_operations_is_the_bound() {
+        let short = Duration::from_secs(30);
+        let ops: Vec<Box<dyn Op>> = vec![
+            Box::new(Fake(Some(short))),
+            Box::new(Fake(None)),
+            Box::new(Fake(Some(CEILING))),
+        ];
+        assert_eq!(
+            reply_for(&ops),
+            Reply::Alive {
+                ceiling: Some(CEILING)
+            }
+        );
     }
 }
