@@ -1,6 +1,9 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 15dcf093 (pin move 4, 2026-11-22, the coordinator's rev): Gaia next with the EROFS root directory made
+# root's, 0755 (15dcf09; the tar had no root entry, so / was the builder's 1000:1001 0777; gaia.fs.erofs key 6), plus two
+# K230-only commits (d122a58, 4ebf698). Before: 073a2f6e.
 # Moved to 073a2f6e (pin move 1, 2026-11-21, the coordinator's rev): Gaia next with the board key [kernel]
 # extra_device_trees (the Raze's overlay_map and hat_map into @firmware@); plans of boards without the key unchanged.
 # Moved to 129e07e7 (pin move 1, 2026-11-21, the coordinator's rev): Gaia next with the kernel-module key 4 -> 5 (cfe9dc22:
@@ -27,4 +30,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "073a2f6eac25632f848100e6206ca63e1f6229c2"
+commit = "15dcf093dd74ee39515732bfd83ea7ee3638e491"
