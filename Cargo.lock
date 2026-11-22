@@ -221,6 +221,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-flash-flow"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-flash-outcome"
 version = "2026.1.0-dev"
 
@@ -380,6 +390,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
+ "atlas-flash-flow",
  "atlas-rpiboot",
  "atlas-types",
  "atlas-usb",

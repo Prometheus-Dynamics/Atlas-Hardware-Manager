@@ -1,0 +1,19 @@
+[package]
+name = "atlas-flash-flow"
+description = "Flash a blank board (D6): the same steps for every family (image, board in its boot ROM, loader, flasher running, write, first boot), each retried without limit with a capped backoff and stoppable by hand, published whole as one view the app's flash page reads. The family loaders, the flasher's node and the board's first-flash write come in through seams; this crate does no I/O of its own."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "test-util"] }
+
+[lints]
+workspace = true

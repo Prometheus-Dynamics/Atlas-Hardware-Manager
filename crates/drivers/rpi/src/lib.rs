@@ -11,6 +11,10 @@
 //! This crate depends on no other driver. Its USB access is the injected
 //! [`UsbBus`], so tests run against the simulated bus.
 
+mod loader;
+
+pub use loader::RpiLoader;
+
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
