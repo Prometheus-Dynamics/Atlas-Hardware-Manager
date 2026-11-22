@@ -25,20 +25,27 @@
 # /usr/share/lemnos/socs/<soc>.toml: lemnosd checks the live device tree against it (the image contract since
 # 2026-11-20; without it lemnosd says "live tree not checked").
 #
+# The root directory itself, read with dump.erofs: owner 0:0 and mode 0755, as 993's root is (Raze #1, 2026-11-22).
+# A root owned by the builder or world-writable makes systemd-tmpfiles refuse "unsafe path transition / (owned by
+# 1000)", taints the system (var-run-bad) and fails sshd's StrictModes; five PM builds shipped / as 1000:1001 0777
+# (Gaia's erofs tar had no root entry; fixed in Gaia 4d71399c) and no check caught it.
+#
 # The boot partition's mount point is not checked: on Raze's tryboot record form nobody mounts it after slot-init
 # (records are raw sector writes found through sysfs; Lemnos 8b10f491); `boot` matters for the file and ubi forms.
 set -euo pipefail
 
 check() {  # <erofs>
   local erofs=$1 tmp rc=0
-  for t in fsck.erofs python3; do command -v "$t" >/dev/null || { echo "check-slot-mounts: $t is needed" >&2; return 2; }; done
+  for t in fsck.erofs dump.erofs python3; do command -v "$t" >/dev/null || { echo "check-slot-mounts: $t is needed" >&2; return 2; }; done
   [[ -f $erofs ]] || { echo "check-slot-mounts: no image: $erofs" >&2; return 2; }
   tmp=$(mktemp -d)
   fsck.erofs --extract="$tmp/root" --preserve-perms "$erofs" >"$tmp/fsck.log" 2>&1 \
     || { cat "$tmp/fsck.log" >&2; rm -rf "$tmp"; echo "check-slot-mounts: fsck.erofs could not read $erofs" >&2; return 1; }
-  python3 -I - "$tmp/root" "$erofs" <<'PY' || rc=$?
-import os, stat, sys, tomllib
-root, erofs = sys.argv[1:]
+  dump.erofs --path=/ "$erofs" >"$tmp/root.inode" 2>&1 \
+    || { cat "$tmp/root.inode" >&2; rm -rf "$tmp"; echo "check-slot-mounts: dump.erofs could not read the root inode of $erofs" >&2; return 1; }
+  python3 -I - "$tmp/root" "$erofs" "$tmp/root.inode" <<'PY' || rc=$?
+import os, re, stat, sys, tomllib
+root, erofs, inode = sys.argv[1:]
 def resolve(rel):
     """rel as the slot sees it: every link inside the root followed (absolute ones from the root); None if missing."""
     todo, cur, hops = [p for p in rel.strip("/").split("/") if p], [], 0
@@ -58,6 +65,10 @@ def resolve(rel):
         cur.append(p)
     return os.path.join(root, *cur)
 bad = []
+m = re.search(r"Uid:\s*(\d+)\s+Gid:\s*(\d+)\s+Access:\s*([0-7]+)", open(inode).read())
+if not m: bad.append("dump.erofs printed no Uid/Gid/Access for the root directory")
+elif (int(m[1]), int(m[2]), int(m[3], 8) & 0o7777) != (0, 0, 0o755):
+    bad.append(f"the root directory / is {m[1]}:{m[2]} {int(m[3], 8) & 0o7777:04o}, not 0:0 0755: systemd-tmpfiles refuses an unsafe path transition from it and sshd's StrictModes refuses logins")
 def want(rel, kind, why):
     p = resolve(rel)
     st = os.lstat(p) if p else None
@@ -122,7 +133,7 @@ if etc_lemnos and os.path.isdir(etc_lemnos):
             want(f"/usr/share/lemnos/socs/{soc}.toml", "file", f"/etc/lemnos/{c} names soc {soc}: lemnosd checks the live tree against it")
 for x in bad: print(f"check-slot-mounts: BAD {erofs}: {x}")
 if bad: print(f"check-slot-mounts: FAILED ({len(bad)} finding(s))"); sys.exit(1)
-print("check-slot-mounts: ok: /sbin/init executable, /data an empty directory, /etc/machine-id a regular file, /usr/bin/lemnosd executable, lemnosd.service enabled, user and group lemnos" + (f", SoC description(s) for {', '.join(sorted(socs))}" if socs else ""))
+print("check-slot-mounts: ok: / is 0:0 0755, /sbin/init executable, /data an empty directory, /etc/machine-id a regular file, /usr/bin/lemnosd executable, lemnosd.service enabled, user and group lemnos" + (f", SoC description(s) for {', '.join(sorted(socs))}" if socs else ""))
 PY
   rm -rf "$tmp"
   return $rc
@@ -166,7 +177,9 @@ self_test() {
       no-soc) rm "$r/usr/share/lemnos/socs/x-soc.toml" ;;
       bench-soc) printf '[board]\nsoc = "y-soc"\n' > "$r/etc/lemnos/board.bench.toml" ;;
     esac; done
-    mkfs.erofs "$tmp/$n.erofs" "$r" >/dev/null 2>&1
+    chmod 755 "$r"; local own=--all-root
+    for a in "$@"; do case $a in bad-root) chmod 777 "$r"; own= ;; esac; done
+    mkfs.erofs $own "$tmp/$n.erofs" "$r" >/dev/null 2>&1
   }
   expect_fail() {  # <name> <text>   (a failing check is expected: its words are kept, then read)
     check "$tmp/$1.erofs" > "$tmp/$1.log" 2>&1 && { echo "check-slot-mounts: self-test: $1 passed" >&2; rc=1; return; }
@@ -182,6 +195,7 @@ self_test() {
   mk elsewhere data=/srv/data; expect_fail elsewhere "other than /data"
   mk nosoc no-soc;            expect_fail nosoc "/usr/share/lemnos/socs/x-soc.toml is not a regular file"
   mk benchsoc bench-soc;      expect_fail benchsoc "/etc/lemnos/board.bench.toml names soc y-soc"
+  mk badroot bad-root;        expect_fail badroot "the root directory / is"
   mk fulldata full-data;      expect_fail fulldata "/data is not empty"
   mk nolemnosd no-lemnosd;    expect_fail nolemnosd "/usr/bin/lemnosd is not an executable file"
   mk notenabled not-enabled;  expect_fail notenabled "lemnosd.service is not enabled"
@@ -190,7 +204,7 @@ self_test() {
   mk nogroup no-group;        expect_fail nogroup "no group lemnos in /etc/group"
   mk s50 s50
   check "$tmp/s50.erofs" > "$tmp/s50.log" 2>&1 || { cat "$tmp/s50.log" >&2; echo "check-slot-mounts: self-test: a BusyBox root with S50lemnosd failed" >&2; rc=1; }
-  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path, a board file (any /etc/lemnos/*.toml) whose soc has no /usr/share/lemnos/socs/<soc>.toml, a non-empty /data, no /usr/bin/lemnosd, lemnosd.service not enabled or masked, and no user or group lemnos each fail; a BusyBox S50lemnosd passes; links resolve as the slot sees them)"
+  [[ $rc -eq 0 ]] && echo "check-slot-mounts: self-test: passed (a root directory not 0:0 0755, no /data, no or non-executable /sbin/init, a missing or non-file /etc/machine-id, and a board file naming another data path, a board file (any /etc/lemnos/*.toml) whose soc has no /usr/share/lemnos/socs/<soc>.toml, a non-empty /data, no /usr/bin/lemnosd, lemnosd.service not enabled or masked, and no user or group lemnos each fail; a BusyBox S50lemnosd passes; links resolve as the slot sees them)"
   return $rc
 }
 
