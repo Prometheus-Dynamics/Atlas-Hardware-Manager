@@ -114,6 +114,10 @@ pub struct Parts {
     /// The session registry the board driver keeps its nodes in. The board page reaches a node
     /// through it, so a node has one connection.
     pub sessions: Option<Arc<atlas_session::Sessions>>,
+    /// The boot ROM loaders this build has, one per chip family (the flash flow).
+    pub roms: Vec<Arc<dyn crate::flash::BootRom>>,
+    /// What writes a removable disk. `None` leaves the choice to the core (the helper).
+    pub disk_writer: Option<Arc<dyn crate::flash::DiskWriter>>,
 }
 
 impl std::fmt::Debug for Parts {
@@ -157,6 +161,7 @@ struct Inner {
     scan: Mutex<Option<ScanControl>>,
     sessions: Option<Arc<atlas_session::Sessions>>,
     boards: crate::board::Boards,
+    flashes: crate::flash::Flashes,
     #[cfg(feature = "sim")]
     sim: Option<crate::sim::World>,
 }
@@ -264,9 +269,23 @@ impl Core {
         let Parts {
             registry,
             links: link_list,
-            job_kinds,
+            mut job_kinds,
             sessions,
+            roms,
+            disk_writer,
         } = parts;
+        // A real disk is written by the privileged helper, when it is beside the app.
+        let disk_writer = disk_writer.or_else(|| {
+            let work = dirs.as_ref()?.state.join("disk-writes");
+            let helper = crate::flash::HelperWriter::find(&work)?;
+            Some(Arc::new(helper) as Arc<dyn crate::flash::DiskWriter>)
+        });
+        let flashes = crate::flash::Flashes::new(
+            roms,
+            disk_writer,
+            dirs.as_ref().map(|dirs| dirs.data.as_path()),
+        );
+        job_kinds.push(flashes.kind());
 
         let events = Events::new(1024);
         let holds = DeviceHolds::new();
@@ -301,6 +320,7 @@ impl Core {
                 scan: Mutex::new(None),
                 sessions,
                 boards,
+                flashes,
                 #[cfg(feature = "sim")]
                 sim,
             }),
@@ -314,6 +334,7 @@ impl Core {
         let receiver = events.subscribe();
         tokio::spawn(core.clone().follow(receiver));
         tokio::spawn(core.clone().save_when_wanted());
+        tokio::spawn(core.flashes().clone().follow(core.clone()));
         let control = start_scan(registry, links, events, scan, holds);
         *lock(&core.inner.scan) = Some(control);
         #[cfg(feature = "sim")]
@@ -321,6 +342,12 @@ impl Core {
             world.settle(&core);
         }
         core
+    }
+
+    /// The flash screens' state.
+    #[must_use]
+    pub fn flashes(&self) -> &crate::flash::Flashes {
+        &self.inner.flashes
     }
 
     #[must_use]

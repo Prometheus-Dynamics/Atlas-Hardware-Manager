@@ -3,6 +3,8 @@
   import Sidebar from "./lib/shell/Sidebar.svelte";
   import Devices from "./lib/devices/Devices.svelte";
   import Board from "./lib/board/Board.svelte";
+  import Flash from "./lib/flash/Flash.svelte";
+  import Disk from "./lib/flash/Disk.svelte";
   import NotBuilt from "./lib/shell/NotBuilt.svelte";
   import { route } from "./lib/stores/route.svelte";
 </script>
@@ -13,8 +15,10 @@
     <Devices />
   {:else if route.page === "board"}
     {#key route.arg}<Board id={route.arg} />{/key}
-  {:else if route.page === "flash" || route.page === "disk"}
-    <NotBuilt title="Flash a board" crumb="Atlas /" item="F5" />
+  {:else if route.page === "flash"}
+    <Flash id={route.arg} />
+  {:else if route.page === "disk"}
+    <Disk id={route.arg} />
   {:else if route.page === "robot" || route.page === "systemcore"}
     <NotBuilt title="Robot" crumb="Devices /" item="F6" />
   {:else}

@@ -26,18 +26,18 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use atlas_board::BoardDriver;
-use atlas_disk::{Disk, DiskError, DiskSource};
+use atlas_disk::{Disk, DiskError, DiskSource, Guard, Platform, Proof, RawDisk, ResumePolicy};
 use atlas_driver_disk::DiskDriver;
 use atlas_driver_rockchip::RockchipDriver;
 use atlas_inventory::Robot;
 use atlas_mock::{MockDevice, MockFleet, SIM_FAMILY, SIM_LINK};
 use atlas_robot::{Answer, Reach, SYSTEMCORE_FAMILY};
+use atlas_rockchip::sim::{Fault, SimRockchip};
 use atlas_session::{RealPause, Seed, Sessions};
 use atlas_sim_node::socket::NodeDir;
 use atlas_sim_node::{Hello, Kind, SimNode};
 use atlas_types::{DeviceKey, DeviceState, Link, LinkId, LinkKind};
-use atlas_usb::sim::SimBus;
-use atlas_usb::{DeviceSummary, UsbId};
+use atlas_usb::{DeviceSummary, OpenOptions, Timeouts, UsbBus, UsbError, UsbId, UsbIo};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -113,10 +113,244 @@ impl Reach for SimNet {
     }
 }
 
-/// A made-up disk list.
+/// A made-up disk list, and what a write to one of its disks lands in: a file under the app's
+/// own data directory. Nothing here opens a disk of this computer.
 #[derive(Debug, Default)]
 pub struct SimDisks {
     disks: Mutex<Vec<Disk>>,
+    /// While set, a write to the card waits: how a test looks at a write in progress.
+    hold: Arc<AtomicBool>,
+    /// Where the card's bytes are kept.
+    backing: Mutex<Option<PathBuf>>,
+}
+
+impl SimDisks {
+    fn present(&self, disk: &Disk) -> bool {
+        self.disks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .any(|listed| listed.path == disk.path)
+    }
+}
+
+fn disk_io(path: &std::path::Path, error: &std::io::Error) -> DiskError {
+    DiskError::Io {
+        path: path.to_path_buf(),
+        message: error.to_string(),
+    }
+}
+
+/// The simulated card, opened: a file, and a card that can be pulled while it is written.
+struct SimCard {
+    file: std::fs::File,
+    disk: Disk,
+    disks: Arc<SimDisks>,
+}
+
+impl SimCard {
+    fn check(&self) -> std::io::Result<()> {
+        if self.disks.present(&self.disk) {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                "the card was removed",
+            ))
+        }
+    }
+}
+
+impl RawDisk for SimCard {
+    fn write_at(&mut self, offset: u64, data: &[u8]) -> std::io::Result<()> {
+        use std::os::unix::fs::FileExt;
+        while self.disks.hold.load(Ordering::Relaxed) && self.disks.present(&self.disk) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        self.check()?;
+        self.file.write_all_at(data, offset)
+    }
+
+    fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> std::io::Result<()> {
+        use std::os::unix::fs::FileExt;
+        self.check()?;
+        self.file.read_exact_at(buf, offset)
+    }
+
+    fn sync(&mut self) -> std::io::Result<()> {
+        self.check()?;
+        self.file.sync_data()
+    }
+}
+
+/// The simulated disks as a platform for `atlas-disk`'s write: the real pipeline (the fresh
+/// listing, the checks, the segments, the read-back, the reattach after a drop) on a file.
+#[derive(Debug)]
+struct SimPlatform(Arc<SimDisks>);
+
+impl DiskSource for SimPlatform {
+    fn disks(&self) -> Result<Vec<Disk>, DiskError> {
+        self.0.disks()
+    }
+}
+
+impl Platform for SimPlatform {
+    fn name(&self) -> &'static str {
+        "the simulated computer"
+    }
+
+    fn proof(&self) -> Proof {
+        Proof::Proven
+    }
+
+    fn prepare(&self, _disk: &Disk) -> Result<Guard, DiskError> {
+        Ok(Box::new(()))
+    }
+
+    fn open(&self, disk: &Disk) -> Result<Box<dyn RawDisk>, DiskError> {
+        if !self.0.present(disk) {
+            return Err(DiskError::NotFound(disk.path.display().to_string()));
+        }
+        let backing = self
+            .0
+            .backing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or_else(|| {
+                DiskError::NotFound("the simulated card has nowhere to keep its bytes".into())
+            })?;
+        if let Some(dir) = backing.parent() {
+            std::fs::create_dir_all(dir).map_err(|error| disk_io(&backing, &error))?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&backing)
+            .map_err(|error| disk_io(&backing, &error))?;
+        Ok(Box::new(SimCard {
+            file,
+            disk: disk.clone(),
+            disks: Arc::clone(&self.0),
+        }))
+    }
+
+    fn finish(&self, _disk: &Disk, mut raw: Box<dyn RawDisk>) -> Result<(), DiskError> {
+        raw.sync()
+            .map_err(|error| disk_io(std::path::Path::new("the simulated card"), &error))
+    }
+}
+
+/// The simulated USB bus of the boot ROM driver: one simulated board in its boot ROM
+/// (`atlas_rockchip::sim`), which can be unplugged and plugged in again as a fresh board.
+#[derive(Debug, Default)]
+pub struct SimRom {
+    board: Mutex<Option<SimRockchip>>,
+}
+
+impl SimRom {
+    fn board(&self) -> Option<SimRockchip> {
+        self.board.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Plugs a board in, in its boot ROM, in place of whatever was there.
+    fn plug(&self) {
+        *self.board.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(SimRockchip::maskrom(ROM_PORT, ROM_ID, "3588", 122_142_720));
+    }
+
+    fn unplug(&self) {
+        *self.board.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
+#[async_trait]
+impl UsbBus for SimRom {
+    async fn devices(&self) -> Result<Vec<DeviceSummary>, UsbError> {
+        match self.board() {
+            Some(board) => board.devices().await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn open(
+        &self,
+        location: &str,
+        options: &OpenOptions,
+    ) -> Result<Box<dyn UsbIo>, UsbError> {
+        match self.board() {
+            Some(board) => board.open(location, options).await,
+            None => Err(UsbError::NotFound(location.to_string())),
+        }
+    }
+}
+
+/// A loader file for the simulated board, laid out as the chip vendor's tool lays one out. Its
+/// stages are filler: the simulated boot ROM checks their framing, not what they would run.
+fn sample_loader() -> Vec<u8> {
+    use atlas_rockchip::loader::{EntryKind, build_loader};
+    let ddr = vec![0x11u8; 5000];
+    let usbplug = vec![0x22u8; 4094];
+    build_loader(
+        b"8853",
+        &[
+            (EntryKind::Ddr, "ddr", &ddr, 0),
+            (EntryKind::Usbplug, "usbplug", &usbplug, 0),
+        ],
+        atlas_rockchip::crc::LOADER_POLYNOMIALS[0],
+    )
+}
+
+/// A first-flash image for the simulated world: a GPT disk whose one partition, `data`, is the
+/// image reader's own fixture (two slots built for one board), so `atlas-image` reads it as it
+/// reads a real image.
+fn sample_image() -> Vec<u8> {
+    const DATA: &[u8] = include_bytes!("../../../../crates/flash/image/tests/fixtures/data.ext4");
+    const FIRST_LBA: u64 = 2048;
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for byte in bytes {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+            }
+        }
+        !crc
+    }
+    let start = (FIRST_LBA * 512) as usize;
+    let end = start + DATA.len();
+    let mut disk = vec![0u8; end];
+    disk[510] = 0x55;
+    disk[511] = 0xAA;
+    let mut entries = vec![0u8; 128 * 128];
+    entries[0..16].copy_from_slice(&[0x11; 16]);
+    entries[16..32].copy_from_slice(&[1; 16]);
+    let last = FIRST_LBA + (DATA.len() as u64).div_ceil(512) - 1;
+    entries[32..40].copy_from_slice(&FIRST_LBA.to_le_bytes());
+    entries[40..48].copy_from_slice(&last.to_le_bytes());
+    for (index, unit) in "data".encode_utf16().enumerate() {
+        entries[56 + index * 2..58 + index * 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    let mut header = vec![0u8; 92];
+    header[0..8].copy_from_slice(b"EFI PART");
+    header[8..12].copy_from_slice(&0x0001_0000u32.to_le_bytes());
+    header[12..16].copy_from_slice(&92u32.to_le_bytes());
+    header[24..32].copy_from_slice(&1u64.to_le_bytes());
+    header[40..48].copy_from_slice(&34u64.to_le_bytes());
+    header[48..56].copy_from_slice(&(end as u64 / 512 - 34).to_le_bytes());
+    header[56..72].copy_from_slice(&[0x22; 16]);
+    header[72..80].copy_from_slice(&2u64.to_le_bytes());
+    header[80..84].copy_from_slice(&128u32.to_le_bytes());
+    header[84..88].copy_from_slice(&128u32.to_le_bytes());
+    header[88..92].copy_from_slice(&crc32(&entries).to_le_bytes());
+    let header_crc = crc32(&header);
+    header[16..20].copy_from_slice(&header_crc.to_le_bytes());
+    disk[512..512 + 92].copy_from_slice(&header);
+    disk[1024..1024 + entries.len()].copy_from_slice(&entries);
+    disk[start..end].copy_from_slice(DATA);
+    disk
 }
 
 impl DiskSource for SimDisks {
@@ -175,7 +409,7 @@ pub struct World {
 struct Inner {
     scene: Scene,
     fleet: MockFleet,
-    bus: Arc<SimBus>,
+    rom: Arc<SimRom>,
     disks: Arc<SimDisks>,
     net: Arc<SimNet>,
     node: Option<Node>,
@@ -278,13 +512,32 @@ impl World {
         parts.registry.register(Arc::new(fleet.driver()));
 
         // The boot ROM driver on a simulated bus.
-        let bus = Arc::new(SimBus::new());
+        let rom = Arc::new(SimRom::default());
         if demo {
-            bus.attach(DeviceSummary::new(ROM_PORT, ROM_ID.vendor, ROM_ID.product));
+            rom.plug();
         }
         parts
             .registry
-            .register(Arc::new(RockchipDriver::new(bus.clone(), vec![ROM_ID])));
+            .register(Arc::new(RockchipDriver::new(rom.clone(), vec![ROM_ID])));
+        // Its loader: the real one, with transfer limits short enough for a failed try to be
+        // seen and tried again while a person watches.
+        let limits = OpenOptions {
+            interface: None,
+            timeouts: Timeouts {
+                control: std::time::Duration::from_millis(400),
+                bulk: std::time::Duration::from_millis(400),
+            },
+        };
+        match crate::flash::RockchipRom::new(
+            atlas_driver_rockchip::FAMILY,
+            rom.clone(),
+            sample_loader(),
+        ) {
+            Ok(loader) => parts.roms.push(Arc::new(
+                loader.with_limits(limits, std::time::Duration::from_secs(3)),
+            )),
+            Err(error) => problems.push(format!("the simulated loader file: {error}")),
+        }
 
         // The disk driver on a made-up disk list.
         let disks = Arc::new(SimDisks::default());
@@ -298,6 +551,15 @@ impl World {
         parts
             .registry
             .register(Arc::new(DiskDriver::new(disks.clone())));
+        // Its writer: the real write pipeline on the simulated platform, in segments small
+        // enough for the sample image to take several.
+        parts.disk_writer = Some(Arc::new(crate::flash::PlatformWriter::new(
+            Arc::new(SimPlatform(disks.clone())),
+            ResumePolicy {
+                segment_bytes: 256 << 10,
+                max_backoff: std::time::Duration::from_millis(500),
+            },
+        )));
 
         // The robot drivers on a made-up robot network.
         let net = Arc::new(SimNet {
@@ -344,7 +606,7 @@ impl World {
             inner: Arc::new(Inner {
                 scene,
                 fleet,
-                bus,
+                rom,
                 disks,
                 net,
                 node,
@@ -377,6 +639,14 @@ impl World {
     /// boards, puts the controller in its robot, and unplugs the old board once it was seen, so
     /// the list holds an offline record. Called once, when the core is open.
     pub fn settle(&self, core: &Core) {
+        *self
+            .inner
+            .disks
+            .backing
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = core
+            .dirs()
+            .map(|dirs| dirs.data.join("sim-files").join("sim-card.bin"));
         if self.inner.scene == Scene::Empty {
             return;
         }
@@ -458,11 +728,9 @@ impl World {
         }
         if id == format!("{}:usb-{ROM_PORT}", atlas_driver_rockchip::FAMILY) {
             if online {
-                inner
-                    .bus
-                    .attach(DeviceSummary::new(ROM_PORT, ROM_ID.vendor, ROM_ID.product));
+                inner.rom.plug();
             } else {
-                inner.bus.detach(ROM_PORT);
+                inner.rom.unplug();
             }
             return Ok(());
         }
@@ -500,10 +768,25 @@ impl World {
         running.as_ref().map(with)
     }
 
-    /// The simulated USB bus the boot ROM driver looks at.
+    /// The simulated USB bus the boot ROM driver and its loader look at.
     #[must_use]
-    pub fn bus(&self) -> &Arc<SimBus> {
-        &self.inner.bus
+    pub fn rom(&self) -> &Arc<SimRom> {
+        &self.inner.rom
+    }
+
+    /// Writes the sample first-flash image under `dir` and queues it as the next file the
+    /// person chooses.
+    fn pick_image(&self, dir: &std::path::Path, name: &str) -> Result<PathBuf, String> {
+        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        let path = dir.join(name);
+        std::fs::write(&path, sample_image()).map_err(|error| error.to_string())?;
+        self.inner
+            .picks
+            .queued
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(path.clone());
+        Ok(path)
     }
 
     /// The id of the simulated node's board.
@@ -672,6 +955,64 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             .await
             .map_err(|error| CallError(error.to_string()))?
             .ok_or_else(|| CallError::from("the simulated node is not running"))
+        }
+        // Queues a first-flash image as the next file the person chooses. `broken` queues a
+        // file that is not an image.
+        "sim.pick_image" => {
+            #[derive(Deserialize)]
+            struct Pick {
+                name: Option<String>,
+                #[serde(default)]
+                broken: bool,
+            }
+            let Pick { name, broken } = args(name, arguments)?;
+            let dir = core
+                .dirs()
+                .map(|dirs| dirs.data.join("sim-files"))
+                .ok_or_else(|| CallError::from("the app has no data directory"))?;
+            let name = name.unwrap_or_else(|| "demo-os-2026.11.2.img".into());
+            let path = tokio::task::spawn_blocking(move || {
+                let path = world.pick_image(&dir, &name)?;
+                if broken {
+                    std::fs::write(&path, b"this is not a disk image\n".repeat(64))
+                        .map_err(|error| error.to_string())?;
+                }
+                Ok::<_, String>(path)
+            })
+            .await
+            .map_err(|error| CallError(error.to_string()))?
+            .map_err(CallError)?;
+            Ok(Value::String(path.display().to_string()))
+        }
+        // The simulated board in its boot ROM: `silent` makes its next transfers go unanswered
+        // (each try then fails and is tried again); `fresh` plugs in a board that answers.
+        "sim.rom" => {
+            #[derive(Deserialize)]
+            struct Rom {
+                silent: Option<u32>,
+                #[serde(default)]
+                fresh: bool,
+            }
+            let Rom { silent, fresh } = args(name, arguments)?;
+            if fresh {
+                world.rom().plug();
+            }
+            if let (Some(count), Some(board)) = (silent, world.rom().board()) {
+                for _ in 0..count {
+                    board.inject(Fault::Timeout);
+                }
+            }
+            Ok(Value::Null)
+        }
+        // The simulated card: `hold` makes a write to it wait until it is let go.
+        "sim.disk" => {
+            #[derive(Deserialize)]
+            struct Card {
+                hold: bool,
+            }
+            let Card { hold } = args(name, arguments)?;
+            world.inner.disks.hold.store(hold, Ordering::Relaxed);
+            Ok(Value::Null)
         }
         "sim.ids" => {
             serde_json::to_value(world.ids()).map_err(|error| CallError(error.to_string()))

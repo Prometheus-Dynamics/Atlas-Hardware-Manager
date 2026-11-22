@@ -119,6 +119,12 @@ impl Boards {
         *lock(&self.picker) = Some(picker);
     }
 
+    /// What asks the person for a file, when the app has a way to.
+    #[must_use]
+    pub fn picker(&self) -> Option<Arc<dyn Picker>> {
+        lock(&self.picker).clone()
+    }
+
     /// The default slot's version of each board whose slots were read.
     #[must_use]
     pub fn defaults(&self) -> BTreeMap<String, String> {

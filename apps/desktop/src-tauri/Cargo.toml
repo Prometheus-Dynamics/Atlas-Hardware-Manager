@@ -28,10 +28,7 @@ default = []
 sim = [
     "dep:atlas-mock",
     "dep:atlas-sim-node",
-    "dep:atlas-usb",
     "dep:atlas-driver-rockchip",
-    "dep:atlas-disk",
-    "dep:async-trait",
     "dep:tiny_http",
 ]
 # The UI is embedded in the binary instead of read from the dev server. `cargo tauri build` sets
@@ -57,15 +54,18 @@ atlas-board-slots = { path = "../../../crates/drivers/board-slots" }
 atlas-slots = { path = "../../../crates/core/slots" }
 atlas-topics = { path = "../../../crates/board/topics" }
 orion = { workspace = true }
+# The flash flow: the image reader, the Rockchip boot ROM loader on a USB bus, the disk writer.
+async-trait = "0.1"
+atlas-disk = { path = "../../../crates/flash/disk" }
+atlas-image = { path = "../../../crates/flash/image" }
+atlas-rockchip = { path = "../../../crates/flash/rockchip" }
+atlas-usb = { path = "../../../crates/flash/usb" }
 tauri-plugin-dialog = "2"
 # The simulated devices (feature `sim`): the mock fleet, the simulated Orion node, the simulated
 # USB bus under the real boot ROM driver, and a made-up disk list under the real disk driver.
 atlas-mock = { path = "../../../crates/drivers/mock", optional = true }
 atlas-sim-node = { path = "../../../crates/testing/sim-node", optional = true }
-atlas-usb = { path = "../../../crates/flash/usb", optional = true }
 atlas-driver-rockchip = { path = "../../../crates/drivers/rockchip", optional = true }
-atlas-disk = { path = "../../../crates/flash/disk", optional = true }
-async-trait = { version = "0.1", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }

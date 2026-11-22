@@ -30,6 +30,21 @@ async function boardRead(page: Page) {
   await expect(page.locator("[data-slot]")).toHaveCount(4);
 }
 
+const FLASH = `#/flash/${encodeURIComponent(DEMO.bootRom.id)}`;
+const DISK = `#/disk/${encodeURIComponent(DEMO.disk.id)}`;
+
+async function flashReady(page: Page, bridge: Bridge) {
+  await demoSettled(page);
+  await bridge.call("sim.pick_image", {});
+  await page.getByRole("button", { name: "Choose image…" }).click();
+  await expect(page.locator('[data-panel="image"]')).toHaveAttribute("data-image", "ready");
+}
+
+async function diskReady(page: Page, bridge: Bridge) {
+  await flashReady(page, bridge);
+  await expect(page.locator("[data-disk]")).toHaveCount(1);
+}
+
 export const SCREENS: Screen[] = [
   {
     name: "devices",
@@ -120,6 +135,119 @@ export const SCREENS: Screen[] = [
     ready: async (page) => {
       await page.locator("aside.side").getByText("board", { exact: true }).click();
       await expect(page.locator('[data-slots-state="none"]')).toBeVisible();
+    },
+  },
+  // The flash flow. This build stops after the loader, so `flash` is drawn at that point; the
+  // mockup shows a write in progress, which no library does yet.
+  {
+    name: "flash",
+    hash: FLASH,
+    mockup: "flash.html",
+    ready: async (page, bridge) => {
+      await flashReady(page, bridge);
+      await page.getByRole("button", { name: "Send loader" }).click();
+      await expect(page.locator('[data-flash-chip="loaded"]')).toBeVisible();
+    },
+  },
+  {
+    name: "flash-failed",
+    hash: FLASH,
+    mockup: "flash-failed.html",
+    ready: async (page, bridge) => {
+      await flashReady(page, bridge);
+      await bridge.call("sim.rom", { silent: 400 });
+      await page.getByRole("button", { name: "Send loader" }).click();
+      await expect(page.locator('[data-panel="failure"] dl')).toContainText(/[6-9] so far/, { timeout: 25_000 });
+      await page.waitForTimeout(1500); // part of the way through the wait, so the bar shows it
+    },
+  },
+  {
+    name: "flash-stopped",
+    hash: FLASH,
+    ready: async (page, bridge) => {
+      await flashReady(page, bridge);
+      await bridge.call("sim.rom", { silent: 400 });
+      await page.getByRole("button", { name: "Send loader" }).click();
+      await page.locator('[data-panel="failure"]').getByRole("button", { name: "Stop retrying" }).click();
+      await expect(page.locator('[data-panel="failure"]')).toHaveAttribute("data-status", "stopped");
+    },
+  },
+  {
+    name: "flash-idle",
+    hash: FLASH,
+    ready: async (page) => {
+      await demoSettled(page);
+      await expect(page.locator('[data-panel="board"] .chip.acc')).toBeVisible();
+    },
+  },
+  {
+    name: "flash-ready",
+    hash: FLASH,
+    ready: flashReady,
+  },
+  {
+    name: "flash-refused",
+    hash: FLASH,
+    ready: async (page, bridge) => {
+      await demoSettled(page);
+      await bridge.call("sim.pick_image", { broken: true, name: "notes.img" });
+      await page.getByRole("button", { name: "Choose image…" }).click();
+      await expect(page.locator('[data-panel="image"]')).toHaveAttribute("data-image", "refused");
+    },
+  },
+  {
+    name: "flash-none",
+    hash: "#/flash",
+    scene: "empty",
+    ready: async (page) => {
+      await expect(page.locator('[data-board="none"]')).toBeVisible();
+    },
+  },
+  {
+    name: "flash-disk",
+    hash: DISK,
+    mockup: "flash-disk.html",
+    ready: async (page, bridge) => {
+      await diskReady(page, bridge);
+      await page.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
+      await expect(page.locator("[data-foot] .q")).toBeVisible();
+    },
+  },
+  {
+    name: "flash-disk-idle",
+    hash: DISK,
+    ready: async (page) => {
+      await demoSettled(page);
+      await expect(page.locator("[data-disk]")).toHaveCount(1);
+    },
+  },
+  {
+    name: "flash-disk-writing",
+    hash: DISK,
+    ready: async (page, bridge) => {
+      await diskReady(page, bridge);
+      await bridge.call("sim.disk", { hold: true });
+      await page.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
+      await page.locator("[data-foot]").getByRole("button", { name: "Erase and write", exact: true }).click();
+      await expect(page.locator("[data-foot]")).toHaveAttribute("data-foot", "writing");
+    },
+  },
+  {
+    name: "flash-disk-done",
+    hash: DISK,
+    ready: async (page, bridge) => {
+      await diskReady(page, bridge);
+      await page.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
+      await page.locator("[data-foot]").getByRole("button", { name: "Erase and write", exact: true }).click();
+      await expect(page.locator("[data-foot]")).toHaveAttribute("data-foot", "done");
+    },
+  },
+  {
+    name: "flash-disk-none",
+    hash: "#/disk",
+    scene: "empty",
+    ready: async (page) => {
+      await expect(page.locator('[data-panel="disks"] .empty-box')).toBeVisible();
     },
   },
 ];

@@ -41,7 +41,13 @@ async fn until(core: &Core, ready: impl Fn(&Core) -> bool) {
     };
     tokio::time::timeout(Duration::from_secs(20), wait)
         .await
-        .expect("the core never reached the state the test waits for");
+        .unwrap_or_else(|_| {
+            panic!(
+                "the core never reached the state the test waits for; flash: {}, jobs: {}",
+                core.topics().get("flash").cloned().unwrap_or_default(),
+                core.topics().get("jobs").cloned().unwrap_or_default()
+            )
+        });
 }
 
 fn presence(core: &Core, id: &str) -> Option<String> {
@@ -363,4 +369,138 @@ async fn a_device_that_is_not_an_orion_node_has_nothing_to_read_and_refuses_boar
         .await
         .unwrap_err();
     assert!(unknown.0.contains("no device"), "{unknown}");
+}
+
+/// The flash topic, as the flash screens read it.
+fn flash(core: &Core) -> Value {
+    core.topics().get("flash").cloned().unwrap_or(Value::Null)
+}
+
+async fn ask(core: &Core, name: &str, arguments: Value) -> Value {
+    atlas_app::call::call(core, name, arguments)
+        .await
+        .unwrap_or_else(|error| panic!("{name}: {error}"))
+}
+
+const ROM: &str = "rockchip-maskrom:usb-1-3";
+const CARD: &str = "removable-disk:SIM-CARD-1";
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_loader_is_retried_while_the_board_is_silent_stops_by_hand_and_runs_when_told() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    until(&core, |core| {
+        presence(core, ROM).as_deref() == Some("online")
+    })
+    .await;
+    until(&core, |core| {
+        flash(core)["roms"][0]["family"] == "rockchip-maskrom"
+    })
+    .await;
+
+    // No image, no flash.
+    let refused = atlas_app::call::call(&core, "flash.start", json!({ "id": ROM })).await;
+    assert!(refused.unwrap_err().0.contains("image"));
+
+    ask(&core, "sim.pick_image", json!({})).await;
+    assert_eq!(ask(&core, "flash.pick_image", Value::Null).await, true);
+    until(&core, |core| flash(core)["image"]["state"] == "ready").await;
+    let image = flash(&core)["image"].clone();
+    assert_eq!(image["board"], "example-board", "{image}");
+    assert_eq!(image["signed_by"], Value::Null);
+    assert!(image["raw_bytes"].as_u64().unwrap() > 1_000_000);
+
+    // The board does not answer: every try fails and is tried again, by itself.
+    ask(&core, "sim.rom", json!({ "silent": 200 })).await;
+    ask(&core, "flash.start", json!({ "id": ROM })).await;
+    until(&core, |core| {
+        flash(core)["run"]["status"] == "retrying"
+            && flash(core)["run"]["attempt"].as_u64() >= Some(2)
+    })
+    .await;
+    assert!(flash(&core)["run"]["error"].as_str().unwrap().len() > 3);
+
+    // The manual off holds; nothing is tried while it is stopped.
+    ask(&core, "flash.stop", Value::Null).await;
+    until(&core, |core| flash(core)["run"]["status"] == "stopped").await;
+    let attempts = flash(&core)["run"]["attempt"].clone();
+
+    // A board that answers is plugged in, and Retry runs the loader now.
+    ask(&core, "sim.rom", json!({ "fresh": true })).await;
+    assert_eq!(flash(&core)["run"]["attempt"], attempts);
+    assert_eq!(ask(&core, "flash.retry", Value::Null).await, true);
+    until(&core, |core| flash(core)["run"]["status"] == "loaded").await;
+    let run = flash(&core)["run"].clone();
+    assert!(
+        run["loaded"]["words"]
+            .as_str()
+            .unwrap()
+            .contains("loader mode"),
+        "{run}"
+    );
+    assert_eq!(run["loaded"]["facts"][0], json!(["Chip", "3588"]));
+    until(&core, |core| flash(core)["recent"][0]["result"] == "loaded").await;
+    assert_eq!(flash(&core)["recent"][0]["retried"], true);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_that_is_not_an_image_is_refused_with_the_readers_words() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    ask(&core, "sim.pick_image", json!({ "broken": true })).await;
+    ask(&core, "flash.pick_image", Value::Null).await;
+    until(&core, |core| flash(core)["image"]["state"] == "refused").await;
+    assert!(flash(&core)["image"]["words"].as_str().unwrap().len() > 10);
+    // Choosing nothing changes nothing.
+    assert_eq!(ask(&core, "flash.pick_image", Value::Null).await, false);
+    assert_eq!(flash(&core)["image"]["state"], "refused");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_is_written_and_read_back_through_a_removal_and_only_the_simulated_card_is_touched()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::open(options(dir.path())).await;
+    until(&core, |core| {
+        presence(core, CARD).as_deref() == Some("online")
+    })
+    .await;
+    let image = ask(&core, "sim.pick_image", json!({})).await;
+    ask(&core, "flash.pick_image", Value::Null).await;
+    until(&core, |core| flash(core)["image"]["state"] == "ready").await;
+
+    // Held at its first write, the card is pulled: the write waits for it and goes on.
+    ask(&core, "sim.disk", json!({ "hold": true })).await;
+    ask(&core, "disk.write", json!({ "id": CARD })).await;
+    until(&core, |core| flash(core)["disk"]["status"] == "writing").await;
+    let second = atlas_app::call::call(&core, "disk.write", json!({ "id": CARD })).await;
+    assert!(
+        second.is_err(),
+        "a second write of the same card was started"
+    );
+    ask(
+        &core,
+        "sim.set_online",
+        json!({ "id": CARD, "online": false }),
+    )
+    .await;
+    until(&core, |core| {
+        ["dropped", "reattaching"].contains(&flash(core)["disk"]["phase"].as_str().unwrap_or(""))
+    })
+    .await;
+    ask(&core, "sim.disk", json!({ "hold": false })).await;
+    ask(
+        &core,
+        "sim.set_online",
+        json!({ "id": CARD, "online": true }),
+    )
+    .await;
+    until(&core, |core| flash(core)["disk"]["status"] == "done").await;
+
+    let disk = flash(&core)["disk"].clone();
+    assert_eq!(disk["report"]["verified"], true, "{disk}");
+    let written = std::fs::read(dir.path().join("data/sim-files/sim-card.bin")).unwrap();
+    let source = std::fs::read(image.as_str().unwrap()).unwrap();
+    assert_eq!(written, source, "the card holds the image, byte for byte");
+    assert!(disk["drops"].as_u64() >= Some(1), "{disk}");
 }
