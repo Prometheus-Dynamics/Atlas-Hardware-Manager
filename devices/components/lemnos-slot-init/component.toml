@@ -7,7 +7,7 @@ description = "the Lemnos slot init, lemnos-slot-init: it goes in the slot INITR
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"  # Lemnos ea434b1e (pr/RAZE2-PIOJMP-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses + boot-loop fallback + module node claim + unjudged count clear + Raze #2 minors + held mailbox + camera fixes + PIO jump origin), coordinator 2026-11-22, pin move 3
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"  # Lemnos 7b4fdb25 (next: everything of pr/RAZE2-PIOJMP-0d37 forward-ported, plus RESTART-UNIT, reboot_to, the count clear, call outcomes, the install split, grow in slot-init, per-board udev grants, JOB-RESULT and OUT-FORM), coordinator 2026-11-22, pin move 10
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

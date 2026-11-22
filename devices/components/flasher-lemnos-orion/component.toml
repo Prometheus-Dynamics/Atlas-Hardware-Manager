@@ -1,7 +1,7 @@
 # The bcm2712 flasher's lemnos-orion, in the same form as components/lemnosd, at the flasher's own Lemnos rev.
 # Its own component, not a shared one, because the flasher is pinned at Lemnos next da86d0b3 (FLASH-BCM2712, with
 # reboot_to from 4a65e473), confirmed by the coordinator for the D6 flasher only, while the Raze product and build10
-# stay on their own Lemnos (raze-base: ea434b1e). Gaia has no per-product source override, so the rev lives here.
+# stay on their own Lemnos (raze-base: 7b4fdb25). Gaia has no per-product source override, so the rev lives here.
 version = 1
 name = "flasher-lemnos-orion"
 description = "the bcm2712 flasher's lemnos-orion (Lemnos da86d0b3, service profile)"

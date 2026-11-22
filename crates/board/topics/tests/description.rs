@@ -2,11 +2,12 @@
 //! (`atlas_sim_node::describe`, a mirror of Lemnos's encoder at e5c0ff0e).
 //!
 //! Where the inputs come from:
-//! - `fixtures/lemnos-tracked.txt`: the `tracked` device as Lemnos's `call describe` answers it. The
-//!   method and contract lines are the real run quoted in `/mnt/nvme-wd/lemnos-gates/I6g-answers.md`
-//!   (Lemnos's I6h branch, before the merge), with the `describe 1` line and the `generation=1` of
-//!   e5c0ff0e's device record, which Lemnos's own test asserts (`call_describe_answers_the_device_
-//!   description_as_text`, `service/orion/tests/orion_bridge.rs`, e5c0ff0e).
+//! - `fixtures/lemnos-tracked-leased.txt`: the `tracked` device as Lemnos's `call describe` answers it at
+//!   7b4fdb25 (pin move 10), byte for byte: Lemnos ran `call_describe_answers_the_device_description_as_text`
+//!   (`service/orion/tests/orion_bridge.rs`) and sent its text on 2026-11-22. JOB-RESULT made every job
+//!   method return `bytes` and moved the contract's hash; the device record gained `live` and `refusal`.
+//! - `fixtures/lemnos-tracked.txt`: the same with the bridge's lease off, which Lemnos's encoder writes as
+//!   the device record without ` lease_seconds=60` (`number()` writes only a set value; Lemnos's word).
 //! - `HARD`: the labels and reasons of Lemnos's `text_round_trips_through_the_reader_whatever_it_holds`
 //!   (`service/orion/src/description.rs`, e5c0ff0e), with their encoder forms.
 //! - `LEVEL_ITEM`: the item of Lemnos's `an_item_record_carries_its_real_range_or_none`, with the
@@ -20,9 +21,7 @@ use atlas_topics::description::parse;
 use atlas_topics::{ItemKind, UnitState};
 
 const TRACKED: &str = include_str!("fixtures/lemnos-tracked.txt");
-/// The same device from Lemnos's MERGED build with the lease in force (I6g ca0c7ee1, I6g2 ab31079d),
-/// as the coordinator sent it on 2026-11-13: the device record carries `lease_seconds=60`, and the
-/// contract has five methods.
+/// The same device with the lease in force: the device record carries `lease_seconds=60`.
 const TRACKED_LEASED: &str = include_str!("fixtures/lemnos-tracked-leased.txt");
 
 const HARD: &[&str] = &[
@@ -59,8 +58,8 @@ fn lemnos_tracked_device_reads_as_its_test_asserts_it() {
     assert_eq!(description.contracts.len(), 1);
     let contract = &description.contracts[0];
     assert_eq!(contract.tag.as_deref(), Some("tracked/1"));
-    assert_eq!(contract.hash, Some(0x8a02_b467_18fd_879c));
-    assert_eq!(contract.methods, Some(4));
+    assert_eq!(contract.hash, Some(0x4d94_8f6d_1d34_93f3));
+    assert_eq!(contract.methods, Some(8));
     let hold = description
         .methods
         .iter()
@@ -68,7 +67,18 @@ fn lemnos_tracked_device_reads_as_its_test_asserts_it() {
         .expect("the long job");
     assert_eq!(hold.name.as_deref(), Some("hold_until_cancelled"));
     assert_eq!(hold.job, Some(true));
-    assert_eq!(description.methods.len(), 4);
+    assert_eq!(
+        hold.returns.as_deref(),
+        Some("bytes"),
+        "JOB-RESULT: the job's result form"
+    );
+    assert_eq!(description.methods.len(), 8);
+    assert_eq!(device.lease_seconds, None, "the lease is off");
+    assert_eq!(device.live, Some(true));
+    assert_eq!(
+        device.refusal,
+        Some(atlas_topics::description::REFUSAL_NONE)
+    );
     assert!(description.items.is_empty(), "the run quoted none");
     assert_eq!(
         (description.unknown_records, description.unknown_keys),
@@ -208,17 +218,26 @@ fn the_merged_builds_reply_with_a_lease_is_read_whole() {
     assert_eq!(device.state, Some(atlas_topics::DeviceState::Running));
     assert_eq!(device.reason.as_deref(), Some(""));
     let contract = &description.contracts[0];
-    assert_eq!(contract.hash, Some(0x8370_c24c_2e97_124e));
+    assert_eq!(contract.hash, Some(0x4d94_8f6d_1d34_93f3));
     // `methods=` is a count, and the method records that follow are that many.
-    assert_eq!(contract.methods, Some(5));
-    assert_eq!(description.methods.len(), 5);
+    assert_eq!(contract.methods, Some(8));
+    assert_eq!(description.methods.len(), 8);
     let jobs: Vec<_> = description
         .methods
         .iter()
         .filter(|method| method.job == Some(true))
         .filter_map(|method| method.name.as_deref())
         .collect();
-    assert_eq!(jobs, ["hold_until_cancelled", "count_until_cancelled"]);
+    assert_eq!(
+        jobs,
+        [
+            "hold_until_cancelled",
+            "count_until_cancelled",
+            "finish_when_cancelled",
+            "ignore_cancel",
+            "finish_after_ticks"
+        ]
+    );
     assert_eq!(
         (description.unknown_records, description.unknown_keys),
         (0, 0),
@@ -226,11 +245,25 @@ fn the_merged_builds_reply_with_a_lease_is_read_whole() {
     );
 }
 
+/// Lemnos 7b4fdb25 ends the last line with a line break (the fixtures are its bytes); an older board does not.
+/// Both read the same, and a second line break at the end is an empty line, refused.
+#[test]
+fn one_final_line_break_is_read_and_an_empty_line_is_not() {
+    assert!(
+        TRACKED.ends_with("job=true\n"),
+        "the fixture is Lemnos's bytes"
+    );
+    let without = TRACKED.strip_suffix('\n').expect("a final line break");
+    assert_eq!(parse(without), parse(TRACKED));
+    let refusal = parse(&format!("{TRACKED}\n")).unwrap_err();
+    assert_eq!(refusal.line, 12, "{refusal}");
+}
+
 #[test]
 fn lemnos_refusals_are_by_line_and_never_partial() {
     let refusal = parse(&TRACKED.replacen("describe 1", "describe 2", 1)).unwrap_err();
     assert!(refusal.reason.contains("version 2"), "{refusal}");
-    let malformed = TRACKED.replacen("methods=4", "methods=\"4", 1);
+    let malformed = TRACKED.replacen("methods=8", "methods=\"8", 1);
     let refusal = parse(&malformed).unwrap_err();
     assert_eq!(refusal.line, 3, "{refusal}");
 }

@@ -9,14 +9,14 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-ctl.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."lemnos-module.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."lemnos-orion.root"]
 kind = "image"
@@ -26,8 +26,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."lemnos-slot-init.root"]
 kind = "image"
@@ -37,14 +37,14 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-slot-init.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."lemnos.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."lemnosd.root"]
 kind = "image"
@@ -54,8 +54,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnosd.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."orion-recovery.root"]
 kind = "image"
@@ -65,8 +65,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion-recovery.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f"
-commit = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f"
+ref = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5"
+commit = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5"
 
 [source."orion-recovery.tools"]
 kind = "download"
@@ -81,8 +81,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f"
-commit = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f"
+ref = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5"
+commit = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5"
 
 [source."orion.tools"]
 kind = "download"
@@ -98,8 +98,8 @@ commit = "d5180309b1b66ef3b8eaccca70ad69be8e0729a1"
 [source."raze-lemnos-board.lemnos"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
-commit = "ea434b1e2db2d89d952bc8f48114d1dc3e324822"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"
+commit = "7b4fdb255826fe2c00caadd5716e807c31364b12"
 
 [source."raze-lemnos-board.root"]
 kind = "image"

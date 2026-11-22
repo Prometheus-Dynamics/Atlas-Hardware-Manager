@@ -1,0 +1,27 @@
+# Lemnos's restart helper, lemnos-restart (Lemnos RESTART-UNIT; packaging/README.md, "The restart helper"): the root
+# helper lemnosd asks to restart the board, since its own user cannot. Run by lemnos-restart.service on the socket the
+# lemnos component installs and enables. Built from the image's one Lemnos rev, as lemnosd is.
+version = 1
+name = "lemnos-restart"
+description = "the Lemnos restart helper, lemnos-restart (service profile)"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "7b4fdb255826fe2c00caadd5716e807c31364b12"  # Lemnos 7b4fdb25 (next: everything of pr/RAZE2-PIOJMP-0d37 forward-ported, plus RESTART-UNIT, reboot_to, the count clear, call outcomes, the install split, grow in slot-init, per-board udev grants, JOB-RESULT and OUT-FORM), coordinator 2026-11-22, pin move 10
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "lemnos-restart"
+profile = "service"
+
+[[install]]
+from = "bin/lemnos-restart"
+to = "/usr/bin/lemnos-restart"
+mode = "0755"

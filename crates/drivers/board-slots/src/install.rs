@@ -1001,6 +1001,10 @@ fn make_bundle(source: &SavedSource, scratch: &Path, partial: &Path) -> Result<(
         board: String::new(),
         kernel: kernel.clone(),
         display_name: display_name.clone(),
+        // A bundle Atlas makes from an image records neither: it is made on the PC from a built image, and its
+        // board's medium is checked by the board itself.
+        build_mode: None,
+        medium: None,
     };
     let out =
         File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;

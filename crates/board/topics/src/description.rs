@@ -115,7 +115,21 @@ pub struct DeviceRecord {
     // LOCK: Lemnos I6g: `lease_seconds` on the device record. Not written at e5c0ff0e (the encoder
     // has no such key), so it reads as not reported until the lock move that takes I6g.
     pub lease_seconds: Option<u64>,
+    /// Whether the device is live (Lemnos 7b4fdb25: `live`): true while it runs, false when it is off or
+    /// retrying. Absent from an older board's record.
+    pub live: Option<bool>,
+    /// Why the board refuses the device, as the wire numbers it (Lemnos 7b4fdb25: `refusal`): 0 none,
+    /// 1 absent (no such device here), 2 failed (present, not working). A number this reader does not
+    /// name is kept as it came. Absent from an older board's record.
+    pub refusal: Option<u8>,
 }
+
+/// The device's refusal is none (`refusal=0`).
+pub const REFUSAL_NONE: u8 = 0;
+/// The device is absent: no such device on this board (`refusal=1`).
+pub const REFUSAL_ABSENT: u8 = 1;
+/// The device is present but not working (`refusal=2`).
+pub const REFUSAL_FAILED: u8 = 2;
 
 /// A contract the device serves (`contract`).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,6 +257,10 @@ pub fn parse(text: &str) -> Result<Description, Refusal> {
             ),
         });
     }
+    // Lemnos 7b4fdb25's encoder ends every line, the last included, with a line break; an older board's ends
+    // the last line without one. Both are read: one final line break is taken off, and any other empty line is
+    // refused.
+    let text = text.strip_suffix('\n').unwrap_or(text);
     let mut lines = text.split('\n');
     check_version(lines.next().unwrap_or(""))?;
 
@@ -253,7 +271,7 @@ pub fn parse(text: &str) -> Result<Description, Refusal> {
         if line.is_empty() {
             return Err(Refusal {
                 line: number,
-                reason: "an empty line: the encoder writes no empty line and no final line break"
+                reason: "an empty line: the encoder writes none (one final line break is taken)"
                     .into(),
             });
         }
@@ -439,6 +457,8 @@ const DEVICE_KEYS: &[&str] = &[
     "state",
     "reason",
     "lease_seconds",
+    "live",
+    "refusal",
 ];
 const CONTRACT_KEYS: &[&str] = &["index", "tag", "kind", "hash", "methods"];
 const METHOD_KEYS: &[&str] = &[
@@ -482,6 +502,8 @@ fn device_record(record: &Record) -> Result<DeviceRecord, Refusal> {
         state: record.word("state")?.and_then(DeviceState::from_word),
         reason: record.text("reason")?,
         lease_seconds: record.number("lease_seconds", decimal_u64)?,
+        live: record.flag("live")?,
+        refusal: record.number("refusal", decimal_u8)?,
     })
 }
 
@@ -737,6 +759,10 @@ fn decimal_u64(text: &str) -> Option<u64> {
     is_digits(text).then(|| text.parse().ok()).flatten()
 }
 
+fn decimal_u8(text: &str) -> Option<u8> {
+    decimal_u64(text).and_then(|value| u8::try_from(value).ok())
+}
+
 fn decimal_u32(text: &str) -> Option<u32> {
     decimal_u64(text).and_then(|value| u32::try_from(value).ok())
 }
@@ -827,8 +853,9 @@ mod tests {
     }
 
     #[test]
-    fn empty_lines_and_a_final_line_break_are_refused() {
-        assert_eq!(parse("describe 1\ndevice\n").unwrap_err().line, 3);
+    fn empty_lines_are_refused_and_one_final_line_break_is_taken() {
+        assert!(parse("describe 1\ndevice\n").is_ok(), "Lemnos 7b4fdb25 ends the last line");
+        assert_eq!(parse("describe 1\ndevice\n\n").unwrap_err().line, 3);
         assert_eq!(parse("describe 1\n\ndevice").unwrap_err().line, 2);
     }
 

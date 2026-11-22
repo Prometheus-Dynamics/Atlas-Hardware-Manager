@@ -13,8 +13,8 @@ atlas-types = { path = "../../core/types" }
 orion = { workspace = true, features = ["topics", "provider"] }
 # The same rev as the locked `orion` crate: the declaration of a topic is decoded with them, as
 # Orion's own tools do.
-orion-msg-topics = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f" }
-orion-wire = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d4010a453a5399dc6007f03a6dfc32c8d39d5d2f" }
+orion-msg-topics = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5" }
+orion-wire = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "19be7e04ccd8ea850bf22cd3f48d2536e34856a5" }
 tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]

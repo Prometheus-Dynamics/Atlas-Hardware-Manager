@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use atlas_image::Verity;
-use lemnos_slot_store::manifest::{Manifest as LemnosManifest, Verity as LemnosVerity};
+use lemnos_slot_store::manifest::{
+    BUILD_MODES, MEDIUMS, Manifest as LemnosManifest, Verity as LemnosVerity,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::BundleError;
@@ -28,6 +30,19 @@ pub struct SlotMeta {
     pub board: String,
     pub kernel: Option<String>,
     pub display_name: Option<String>,
+    /// How the builder made the slot (`build.mode`): `clean` or `dev-reuse` (Lemnos's `BUILD_MODES`).
+    /// `None` writes no `build` key, as Atlas's own bundling from an image does.
+    pub build_mode: Option<String>,
+    /// The storage medium the slot's root is read from (`medium`): one of Lemnos's `MEDIUMS`, the board
+    /// file's `[flash] medium`. A board refuses a slot of another medium; `None` is never refused on it.
+    pub medium: Option<String>,
+}
+
+/// `build`: how the builder made the slot.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BuildEntry {
+    /// `clean` or `dev-reuse` as written (a reader keeps any other text).
+    pub mode: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +58,10 @@ pub struct SlotManifest {
     pub kernel: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<BuildEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub medium: Option<String>,
     pub image: ImageEntry,
     pub verity: VerityEntry,
     pub boot: BootEntry,
@@ -99,6 +118,8 @@ impl SlotManifest {
             board: meta.board.clone(),
             kernel: meta.kernel.clone(),
             display_name: meta.display_name.clone(),
+            build: meta.build_mode.clone().map(|mode| BuildEntry { mode }),
+            medium: meta.medium.clone(),
             image,
             verity: VerityEntry {
                 root_hash: verity.root_hash.clone(),
@@ -140,6 +161,12 @@ impl SlotManifest {
             board: self.board.clone(),
             kernel: self.kernel.clone().unwrap_or_default(),
             display_name: self.display_name.clone().unwrap_or_default(),
+            build_mode: self
+                .build
+                .as_ref()
+                .map(|build| build.mode.clone())
+                .unwrap_or_default(),
+            medium: self.medium.clone().unwrap_or_default(),
             image_size: self.image.size,
             image_sha256: self.image.sha256.clone(),
             verity: LemnosVerity {
@@ -170,6 +197,8 @@ impl SlotManifest {
             board: lemnos.board,
             kernel: text(lemnos.kernel),
             display_name: text(lemnos.display_name),
+            build: text(lemnos.build_mode).map(|mode| BuildEntry { mode }),
+            medium: text(lemnos.medium),
             image: ImageEntry {
                 size: lemnos.image_size,
                 sha256: lemnos.image_sha256,
@@ -185,6 +214,29 @@ impl SlotManifest {
                 config: lemnos.boot_config,
             },
         }
+    }
+
+    /// Checks the fields a writer sets beyond what a reader needs: `build.mode` and `medium` must be values
+    /// Lemnos's writer takes (a reader keeps any text, so [`Self::validate`] does not check them).
+    pub(crate) fn validate_written(&self) -> Result<(), BundleError> {
+        if let Some(build) = &self.build
+            && !BUILD_MODES.contains(&build.mode.as_str())
+        {
+            return Err(BundleError::Malformed(format!(
+                "build.mode {:?} is not one of {}",
+                build.mode,
+                BUILD_MODES.join(", ")
+            )));
+        }
+        if let Some(medium) = &self.medium
+            && !MEDIUMS.contains(&medium.as_str())
+        {
+            return Err(BundleError::Malformed(format!(
+                "medium {medium:?} is not one of {}",
+                MEDIUMS.join(", ")
+            )));
+        }
+        Ok(())
     }
 
     /// Checks what a reader needs before it trusts the fields.
