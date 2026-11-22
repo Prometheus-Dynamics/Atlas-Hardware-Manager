@@ -1,20 +1,41 @@
 #!/bin/sh
 # /init, the first program of the bcm2712 flasher's initramfs (the kernel runs it: rdinit=/init). The kernel does not
 # mount devtmpfs for an initramfs, so this does, gives init the console on stdin, stdout and stderr when there is
-# one, arms the return, and hands over to BusyBox init, which reads /etc/inittab.
+# one, and hands over to BusyBox init, which reads /etc/inittab.
+#
+# The way back (HeliOS and Lemnos, 2026-11-22; docs/prs/D6.md, "The return"). Nothing here arms the firmware's
+# one-shot RPIBOOT on a good boot: the order holds for the next boot whatever ends this one, so it would send the
+# flasher's own success reboot to RPIBOOT instead of the new slot. Instead:
+#   - this script's own failure paths (no daemon, no board file, no init) ask Lemnos's `lemnos-way-back rpiboot`,
+#     then restart the board;
+#   - lemnosd's required_within_s on the gadget and the board file's [boot] loop_return cover a daemon that runs but
+#     whose gadget never comes up (Lemnos REQUIRED-BOUND);
+#   - only the bench variant arms the one-shot first (BENCH_RETURN, installed by flasher-bench-return, never by the
+#     product): a test boot of an unproven image should end in RPIBOOT.
+WAY_BACK=/usr/bin/lemnos-way-back
+BENCH_RETURN=/usr/lib/flasher/bench-return
+
+way_back() {  # <reason>: back to the PC's USB boot, then restart
+	echo "flasher /init: $1: taking the way back to RPIBOOT"
+	if [ -x "$WAY_BACK" ]; then
+		"$WAY_BACK" rpiboot || echo "flasher /init: $WAY_BACK refused: the restart boots the eMMC"
+	else
+		echo "flasher /init: no $WAY_BACK in this image: the restart boots the eMMC"
+	fi
+	sleep 1
+	reboot -f
+	echo b > /proc/sysrq-trigger 2>/dev/null
+}
+
 mount -t devtmpfs devtmpfs /dev
 if (exec 0</dev/console) 2>/dev/null; then
 	exec 0</dev/console 1>/dev/console 2>&1
 fi
-# The return (HeliOS rule, 2026-11-22: a RAM boot of an image not yet proven on the board carries its own way back).
-# Before the real init, RETURN arms the firmware's one-shot RPIBOOT (mailbox tag 0x0003808b, value 0x3), so the
-# board's next restart, from a hang, the watchdog or a power-safe reboot, comes back to the PC's USB boot and never
-# to a half-state. The tool is Lemnos's (asked for 2026-11-22); until an image installs it here, the boot says so on
-# the console and this image is not RAM-booted on a board (docs/prs/D6.md, "The return").
-RETURN=/usr/lib/flasher/arm-return
-if [ -x "$RETURN" ]; then
-	"$RETURN" || echo "flasher /init: $RETURN failed: NO RETURN ARMED"
-else
-	echo "flasher /init: no $RETURN in this image: NO RETURN ARMED"
+if [ -x "$BENCH_RETURN" ]; then
+	"$BENCH_RETURN" || echo "flasher /init: $BENCH_RETURN failed: NO BENCH RETURN ARMED"
 fi
+[ -x /usr/bin/lemnosd ] || way_back "no /usr/bin/lemnosd"
+[ -r /etc/lemnos/board.toml ] || way_back "no readable /etc/lemnos/board.toml"
+[ -x /sbin/init ] || way_back "no /sbin/init"
 exec /sbin/init "$@"
+way_back "exec /sbin/init failed"
