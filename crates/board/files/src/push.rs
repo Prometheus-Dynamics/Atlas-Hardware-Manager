@@ -182,6 +182,14 @@ impl Push {
         self.shared.counters()
     }
 
+    /// What the board said when it committed the file (its `FileStatus` detail), verbatim; empty when it said
+    /// nothing. `None` until the push is committed. A board that takes a file into a device answers here with the
+    /// device's result (Lemnos's first-flash sink: `raw_bytes=<n> outcome=<code>`).
+    #[must_use]
+    pub fn answer(&self) -> Option<String> {
+        self.shared.answer()
+    }
+
     /// Stops the push. Bytes the board already holds stay there, and pushing the same file again
     /// resumes from them. Returns false when the push had already ended.
     pub fn cancel(&self) -> bool {
@@ -318,6 +326,7 @@ async fn run(pending: &Pending) -> Result<(), String> {
                             transfer.received
                         ));
                     }
+                    shared.committed_with(transfer.detail.clone());
                     shared.finish(Stage::Committed);
                     return Ok(());
                 }

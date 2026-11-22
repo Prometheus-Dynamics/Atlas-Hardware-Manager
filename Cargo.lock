@@ -221,6 +221,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-first-flash"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-actions",
+ "atlas-files",
+ "atlas-flash-flow",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "orion",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-flash-flow"
 version = "2026.1.0-dev"
 dependencies = [

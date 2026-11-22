@@ -180,6 +180,7 @@ async fn push_through_drops(rig: &Rig, size: u64, seed: u64, cuts: &[f64]) -> Co
     )
     .await
     .expect("the push starts");
+    assert_eq!(push.answer(), None, "nothing is committed yet");
     for fraction in cuts {
         let at = (size as f64 * fraction) as u64;
         progress_where(&push, "the board holds the cut point", |p| p.sent >= at).await;
@@ -193,6 +194,12 @@ async fn push_through_drops(rig: &Rig, size: u64, seed: u64, cuts: &[f64]) -> Co
     let progress = push.progress();
     assert_eq!(progress.stage, Stage::Committed, "{progress:?}");
     assert_eq!(progress.sent, size);
+    // The simulated comm core's receiver commits with no words; a board's sink gives its own.
+    assert_eq!(
+        push.answer().as_deref(),
+        Some(""),
+        "the board's commit answer is kept"
+    );
     let committed = rig.node.shelf().committed.lock().unwrap();
     let data = committed
         .get(destination)

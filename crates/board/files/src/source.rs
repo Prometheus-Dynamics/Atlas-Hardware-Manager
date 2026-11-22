@@ -51,6 +51,8 @@ pub(crate) struct Shared {
     max_in_flight: AtomicU64,
     attempts: AtomicU64,
     meter: Mutex<Meter>,
+    /// The board's words with its commit, once it committed.
+    answer: Mutex<Option<String>>,
     progress: watch::Sender<Progress>,
 }
 
@@ -79,6 +81,7 @@ impl Shared {
             max_in_flight: AtomicU64::new(0),
             attempts: AtomicU64::new(0),
             meter: Mutex::new(Meter::default()),
+            answer: Mutex::new(None),
             progress,
         };
         (shared, receiver)
@@ -207,6 +210,16 @@ impl Shared {
                 progress.stage = stage;
             }
         });
+    }
+
+    /// The board committed the file with these words. Kept before the stage moves to committed, so a reader that
+    /// sees the stage finds them.
+    pub(crate) fn committed_with(&self, detail: String) {
+        *lock(&self.answer) = Some(detail);
+    }
+
+    pub(crate) fn answer(&self) -> Option<String> {
+        lock(&self.answer).clone()
     }
 
     pub(crate) fn current(&self) -> Progress {

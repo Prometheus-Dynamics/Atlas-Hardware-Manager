@@ -8,7 +8,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_flash_flow::{
     Control, FirstFlash, Flasher, Flow, FlowEnd, FlowView, ImagePlan, Loaded, Loader, Say,
-    SlotWatch, StepError, StepKey, StepState, Target, WritePhase, WriteProgress, WriteReport,
+    SlotWatch, StepError, StepKey, StepState, Stream, Target, WritePhase, WriteProgress,
+    WriteReport,
 };
 
 fn target() -> Target {
@@ -27,6 +28,8 @@ fn image() -> ImagePlan {
         slot: "raze-base-2026.1.0-dev.1303-58d8b5d4".into(),
         raw_size: 123_731_968,
         sha256: "eb5777b70a37ce02a1314bc87161d2d8e781cc2d0e0b22430f73668a5d3136ae".into(),
+        stream: Stream::Xz,
+        signature: None,
     }
 }
 

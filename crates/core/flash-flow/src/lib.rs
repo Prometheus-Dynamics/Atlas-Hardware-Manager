@@ -38,7 +38,7 @@ mod view;
 pub use control::Control;
 pub use flow::{Flow, FlowEnd, MAX_BACKOFF};
 pub use seams::{
-    FirstFlash, Flasher, ImagePlan, Loaded, Loader, Say, SlotWatch, StepError, Target,
+    FirstFlash, Flasher, ImagePlan, Loaded, Loader, Say, SlotWatch, StepError, Stream, Target,
     WriteProgress, WriteReport,
 };
 pub use view::{FlowView, LogLine, StepKey, StepState, StepView, WritePhase};

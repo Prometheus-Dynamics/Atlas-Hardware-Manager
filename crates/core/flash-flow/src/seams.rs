@@ -37,6 +37,21 @@ pub struct ImagePlan {
     pub raw_size: u64,
     /// The raw image's SHA-256, lowercase hex.
     pub sha256: String,
+    /// How the file carries the image: xz or raw.
+    pub stream: Stream,
+    /// The image's signature record (Lemnos's 108-byte `LMNSSIG1`) as 216 lowercase hex digits, or `None` when the
+    /// image is unsigned. An xz image carries it as its second stream, and the manifest repeats it.
+    pub signature: Option<String>,
+}
+
+/// How a first-flash file carries its image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Stream {
+    /// An xz file: the image's stream, then optionally the signature record's.
+    Xz,
+    /// The raw image.
+    Raw,
 }
 
 /// What a loader run did, for the page.

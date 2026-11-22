@@ -1,0 +1,186 @@
+//! The first-flash write as Lemnos's bridge takes it, over a [`FlasherBoard`]: the manifest pushed, then the image
+//! streamed into `system.flash/1`'s write, its answer read as fields, `verify` run, and the restart asked for.
+
+use std::io::Cursor;
+
+use async_trait::async_trait;
+use atlas_files::PushSource;
+use atlas_flash_flow::{
+    FirstFlash, ImagePlan, Say, StepError, WritePhase, WriteProgress, WriteReport,
+};
+
+use crate::wire;
+
+/// The flasher board file's first-flash device (Lemnos `testing/boards/bcm2712-flasher.toml`, `id = "flash"`).
+pub const FLASH_DEVICE: &str = "flash";
+/// The flasher board file's restart device (`id = "reboot"`).
+pub const REBOOT_DEVICE: &str = "reboot";
+
+/// How a call to the board went wrong.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CallError {
+    /// It was not sent: there is no session yet. Trying again is safe.
+    NotSent(String),
+    /// It may have been sent, and its answer is lost: the session broke, or the board went quiet.
+    Lost(String),
+    /// The board answered no, or its answer is not one Atlas reads. It will not change by itself.
+    Refused(String),
+}
+
+impl CallError {
+    fn into_step(self) -> StepError {
+        match self {
+            Self::NotSent(words) | Self::Lost(words) => StepError::Again(words),
+            Self::Refused(words) => StepError::Refused(words),
+        }
+    }
+}
+
+/// Bytes done of a total, as a push or a job reports them.
+pub type Bytes<'a> = dyn Fn(u64, u64) + Send + Sync + 'a;
+
+/// The two things the write needs of a flasher's node. [`crate::OrionBoard`] is the real one.
+#[async_trait]
+pub trait FlasherBoard: Send + Sync {
+    /// Pushes `source` to `destination` and returns the board's words with its commit. A lost session is waited for
+    /// inside the push; an `Err` is the end of it.
+    async fn push(
+        &self,
+        destination: &str,
+        source: Box<dyn PushSource>,
+        progress: &Bytes<'_>,
+    ) -> Result<String, StepError>;
+
+    /// Runs `<device>`'s method with `words` through the bridge (`lemnos.<device>.call`) and returns its output.
+    /// `job` follows a long job to its end, with its bytes as progress.
+    async fn call(
+        &self,
+        device: &str,
+        words: &[&str],
+        job: bool,
+        progress: &Bytes<'_>,
+    ) -> Result<Vec<u8>, CallError>;
+}
+
+/// The first-flash write through Lemnos's bridge on a flasher node.
+#[derive(Debug)]
+pub struct BridgeFlash<B> {
+    board: B,
+    flash: String,
+    reboot: String,
+}
+
+impl<B: FlasherBoard> BridgeFlash<B> {
+    /// The write on `board`, to the flasher board file's [`FLASH_DEVICE`] and [`REBOOT_DEVICE`].
+    pub fn new(board: B) -> Self {
+        Self::with_devices(board, FLASH_DEVICE, REBOOT_DEVICE)
+    }
+
+    /// The write on `board`, with the board file's own device ids.
+    pub fn with_devices(board: B, flash: &str, reboot: &str) -> Self {
+        Self {
+            board,
+            flash: flash.to_owned(),
+            reboot: reboot.to_owned(),
+        }
+    }
+
+    /// The board this writes through.
+    pub const fn board(&self) -> &B {
+        &self.board
+    }
+}
+
+#[async_trait]
+impl<B: FlasherBoard> FirstFlash for BridgeFlash<B> {
+    async fn write(
+        &self,
+        image: &ImagePlan,
+        progress: &(dyn Fn(WriteProgress) + Send + Sync),
+        say: &Say<'_>,
+    ) -> Result<WriteReport, StepError> {
+        let manifest = wire::manifest(image).map_err(StepError::Refused)?;
+        let (manifest_to, image_to) = wire::destinations(&self.flash, image.stream);
+
+        // The bridge reads the manifest when the image's push begins, so it goes first, every attempt.
+        say(format!("sending the manifest to {manifest_to}"));
+        self.board
+            .push(&manifest_to, Box::new(Cursor::new(manifest)), &|_, _| {})
+            .await?;
+
+        let file = std::fs::File::open(&image.file).map_err(|error| {
+            StepError::Refused(format!(
+                "the image {} cannot be opened: {error}",
+                image.file
+            ))
+        })?;
+        say(format!("streaming {} to {image_to}", image.file));
+        // Each piece goes to the board's write before the board takes the next, so the bytes the board took are the
+        // bytes it wrote (of the file as sent: compressed for xz).
+        let writing = |done, total| {
+            progress(WriteProgress {
+                phase: WritePhase::Writing,
+                done,
+                total,
+            });
+        };
+        let answer = self.board.push(&image_to, Box::new(file), &writing).await?;
+        let committed = wire::committed(&answer).map_err(StepError::Refused)?;
+        if committed.raw_bytes != image.raw_size {
+            return Err(StepError::Refused(format!(
+                "the board wrote {} bytes of an image of {}",
+                committed.raw_bytes, image.raw_size
+            )));
+        }
+        let signature = committed.outcome.words();
+        say(format!(
+            "the board wrote {} bytes; {signature}",
+            committed.raw_bytes
+        ));
+
+        say("reading the image back on the board".to_owned());
+        let verifying = |done, total| {
+            progress(WriteProgress {
+                phase: WritePhase::Verifying,
+                done,
+                total,
+            });
+        };
+        let output = self
+            .board
+            .call(&self.flash, &["verify"], true, &verifying)
+            .await
+            .map_err(CallError::into_step)?;
+        let verified = wire::verified(&output).map_err(StepError::Refused)?;
+        if verified != image.raw_size {
+            return Err(StepError::Refused(format!(
+                "the board read back {verified} bytes of an image of {}",
+                image.raw_size
+            )));
+        }
+        say(format!(
+            "the board read back {verified} bytes and they match"
+        ));
+        Ok(WriteReport {
+            written: committed.raw_bytes,
+            verified,
+            signature: signature.to_owned(),
+        })
+    }
+
+    async fn reboot(&self, say: &Say<'_>) -> Result<(), StepError> {
+        match self
+            .board
+            .call(&self.reboot, &["reboot"], false, &|_, _| {})
+            .await
+        {
+            Ok(_) => Ok(()),
+            // A restart takes the session with it: an answer lost after the request went is the restart.
+            Err(CallError::Lost(words)) => {
+                say(format!("the board went away, as a restart does: {words}"));
+                Ok(())
+            }
+            Err(error) => Err(error.into_step()),
+        }
+    }
+}

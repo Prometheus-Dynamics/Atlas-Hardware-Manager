@@ -1,0 +1,27 @@
+[package]
+name = "atlas-first-flash"
+description = "The first-flash write over Orion (D6): a board's flasher node found by its identity and state, the image pushed to the Lemnos bridge's system-flash sink with its manifest, the board's answer read as fields, verified and restarted. Fills atlas-flash-flow's Flasher and FirstFlash seams; names no family or board."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-actions = { path = "../actions" }
+atlas-files = { path = "../files" }
+atlas-flash-flow = { path = "../../core/flash-flow" }
+atlas-jobs = { path = "../../core/jobs" }
+atlas-session = { path = "../session" }
+orion = { workspace = true }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
