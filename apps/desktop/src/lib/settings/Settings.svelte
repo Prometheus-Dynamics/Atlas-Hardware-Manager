@@ -48,14 +48,22 @@
   let said = $state<{ where: "keys" | "robots" | "support"; words: string } | null>(null);
   const words = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-  async function set(change: Partial<Settings>) {
-    if (!current) return;
+  // Changes are sent one after another, each on top of what the core answered to the one before:
+  // two controls changed quickly must not send the second on top of a value that is already old.
+  let answered: Settings | null = null;
+  let sending: Promise<void> = Promise.resolve();
+  function set(change: Partial<Settings>) {
     breadcrumb(`setting changed: ${Object.keys(change).join(", ")}`);
-    try {
-      await call("settings.set", { ...current, ...change });
-    } catch (error) {
-      logUiError("settings.set", error);
-    }
+    sending = sending.then(async () => {
+      const base = answered ?? current;
+      if (!base) return;
+      try {
+        answered = await call<Settings>("settings.set", { ...base, ...change });
+      } catch (error) {
+        logUiError("settings.set", error);
+      }
+    });
+    return sending;
   }
 
   // ----- keys --------------------------------------------------------------------------------

@@ -20,8 +20,8 @@
 # plain `cargo build` and `tauri dev` need no helper binary in place.
 #
 # ATLAS_VERSION (set from the tag for a release) is the version the app reports and its installers
-# carry; without it they carry <release>-dev.<commit count>+<commit> (scripts/version-rule.sh). An
-# rpm's version cannot hold `-`: a dev build's rpm is versioned <release>~dev.<count>.
+# carry; without it they carry <release>-dev.<commit count>+<commit> (scripts/version-rule.sh). The
+# .deb and the .rpm carry a dev version as <release>~dev.<count>+<commit>, below its release.
 #
 # Each installer's size is printed (lean rule). Nothing is uploaded or published by this script.
 set -euo pipefail
@@ -73,12 +73,8 @@ if [ ${#tauri_kinds[@]} -gt 0 ]; then
 
   configs=(--config src-tauri/tauri.bundle.conf.json)
   [[ $triple == *windows* ]] && configs+=(--config src-tauri/tauri.windows-bundle.conf.json)
-  # The version the packages carry. An rpm version holds no `-` and no `+`.
+  # The version the packages carry. Tauri's rpm bundler writes a dev version's `-` as `~` itself.
   configs+=(--config "{\"version\":\"$ATLAS_VERSION\"}")
-  if [[ " ${tauri_kinds[*]} " == *" rpm "* && $ATLAS_VERSION == *-* ]]; then
-    rpm_version=${ATLAS_VERSION%%+*}; rpm_version=${rpm_version/-/\~}
-    echo "bundle: the rpm is versioned $rpm_version"
-  fi
   echo "==> bundle: ${tauri_kinds[*]} (Tauri's bundler)"
   bundles=$(IFS=,; echo "${tauri_kinds[*]}")
   (cd $app && bun install --frozen-lockfile >/dev/null && bun run tauri build --bundles "$bundles" "${configs[@]}")

@@ -10,6 +10,7 @@
 //!   the UI never replays steps.
 //! - [`drivers`]: the real drivers and the computer's own links.
 //! - [`flash`]: the flash flow: the image, the boot ROM loader as a job, and the disk writer.
+//! - [`update`]: Atlas updating itself from a signed release feed.
 //! - [`window`]: the Tauri window: one async command (`call`) and one event (`atlas`).
 //! - `sim` (feature `sim`): the simulated devices, and the UI bridge that serves the same calls
 //!   and events to a browser for the click tests.

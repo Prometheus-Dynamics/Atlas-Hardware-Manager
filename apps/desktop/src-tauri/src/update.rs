@@ -451,7 +451,11 @@ impl Updates {
                         Err(error @ ReleaseError::Download { .. }) => {
                             state.phase = Phase::Retrying;
                             state.attempt += 1;
-                            state.error = Some(error.to_string());
+                            // The line is short: the reason without the address. The log has both.
+                            state.error = Some(match &error {
+                                ReleaseError::Download { message, .. } => message.clone(),
+                                other => other.to_string(),
+                            });
                             state.retry_at_ms = Some(
                                 now_ms() + u64::try_from(wait.as_millis()).unwrap_or(u64::MAX),
                             );
