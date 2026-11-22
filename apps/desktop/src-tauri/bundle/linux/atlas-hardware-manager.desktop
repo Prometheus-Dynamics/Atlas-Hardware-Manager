@@ -5,5 +5,5 @@ Comment=Find, flash, update and watch your boards
 Exec=atlas-app
 Icon=atlas-app
 Terminal=false
-Categories=Utility;Development;
+Categories=Utility;
 StartupWMClass=atlas-app
