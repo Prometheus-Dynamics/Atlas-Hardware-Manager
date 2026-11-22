@@ -7,7 +7,7 @@ description = "the Lemnos bridge to Orion, lemnos-orion (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "266622d51c970851245111ac8640f17b6a3a9979"  # Lemnos 266622d5 (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses + boot-loop fallback), coordinator 2026-11-22, pin move 3
+ref = "bed325fb0c695a695eae23b5e7a48993c29394a0"  # Lemnos bed325fb (pr/BOOT-DISK-WAIT-0d37: 0d37cc55 + boot-disk wait + eMMC hardware areas are not boot disks + their sysfs set-aside + MFD-cell watchdog + real gadget endpoint addresses + boot-loop fallback + module node claim + unjudged count clear), coordinator 2026-11-22, pin move 3
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

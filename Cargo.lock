@@ -1446,7 +1446,7 @@ dependencies = [
 [[package]]
 name = "lemnos-slot-store"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=266622d51c970851245111ac8640f17b6a3a9979#266622d51c970851245111ac8640f17b6a3a9979"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=bed325fb0c695a695eae23b5e7a48993c29394a0#bed325fb0c695a695eae23b5e7a48993c29394a0"
 dependencies = [
  "sha2 0.10.9",
 ]
