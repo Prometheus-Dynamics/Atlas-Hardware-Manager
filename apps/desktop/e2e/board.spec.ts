@@ -22,7 +22,7 @@ test("the top bar says who the board is, and readings arrive and move", async ({
   await expect(top.locator(".chip.neu")).toHaveText(["slot-4", "demo-os 2026.11.2", "USB 1-2", "127.0.0.1"]);
   await expect(top.getByRole("button")).toHaveText(["Locate", "Reboot"]);
 
-  const tiles = app.locator('[data-panel="readings"] .tile');
+  const tiles = app.locator('[data-panel="readings"] .tile[data-reading]');
   await expect(tiles).toHaveCount(5);
   await expect(tiles.locator(".lbl")).toHaveText(["pressure", "temperature", "accel x", "accel y", "accel z"]);
   await expect(tiles.first().locator(".val small")).toHaveText("kPa");
@@ -38,7 +38,7 @@ test("the top bar says who the board is, and readings arrive and move", async ({
 test("log lines the board writes arrive, newest first", async ({ app, bridge }) => {
   await openBoard(app);
   // The board is being read (its readings are on the page) before it writes the line.
-  await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
   await bridge.call("sim.node", { log: "camera: frame loop started" });
   const lines = app.locator('[data-panel="dock"] .lines .ln');
   await expect(lines.first()).toContainText("camera: frame loop started");
@@ -57,6 +57,35 @@ test("Locate and Reboot run at once, with no confirmation, and say what the boar
   await top.getByRole("button", { name: "Reboot" }).click();
   await expect(top.locator('[data-said="ok"]')).toContainText("system.reboot.reboot");
   expect(await bridge.call("sim.node", { runs: "system.reboot.reboot" })).toBe(1);
+});
+
+test("a refusal is on the page in the board's own words, in full: an action's in the log pane, a slot's in its row", async ({ app, bridge }) => {
+  await openBoard(app);
+  await expect(app.locator("[data-slot]")).toHaveCount(4);
+  const whole = (el: Element) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight;
+  // The board refuses the next Locate, with more words than a chip holds.
+  const words = "the status LED is held by a self-test that is still running, and it is not given to another caller until that test has ended";
+  await bridge.call("sim.node", { refuse: ["locate", words] });
+  await app.locator("header.top").getByRole("button", { name: "Locate" }).click();
+  const chip = app.locator('header.top [data-said="refused"]');
+  await expect(chip).toContainText("locate");
+  await expect(chip).not.toHaveAttribute("title");
+  const line = app.locator('[data-panel="dock"] .lines [data-refused]');
+  await expect(line).toContainText(`locate refused: `);
+  await expect(line).toContainText(words);
+  expect(await line.locator("span").last().evaluate(whole)).toBe(true);
+  await expectNoOverflow(app);
+
+  // The board's own security is on: it will not make an unsigned slot the default, and says so in that slot's row.
+  await bridge.call("sim.node", { security: true });
+  await slot(app, "slot-1").getByRole("button", { name: "Set default" }).click();
+  const refused = slot(app, "slot-1").locator("[data-refused]");
+  await expect(refused).toContainText("default refused: ");
+  await expect(refused).toContainText("slot-1 is not signed by a trusted key, and security is on");
+  await expect(refused).not.toHaveAttribute("title");
+  expect(await refused.evaluate(whole)).toBe(true);
+  await expect(slot(app, "slot-3").locator("[data-refused]")).toHaveCount(0);
+  await expect(app.locator('[data-panel="dock"] .lines [data-refused]')).toHaveCount(0);
 });
 
 test("slots: what each row offers, pin and unpin, and set default", async ({ app }) => {
@@ -119,13 +148,16 @@ test("an install is a job with progress, and ends as a new slot", async ({ app, 
   await openBoard(app);
   await bridge.call("sim.node", { hold_installs: true });
   await bridge.call("sim.pick_bundle", { slot: "slot-5", version: "2026.11.14" });
-  await app.getByRole("button", { name: "Install…" }).click();
+  const install = app.getByRole("button", { name: "Install…" });
+  const place = await install.boundingBox();
+  await install.click();
   const row = app.locator("[data-install]");
   await expect(row.locator(".l1 b")).toHaveText("demo-os-2026.11.14.tar");
   await expect(row).toHaveClass(/write/);
   await expect(row.locator(".bar")).toBeVisible();
-  // While it runs there is one install at a time: the button is not offered.
-  await expect(app.getByRole("button", { name: "Install…" })).toHaveCount(0);
+  // While it runs there is one install at a time: the button stays where it is and cannot be pressed.
+  await expect(install).toBeDisabled();
+  expect(await install.boundingBox()).toEqual(place);
   await expect(row.locator(".chip")).toHaveText(/Writing|Installing|Waiting for the board/);
   await bridge.call("sim.node", { hold_installs: false });
   await expect(slot(app, "slot-5").locator(".l1 b")).toHaveText("slot-5 · 2026.11.14");
@@ -144,6 +176,11 @@ test("a bundle for another board is refused on the computer, in the board librar
   const row = app.locator('[data-install="failed"]');
   await expect(row.locator(".chip.err")).toHaveText("Failed");
   await expect(row.locator(".l2.err")).toContainText("another-board");
+  // The reason is on the page in full: nothing of it is cut off, and none of it is in a tooltip.
+  const reason = row.locator("[data-install-detail]");
+  await expect(reason).not.toHaveAttribute("title");
+  expect(await reason.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expectNoOverflow(app);
   await expect(app.locator("[data-slot]")).toHaveCount(4);
   await row.getByRole("button", { name: "Dismiss" }).click();
   await expect(app.locator("[data-install]")).toHaveCount(0);
@@ -200,21 +237,31 @@ test("the dock's tabs: hardware as the board describes it, and what is not in th
 
 test("a board that stops answering shows as offline, and reads again when it is back", async ({ app, bridge }) => {
   await openBoard(app);
-  await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
+  const buttons = app.locator("header.top").getByRole("button");
+  await expect(buttons.first()).toBeEnabled();
+  const places = [await buttons.nth(0).boundingBox(), await buttons.nth(1).boundingBox(), await app.getByRole("button", { name: "Install…" }).boundingBox()];
   await bridge.call("sim.set_online", { id: BOARD.id, online: false });
   await expect(app.locator("header.top .chip.off")).toHaveText("Offline");
-  await expect(app.locator('[data-panel="readings"] .empty-box')).toContainText("is offline");
+  // The tiles stay, with no data in them, and the panel says why.
+  await expect(app.locator('[data-panel="readings"] [data-tiles="offline"] .tile .val')).toHaveText(Array(5).fill("— no data"));
+  await expect(app.locator('[data-panel="readings"] .ph')).toContainText("offline · nothing is read until it answers again");
   await expect(app.locator('[data-panel="slots"] .empty-box')).toContainText("is offline");
-  await expect(app.locator("header.top").getByRole("button")).toHaveCount(0);
+  // Locate, Reboot and Install… stay where they were, and cannot be pressed.
+  await expect(buttons).toHaveText(["Locate", "Reboot"]);
+  await expect(buttons.nth(0)).toBeDisabled();
+  await expect(buttons.nth(1)).toBeDisabled();
+  await expect(app.getByRole("button", { name: "Install…" })).toBeDisabled();
+  expect([await buttons.nth(0).boundingBox(), await buttons.nth(1).boundingBox(), await app.getByRole("button", { name: "Install…" }).boundingBox()]).toEqual(places);
   await bridge.call("sim.set_online", { id: BOARD.id, online: true });
   await expect(app.locator("header.top .chip.ok")).toHaveText("Running");
-  await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
   await expect(app.locator("[data-slot]")).toHaveCount(4);
 });
 
 test("a board whose Lemnos stops answering keeps its last readings, marked", async ({ app, bridge }) => {
   await openBoard(app);
-  await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
   await bridge.call("sim.node", { lemnos: false });
   await expect(app.locator('[data-panel="slots"] [data-slots-state="error"], [data-panel="slots"] [data-slot]').first()).toBeVisible();
   await bridge.call("sim.node", { lemnos: true });
@@ -226,7 +273,7 @@ test("a board in recovery that is not an Orion node has nothing to read, and say
   await expect(app.locator("header.top .chip.warn")).toHaveText("Recovery");
   await expect(app.locator('[data-panel="readings"] .empty-box')).toContainText("not reached through Orion");
   await expect(app.locator('[data-panel="slots"] .empty-box')).toContainText("not reached through Orion");
-  await expect(app.getByRole("button", { name: "Install…" })).toHaveCount(0);
+  await expect(app.getByRole("button", { name: "Install…" })).toBeDisabled();
 });
 
 test.describe("a plain Orion node", () => {
@@ -239,7 +286,10 @@ test.describe("a plain Orion node", () => {
     await expect(app.locator("header.top .chip.ok")).toHaveText("Running");
     await expect(app.locator('[data-slots-state="none"]')).toContainText("has no slots");
     await expect(app.locator('[data-panel="readings"] .empty-box')).toContainText("no readings");
-    await expect(app.locator("header.top").getByRole("button")).toHaveCount(0);
+    // The top bar's two buttons are in their place; this node lists neither action, so neither can be pressed.
+    await expect(app.locator("header.top").getByRole("button")).toHaveText(["Locate", "Reboot"]);
+    for (const button of await app.locator("header.top").getByRole("button").all()) await expect(button).toBeDisabled();
+    await expect(app.getByRole("button", { name: "Install…" })).toBeDisabled();
     await expectNoOverflow(app);
   });
 });
@@ -249,7 +299,7 @@ for (const size of SIZES) {
     await app.setViewportSize(size);
     await openBoard(app);
     await expect(app.locator("[data-slot]")).toHaveCount(4);
-    await expect(app.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+    await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
     await expectNoOverflow(app);
     for (const tab of ["Hardware", "Files", "Terminal", "Logs"]) {
       await app.locator('[data-panel="dock"] .tabbar').getByText(tab, { exact: true }).click();

@@ -4,8 +4,9 @@
   // here that asks; the footer keeps its height through every state.
   import Page from "../ui/Page.svelte";
   import Icon from "../ui/Icon.svelte";
+  import Skel from "../ui/Skel.svelte";
   import { call } from "../api/client";
-  import { breadcrumb, inventory, scan, topic } from "../stores/app.svelte";
+  import { app, breadcrumb, inventory, scan, topic } from "../stores/app.svelte";
   import { go } from "../stores/route.svelte";
   import { size } from "../ui/format";
   import { kindOf, nameOf } from "../devices/state";
@@ -25,6 +26,8 @@
     return `${link}${port ? ` · USB ${port}` : ""} · removable`;
   };
   const writing = $derived(write?.status === "writing");
+  /** The folder a chosen file is in, said beside its name. */
+  const folder = (path: string) => path.replace(/[\\/][^\\/]*$/, "") || "/";
 
   let confirming = $state(false);
   let busy = $state(false);
@@ -65,25 +68,36 @@
   <section class="panel" data-panel="image" data-image={image?.state ?? "none"}>
     <div class="ph">
       <h2>Image</h2><span class="grow"></span><span class="chip neu">first-flash image</span>
-      {#if !writing}
-        <button class="btn sm" class:pri={image?.state !== "ready"} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
-      {/if}
+      <!-- Always in its place: it cannot be pressed while a disk is being written. -->
+      <button class="btn sm" class:pri={app.ready && !writing && image?.state !== "ready"} disabled={!app.ready || writing} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
     </div>
     <div class="pb">
-      {#if image?.state === "refused"}
-        <div class="note err ell" style="margin-bottom:8px" title={image.words}>{image.words}</div>
-      {/if}
-      <dl class="kv">
-        <dt>File</dt><dd title={image?.path}>{image ? `${image.file} · ${size(image.bytes)}` : "none chosen yet"}{image?.state === "reading" ? " · reading" : ""}</dd>
-        <dt>Written as</dt><dd>the whole disk image, same as the first flash on a board</dd>
-        <dt>Verify</dt><dd>reads the card back after writing</dd>
+      <!-- The same three rows in every state, so the list below never moves. A refused file's
+           reason takes the place of the two rows that have nothing to say about it. -->
+      <dl class="kv" style="grid-template-rows:repeat(3,auto)">
+        <dt style="grid-area:1/1">File</dt>
+        <dd style="grid-area:1/2" data-file>
+          {#if !app.ready}<div class="ph-skel" style="width:40%;margin-top:3px"></div>
+          {:else if image}{image.file} · {size(image.bytes)}{image.state === "reading" ? " · reading" : ""} <span class="faint">in {folder(image.path)}</span>
+          {:else}none chosen yet{/if}
+        </dd>
+        {#if image?.state === "refused"}
+          <dt style="grid-area:2/1;visibility:hidden">Written as</dt>
+          <dt style="grid-area:3/1;visibility:hidden">Verify</dt>
+          <dd class="note err" style="grid-area:2/1/4/-1;white-space:normal;overflow:hidden" data-refused>{image.words}</dd>
+        {:else}
+          <dt style="grid-area:2/1">Written as</dt><dd style="grid-area:2/2">the whole disk image, same as the first flash on a board</dd>
+          <dt style="grid-area:3/1">Verify</dt><dd style="grid-area:3/2">reads the card back after writing</dd>
+        {/if}
       </dl>
     </div>
   </section>
 
   <section class="panel" style="min-height:0" data-panel="disks">
     <div class="ph"><h2>Disk</h2><span class="grow"></span><span class="kicker">system and internal disks are not listed</span></div>
-    {#if disks.length === 0}
+    {#if !app.ready}
+      <div class="pb flush tbl"><Skel rows={2} columns="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px" cells={3} /></div>
+    {:else if disks.length === 0}
       <div class="pb" style="display:flex;min-height:0;padding:0">
         <div class="empty-box"><div>No removable disk found. Insert a card or plug in a reader; it shows up here by itself.</div></div>
       </div>
@@ -123,12 +137,14 @@
         </div>
         <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.cancel")}>Cancel</button>
       {:else if write?.status === "done"}
-        <div class="note ok ell" style="flex:1" title={write.report?.sha256}>
+        <div class="note ok" style="flex:1;white-space:normal;overflow-wrap:anywhere" data-written>
           {write.file} is on {write.name}: {size(write.report?.bytes_written ?? 0)} written and read back. It can be removed.
+          {#if write.report?.sha256}<span class="mono">SHA-256 {write.report.sha256}</span>{/if}
         </div>
         <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Done</button>
       {:else if write}
-        <div class="note err ell" style="flex:1" title={write.words}>
+        <!-- Why the write failed, in full: it wraps instead of being cut. -->
+        <div class="note err" style="flex:1;white-space:normal" data-write-failed>
           {write.status === "cancelled" ? `Cancelled. ${write.name} is partly written and needs a new write.` : write.words}
         </div>
         <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Dismiss</button>
@@ -138,6 +154,8 @@
           <button class="btn sm" onclick={() => (confirming = false)}>Cancel</button>
           <button class="btn sm danger" onclick={erase}>Erase and write</button>
         </div>
+      {:else if !app.ready}
+        <div style="flex:1"><div class="ph-skel" style="width:40%"></div></div>
       {:else if flash && !flash.can_write_disks}
         <div class="muted ell" style="flex:1">This build cannot write a disk: its helper is not installed beside the app.</div>
       {:else if image?.state !== "ready"}

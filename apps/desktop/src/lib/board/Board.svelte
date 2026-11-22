@@ -5,6 +5,7 @@
   import Page from "../ui/Page.svelte";
   import Icon from "../ui/Icon.svelte";
   import Spark from "../ui/Spark.svelte";
+  import Skel from "../ui/Skel.svelte";
   import { call } from "../api/client";
   import { app, breadcrumb, inventory, scan, topic } from "../stores/app.svelte";
   import { clock, size } from "../ui/format";
@@ -45,11 +46,17 @@
   const list = $derived(board?.slots?.state === "ok" ? board.slots.list : undefined);
   const runningSlot = $derived(list?.slots.find((slot) => slot.running));
   const offered = $derived(online ? (board?.actions ?? []) : []);
-  // The two actions the top bar has a place for, when the board lists them as short actions.
+  // The two actions the top bar has a place for. Their buttons are always there, as the mockup
+  // draws them, and can be pressed when the board is online and lists them as short actions.
   const locate = $derived(offered.find((a) => a.name === "locate" && a.direct));
   const reboot = $derived(offered.find((a) => a.name === "system.reboot.reboot" && a.direct));
   /** What the last call said, shown for a few seconds. A refusal carries the board's own words. */
   const said = $derived(board?.said && app.now - board.said.at_ms < 8000 ? board.said : undefined);
+  /** The slot a refusal is about (a slot call is noted as "remove slot-4"): its words are shown
+   *  in that slot's row. Any other refusal is the first line of the board's log pane. */
+  const refusedSlot = $derived(said && !said.ok ? (list?.slots.find((slot) => said.what.endsWith(` ${slot.id}`))?.id ?? "") : "");
+  /** The board is online and its first read has not arrived: its panels show bars, not "none". */
+  const reading = $derived(online && (board === undefined || (board.reach === "orion" && (board.hardware?.length ?? 0) === 0 && !board.slots)));
 
   let busy = $state("");
   async function run(what: string, name: string, args: Record<string, unknown>) {
@@ -180,7 +187,38 @@
   });
 </script>
 
-{#if !device}
+<!-- A tile that is not read yet: a real tile's own lines, each a bar, so the panel is the height it will be. -->
+{#snippet loadingTile()}
+  <div class="tile" data-loading>
+    <div class="lbl" style="position:relative">&nbsp;<div class="ph-skel" style="position:absolute;left:0;top:2px;width:48%"></div></div>
+    <div class="val" style="position:relative">&nbsp;<div class="ph-skel" style="position:absolute;left:0;top:3px;width:66%;height:16px"></div></div>
+    <div class="foot" style="position:relative">&nbsp;<div class="ph-skel" style="position:absolute;left:0;top:2px;width:80%"></div></div>
+    <Spark values={[]} />
+  </div>
+{/snippet}
+
+{#if !app.ready}
+  <!-- Before the core's first answer nothing is known about this board, not even whether there is one. -->
+  <Page title="Board" crumb="Devices /" grid="grid-template-rows:auto minmax(0,1fr); grid-template-columns:minmax(0,1fr) minmax(0,1fr);">
+    <section class="panel" style="grid-column:1/-1" data-panel="readings">
+      <div class="ph"><h2>Readings</h2></div>
+      <div class="pb flush tiles">
+        {#each { length: 5 } as _, i (i)}
+          {@render loadingTile()}
+        {/each}
+      </div>
+    </section>
+    <section class="panel fill" style="min-height:0" data-panel="slots">
+      <div class="ph"><h2>Slots</h2><span class="grow"></span><button class="btn sm pri" disabled><Icon name="plus" />Install…</button></div>
+      <div class="pb flush"><Skel rows={3} row="slot tall" columns="" /></div>
+    </section>
+    <section class="panel dock" data-panel="dock">
+      <!-- svelte-ignore a11y_label_has_associated_control -->
+      <div class="tabbar">{#each TABS as [key, label] (key)}<label class:on={key === "logs"}>{label}</label>{/each}</div>
+      <div class="pb"><Skel rows={4} row="" style="height:17px;display:flex;align-items:center" /></div>
+    </section>
+  </Page>
+{:else if !device}
   <Page title="Board" crumb="Devices /" grid="grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr);">
     <section class="panel">
       <div class="pb" style="display:flex;min-height:0;padding:0">
@@ -200,27 +238,25 @@
         {#if online}<span class="chip neu">{word}</span>{:else}<span class="faint ell">last {word}</span>{/if}
       {/each}
       {#if said}
-        <span class="chip {said.ok ? 'ok' : 'err'} ell" style="flex:0 1 auto" title={said.words} data-said={said.ok ? "ok" : "refused"}>
+        <span class="chip {said.ok ? 'ok' : 'err'} ell" style="flex:0 1 auto" data-said={said.ok ? "ok" : "refused"}>
           {said.what}{said.words ? `: ${said.words}` : said.ok ? ": done" : ""}
         </span>
       {/if}
     {/snippet}
     {#snippet actions()}
-      {#if locate}
-        <button class="btn" title={locate.description ?? ""} onclick={() => run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
-      {/if}
-      {#if reboot}
-        <button class="btn" title={reboot.description ?? ""} onclick={() => run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
-      {/if}
+      <button class="btn" disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
+      <button class="btn" disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
     {/snippet}
 
     <section class="panel" style="grid-column:1/-1" data-panel="readings">
       <div class="ph">
         <h2>Readings</h2>
-        {#if online && tiles.length > 0}<span class="kicker">live · last 60 s</span>{/if}
+        {#if !online}<span class="kicker">offline · nothing is read until it answers again</span>
+        {:else if stale}<span class="kicker ell" data-stale>{stale.reason}</span>
+        {:else if tiles.length > 0}<span class="kicker">live · last 60 s</span>{/if}
         <span class="grow"></span>
         {#if stale && online}
-          <span class="chip warn ell" style="flex:0 1 auto" title={stale.reason}><span class="dot warn"></span>Not answering · shown as last read</span>
+          <span class="chip warn" style="flex:none"><span class="dot warn"></span>Not answering · shown as last read</span>
         {:else if online && board?.connection?.live}
           <span class="faint mono">updated {updated} s ago</span>
         {/if}
@@ -239,10 +275,23 @@
             <div class="tile empty"><div class="lbl">·</div><div class="val">·</div><div class="foot">not reported</div><Spark values={[]} /></div>
           {/each}
         </div>
+      {:else if !online || reading}
+        <!-- Offline: the tiles stay, with no data in them. Not read yet: bars. (states.html, Reading tile.) -->
+        <div class="pb flush tiles" data-tiles={online ? "loading" : "offline"}>
+          {#each { length: 5 } as _, i (i)}
+            {#if online}
+              {@render loadingTile()}
+            {:else}
+              <div class="tile"><div class="lbl">·</div><div class="val" style="color:var(--fg-faint)">— <small>no data</small></div><div class="foot">offline</div><Spark values={[]} series="offline" /></div>
+            {/if}
+          {/each}
+        </div>
       {:else}
-        <div class="pb" style="display:flex;min-height:103px;padding:0">
-          <div class="empty-box" style="margin:8px 10px;padding:8px">
-            <div>{unread || (board ? "This board reports no readings." : "Reading the board…")}</div>
+        <!-- Nothing to read: the sentence stands where the tiles would, in a box of exactly their height. -->
+        <div class="pb flush" style="position:relative" data-tiles="none">
+          <div class="tiles" style="visibility:hidden">{@render loadingTile()}</div>
+          <div class="empty-box" style="position:absolute;inset:0;margin:8px 10px;padding:8px">
+            <div>{unread || "This board reports no readings."}</div>
           </div>
         </div>
       {/if}
@@ -253,9 +302,8 @@
         <h2>Slots</h2>
         {#if list && online}<span class="chip neu">{list.slots.length} kept</span>{/if}
         <span class="grow"></span>
-        {#if list && online && !installing}
-          <button class="btn sm pri" onclick={() => run("install", "board.slots.install", {})}><Icon name="plus" />Install…</button>
-        {/if}
+        <!-- Always in its place; it can be pressed when the board's slots are read and nothing is being installed. -->
+        <button class="btn sm pri" disabled={!list || !online || installing} onclick={() => run("install", "board.slots.install", {})}><Icon name="plus" />Install…</button>
       </div>
       {#if list && online}
         <div class="fill" style="flex:1;min-height:0">
@@ -270,7 +318,8 @@
                     </span>
                   </div>
                   {#if install.final}
-                    <div class="l2 {install.stage === 'failed' ? 'err' : ''}" title={install.detail}>{install.detail || "Nothing was installed."}</div>
+                    <!-- The reason in full: it wraps instead of being cut. -->
+                    <div class="l2 {install.stage === 'failed' ? 'err' : ''}" style="white-space:normal;padding-bottom:4px" data-install-detail>{install.detail || "Nothing was installed."}</div>
                   {:else}
                     <div class="l2">
                       <div class="bar"><i style="width:{install.percent ?? 0}%"></i></div>
@@ -324,7 +373,12 @@
                       {#if slot.pinned}<span class="chip neu">Pinned</span>{/if}
                       {#if slot.failed}<span class="chip err"><span class="dot err"></span>Failed</span>{/if}
                     </div>
-                    <div class="l2 {slot.failed ? 'err' : ''}">{slotDetail(slot)}</div>
+                    {#if refusedSlot === slot.id && said}
+                      <!-- What the board answered to the last thing asked of this slot, in its own words. -->
+                      <div class="l2 err" style="white-space:normal;padding-bottom:4px" data-refused>{said.what.replace(` ${slot.id}`, "")} refused: {said.words}</div>
+                    {:else}
+                      <div class="l2 {slot.failed ? 'err' : ''}">{slotDetail(slot)}</div>
+                    {/if}
                   </div>
                   <div class="acts">
                     {#if slot.pinned}
@@ -359,7 +413,7 @@
               <div class="tr dim {i > 1 ? 'more-s' : ''}" style={BOOTS}>
                 <div class="faint">{boot.time || "·"}</div>
                 <div>{boot.slot}</div>
-                <div title={boot.words}>{boot.words}</div>
+                <div style="white-space:normal">{boot.words}</div>
               </div>
             {:else}
               <div class="tr dim" style="grid-template-columns:minmax(0,1fr);min-height:22px;font-size:11px">
@@ -368,15 +422,22 @@
             {/each}
           </div>
         </div>
+      {:else if reading || (online && board?.reach !== "none" && !board?.slots)}
+        <div class="pb flush" data-slots-state="unread"><Skel rows={3} row="slot tall" columns="" /></div>
+      {:else if online && board?.slots?.state === "error"}
+        <!-- A read that failed is a row that says so, with the board's words (states.html, Board row / Error). -->
+        <div class="pb flush tbl" data-slots-state="error">
+          <div class="tr errrow" style="grid-template-columns:minmax(0,1fr);min-height:44px">
+            <div style="white-space:normal"><b>read failed</b> <span class="muted">The board's slots could not be read: {board.slots.error}</span></div>
+          </div>
+        </div>
       {:else}
         <div class="pb" style="display:flex;min-height:0;padding:0">
           <div class="empty-box" data-slots-state={board?.slots?.state ?? "unread"}>
             <div>
               {#if unread}{unread}
               {:else if board?.slots?.state === "none"}This board has no slots: it does not offer them. An Orion node without Lemnos is normal.
-              {:else if board?.slots?.state === "not-reported"}This board did not report what it offers, so its slots are not known.
-              {:else if board?.slots?.state === "error"}The board's slots could not be read: {board.slots.error}
-              {:else}Reading the board…{/if}
+              {:else}This board did not report what it offers, so its slots are not known.{/if}
             </div>
           </div>
         </div>
@@ -403,19 +464,27 @@
       <div class="panes">
         {#if tab === "logs"}
           <div class="pane pane-logs" style="display:flex">
-            {#if logs.length > 0 && online}
+            {#if reading}
+              <div class="pb" style="flex:1" data-logs="loading"><Skel rows={4} row="" style="height:17px;display:flex;align-items:center" /></div>
+            {:else if (logs.length > 0 || (said && !said.ok && !refusedSlot)) && online}
               <div class="pb lines" style="flex:1">
+                {#if said && !said.ok && !refusedSlot}
+                  <!-- A refusal that is about no slot, in the board's own words and in full. -->
+                  <div class="ln" style="white-space:normal;overflow:visible" data-refused><span class="t">now</span><span class="lv-err">err</span><span style="overflow:visible">{said.what} refused: {said.words}</span></div>
+                {/if}
                 {#each logs as line, i (i)}
                   <div class="ln {i >= 10 ? 'more-s' : ''}"><span class="t">{line.time}</span><span class="lv-{line.level}">{line.level}</span><span>{line.text}</span></div>
                 {/each}
               </div>
             {:else}
-              <div class="empty-box"><div>{unread || (board ? "No log lines since this page opened." : "Reading the board…")}</div></div>
+              <div class="empty-box"><div>{unread || "No log lines since this page opened."}</div></div>
             {/if}
           </div>
         {:else if tab === "hardware"}
           <div class="pane" style="display:flex">
-            {#if hardware.length > 0 && online}
+            {#if reading}
+              <div class="pb flush tbl" style="padding:0" data-hardware="loading"><Skel rows={4} columns={HW} cells={2} style="min-height:24px" /></div>
+            {:else if hardware.length > 0 && online}
               <div class="pb flush tbl" style="padding:0;display:flex;flex-direction:column">
                 <div class="tr h" style={HW}><div>Device</div><div>Bus</div><div>State</div><div>Reads</div></div>
                 <div class="rows">
@@ -425,11 +494,12 @@
                       <div class="muted">{dev.bus ?? "·"}</div>
                       <div>
                         {#if dev.state === "running"}<span class="chip ok"><span class="dot ok"></span>running</span>
-                        {:else if dev.state === "retrying"}<span class="chip warn" title={dev.reason ?? ""}><span class="dot warn"></span>retrying</span>
-                        {:else if dev.state === "off"}<span class="chip off" title={dev.reason ?? ""}><span class="dot off"></span>off</span>
+                        {:else if dev.state === "retrying"}<span class="chip warn"><span class="dot warn"></span>retrying</span>
+                        {:else if dev.state === "off"}<span class="chip off"><span class="dot off"></span>off</span>
                         {:else}<span class="faint">not reported</span>{/if}
                       </div>
-                      <div class="faint" title={dev.reason ?? ""}>
+                      <!-- What it reads, or why it does not, in full: the line wraps instead of being cut. -->
+                      <div class="faint" style="white-space:normal;padding:3px 0" data-reads>
                         {dev.state === "running" || dev.state === null
                           ? dev.readings.map((r) => `${r.name.replaceAll("_", " ")} ${r.number !== null ? number(r.number) : (r.text ?? "·")}${r.unit ? ` ${r.unit}` : ""}`).join(" · ")
                           : (dev.reason ?? "")}
@@ -439,7 +509,7 @@
                 </div>
               </div>
             {:else}
-              <div class="empty-box"><div>{unread || (board ? "This board describes no hardware." : "Reading the board…")}</div></div>
+              <div class="empty-box"><div>{unread || "This board describes no hardware."}</div></div>
             {/if}
           </div>
         {:else if tab === "files"}

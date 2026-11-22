@@ -99,6 +99,26 @@ test("a silent board: the loader is retried, stopped by hand, and runs when Retr
   await expect(app.locator('[data-panel="recent"] .chip').first()).toHaveText("retried");
 });
 
+test("a failing flash says its last error and where its support bundle is, in full", async ({ app, bridge }) => {
+  await openFlash(app);
+  await chooseImage(app, bridge);
+  await bridge.call("sim.rom", { silent: 400 });
+  await app.getByRole("button", { name: "Send loader" }).click();
+  const failure = app.locator('[data-panel="failure"]');
+  await expect(failure.locator(".ph .chip.err")).toHaveText("Retrying");
+  const error = failure.locator("[data-last-error]");
+  await expect(error).not.toBeEmpty();
+  await expect(error).not.toHaveAttribute("title");
+  expect(await error.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await failure.getByRole("button", { name: "Make support bundle" }).click();
+  const bundle = failure.locator("[data-bundled]");
+  await expect(bundle).toHaveText(/^Support bundle written to \/.+atlas-support-\d+\.txt$/);
+  await expect(bundle).not.toHaveAttribute("title");
+  expect(await bundle.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expectNoOverflow(app);
+  await app.getByRole("button", { name: "Cancel" }).click();
+});
+
 test("Retry now cuts the wait short, and Cancel ends a flash that is failing", async ({ app, bridge }) => {
   await openFlash(app);
   await chooseImage(app, bridge);
@@ -123,11 +143,20 @@ test("Retry now cuts the wait short, and Cancel ends a flash that is failing", a
 
 test("a file that is not an image is refused in the reader's words, and choosing nothing changes nothing", async ({ app, bridge }) => {
   await openFlash(app);
+  const image = app.locator('[data-panel="image"]');
+  const panels = [await image.boundingBox(), await app.locator('[data-panel="board"]').boundingBox(), await app.locator('[data-panel="sent"]').boundingBox()];
   await bridge.call("sim.pick_image", { broken: true, name: "notes.img" });
   await app.getByRole("button", { name: "Choose image…" }).click();
-  const image = app.locator('[data-panel="image"]');
   await expect(image).toHaveAttribute("data-image", "refused");
   await expect(image.locator(".note.err")).not.toBeEmpty();
+  // The reason stands inside the panel's own rows, in full: no panel has moved or changed size.
+  expect([await image.boundingBox(), await app.locator('[data-panel="board"]').boundingBox(), await app.locator('[data-panel="sent"]').boundingBox()]).toEqual(panels);
+  const reason = image.locator("[data-refused]");
+  await expect(reason).not.toHaveAttribute("title");
+  expect(await reason.evaluate((el) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
+  // The file is said with the folder it is in, on the page.
+  await expect(image.locator("[data-file]")).toHaveText(/^notes\.img in \/.+sim-files$/);
+  await expect(image.locator("[data-file]")).not.toHaveAttribute("title");
   await expect(step(app, "image")).toHaveAttribute("data-state", "fail");
   await expect(app.getByRole("button", { name: "Send loader" })).toHaveCount(0);
   // The dialog closed with nothing chosen.
@@ -142,8 +171,12 @@ test("a file that is not an image is refused in the reader's words, and choosing
 
 test("the board is unplugged and comes back: the page follows it", async ({ app, bridge }) => {
   await openFlash(app);
+  const panels = async () => [await app.locator('[data-panel="board"]').boundingBox(), await app.locator('[data-panel="sent"]').boundingBox()];
+  const found = await panels();
   await bridge.call("sim.set_online", { id: DEMO.bootRom.id, online: false });
   await expect(app.locator('[data-board="none"]')).toBeVisible();
+  // With no board the panel keeps its size, so the log below it does not move.
+  expect(await panels()).toEqual(found);
   await expect(app.locator('[data-panel="board"] .chip.info')).toHaveText("Looking on USB");
   await expect(step(app, "board")).not.toHaveAttribute("data-state", "done");
   await bridge.call("sim.set_online", { id: DEMO.bootRom.id, online: true });
@@ -222,11 +255,15 @@ test("a card pulled while it is written is waited for, and a write can be cancel
   await openDisk(app);
   await chooseImage(app, bridge);
   const foot = app.locator("[data-foot]");
+  const choose = app.getByRole("button", { name: "Choose another…" });
+  const place = await choose.boundingBox();
   await bridge.call("sim.disk", { hold: true });
   await foot.getByRole("button", { name: "Erase and write…" }).click();
   await foot.getByRole("button", { name: "Erase and write", exact: true }).click();
   await expect(foot).toHaveAttribute("data-foot", "writing");
-  await expect(app.getByRole("button", { name: "Choose another…" })).toHaveCount(0);
+  // While it writes, the button stays where it is and cannot be pressed.
+  await expect(choose).toBeDisabled();
+  expect(await choose.boundingBox()).toEqual(place);
 
   await bridge.call("sim.disk", { wait_held: true }); // pulled mid-write, not before the card was opened
   await bridge.call("sim.set_online", { id: DEMO.disk.id, online: false });

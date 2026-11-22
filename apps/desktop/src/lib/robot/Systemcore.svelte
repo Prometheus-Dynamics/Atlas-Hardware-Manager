@@ -3,6 +3,7 @@
   // read-only probe knows about it, the install offer, and what waits on Orion being there.
   // Once it runs Orion it is an ordinary Orion node and its screen is the board screen.
   import Page from "../ui/Page.svelte";
+  import Skel from "../ui/Skel.svelte";
   import { call } from "../api/client";
   import { app, inventory, logUiError, scan } from "../stores/app.svelte";
   import { nameOf, stateOf } from "../devices/state";
@@ -32,7 +33,31 @@
   }
 </script>
 
-{#if device === undefined}
+{#if !app.ready}
+  <!-- Before the core's first answer: the screen's own panels as bars, and nothing said about the controller. -->
+  <Page title="SystemCore" crumb="Devices /" grid="grid-template-columns:minmax(0,1.05fr) minmax(0,1fr); grid-template-rows:minmax(0,1fr);">
+    <div style="display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0;min-width:0">
+      <section class="panel" data-panel="device">
+        <div class="ph"><h2>Device</h2></div>
+        <div class="pb"><Skel rows={6} row="" style="height:18px;display:flex;align-items:center" /></div>
+      </section>
+      <section class="panel" style="min-height:0" data-panel="live">
+        <div class="ph"><h2>Live</h2></div>
+        <div class="pb"><Skel rows={3} row="" style="height:18px;display:flex;align-items:center" /></div>
+      </section>
+    </div>
+    <div style="display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0;min-width:0">
+      <section class="panel" data-panel="install">
+        <div class="ph"><h2>Install on this controller</h2></div>
+        <div class="pb"><Skel rows={3} row="" style="height:18px;display:flex;align-items:center" /></div>
+      </section>
+      <section class="panel" style="min-height:0" data-panel="log">
+        <div class="ph"><h2>Controller log</h2></div>
+        <div class="pb"><Skel rows={3} row="" style="height:17px;display:flex;align-items:center" /></div>
+      </section>
+    </div>
+  </Page>
+{:else if device === undefined}
   <Page title="SystemCore" crumb="Devices /" grid="grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr);">
     <section class="panel">
       <div class="pb" style="display:flex;min-height:0;padding:0">
@@ -54,7 +79,6 @@
       {:else}
         <span class="chip {state.tone}"><span class="dot {state.dot}"></span>{state.word}</span>
       {/if}
-      {#if said}<span class="chip err ell" style="flex:0 1 auto" title={said}>{said}</span>{/if}
     {/snippet}
     {#snippet actions()}
       {#if online && device.shown.includes("open-ui")}
@@ -143,6 +167,10 @@
           <h2>Controller log</h2><span class="grow"></span><span class="kicker">what Atlas saw · newest first</span>
         </div>
         <div class="pb lines">
+          {#if said}
+            <!-- Why its own page did not open, in full: the line wraps instead of being cut. -->
+            <div class="ln" style="white-space:normal;overflow:visible" data-said><span class="t">now</span><span class="lv-err">err</span><span style="overflow:visible">Its own page did not open: {said}</span></div>
+          {/if}
           {#each log as line, i (i)}
             <div class="ln" class:more-s={i >= 4}>
               <span class="t">{eventTime(line.at_ms, app.now)}</span><span class="lv-{line.level}">{line.level}</span><span>{worded(line.message)}</span>

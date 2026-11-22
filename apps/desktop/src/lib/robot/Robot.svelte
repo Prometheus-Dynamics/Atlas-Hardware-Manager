@@ -2,7 +2,8 @@
   // A robot (docs/mockups/robot.html): its own devices, read-only, its controller, and the
   // boards behind the controller. Atlas reads these devices and changes nothing on them.
   import Page from "../ui/Page.svelte";
-  import { inventory, scan } from "../stores/app.svelte";
+  import Skel from "../ui/Skel.svelte";
+  import { app, inventory, scan } from "../stores/app.svelte";
   import { href } from "../stores/route.svelte";
   import { kindOf, nameOf, reachedBy, stateOf } from "../devices/state";
   import { count } from "../ui/format";
@@ -40,7 +41,18 @@
     <div class="ph">
       <h2>Robot devices</h2><span class="chip neu">read-only</span><span class="grow"></span><span class="kicker">read from the robot's network</span>
     </div>
-    {#if robot === undefined}
+    {#if !app.ready}
+      <!-- Not read yet: the table's own rows as bars, and nothing said about whether the robot exists. -->
+      <div class="pb flush tbl fill" style="padding:0">
+        <div class="tr h" style={COLUMNS}>
+          <div>Device</div>
+          <div>Bus</div>
+          <div>State</div>
+          <div>Reported</div>
+        </div>
+        <div class="rows"><Skel rows={3} columns={COLUMNS} cells={3} style="min-height:40px" /></div>
+      </div>
+    {:else if robot === undefined}
       <div class="pb" style="display:flex;min-height:0;padding:0">
         <div class="empty-box"><div>There is no robot named {name}.</div></div>
       </div>
@@ -76,7 +88,8 @@
                   <span class="chip off"><span class="dot off"></span>not reporting</span>
                 {/if}
               </div>
-              <div class={online ? "muted" : "faint"} title={reported(device)}>{reported(device) || "·"}</div>
+              <!-- What it reports, in full: the line wraps instead of being cut. -->
+              <div class={online ? "muted" : "faint"} style="white-space:normal;line-height:1.3;font-size:11px" data-reported>{reported(device) || "·"}</div>
             </div>
           {/each}
         </div>
@@ -97,7 +110,9 @@
         {/if}
       </div>
       <div class="pb">
-        {#if controller}
+        {#if !app.ready}
+          <Skel rows={4} row="" style="height:18px;display:flex;align-items:center" />
+        {:else if controller}
           <dl class="kv">
             <dt>Name</dt><dd>{nameOf(controller)}</dd>
             <dt>Network</dt><dd>{host(controller.identity.address)}</dd>
@@ -119,7 +134,8 @@
         <h2>Boards behind {controller ? nameOf(controller) : "the controller"}</h2><span class="grow"></span><span class="kicker">reached once Orion is on the controller</span>
       </div>
       <div class="pb flush tbl" style="padding:0">
-        {#each boards as board (board.id)}
+        {#if !app.ready}<Skel rows={2} style="min-height:34px" />{/if}
+        {#each app.ready ? boards : [] as board (board.id)}
           {@const state = stateOf(board)}
           <div class="tr" style="grid-template-columns:minmax(0,1fr) 150px;min-height:34px">
             <div>
@@ -129,7 +145,7 @@
             <div><span class="chip {state.tone}"><span class="dot {state.dot}"></span>{state.word}</span></div>
           </div>
         {:else}
-          <div class="faint" style="padding:8px 10px;font-size:11px">None seen. A controller without Orion does not say what is plugged into it.</div>
+          {#if app.ready}<div class="faint" style="padding:8px 10px;font-size:11px">None seen. A controller without Orion does not say what is plugged into it.</div>{/if}
         {/each}
       </div>
     </section>

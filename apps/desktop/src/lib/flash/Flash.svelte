@@ -6,6 +6,7 @@
   // have, and the page says so instead of drawing progress that did not happen.
   import Page from "../ui/Page.svelte";
   import Icon from "../ui/Icon.svelte";
+  import Skel from "../ui/Skel.svelte";
   import { call } from "../api/client";
   import { app, breadcrumb, inventory, settings, topic } from "../stores/app.svelte";
   import { go } from "../stores/route.svelte";
@@ -106,6 +107,8 @@
     return `${s >= 10 || Number.isInteger(s) ? Math.round(s) : s.toFixed(1)} s`;
   };
   const lines = $derived(run ? [...run.log].reverse() : []);
+  /** The folder a chosen file is in, said beside its name. */
+  const folder = (path: string) => path.replace(/[\\/][^\\/]*$/, "") || "/";
 </script>
 
 <Page title="Flash a board" crumb="Atlas /" grid="grid-template-columns:260px minmax(0,1fr); grid-template-rows:minmax(0,1fr);">
@@ -134,12 +137,14 @@
   <section class="panel" data-panel="steps">
     <div class="ph"><h2>Steps</h2></div>
     <div class="pb" style="padding:6px 12px">
-      {#each steps as step, index (step.key)}
+      {#if !app.ready}<Skel rows={6} row="" style="height:42px;display:flex;align-items:center" />{/if}
+      {#each app.ready ? steps : [] as step, index (step.key)}
         <div class="step {step.state}" data-step={step.key} data-state={step.state}>
           <div class="mark">{#if step.state === "done"}&#10003;{:else if step.state === "fail"}!{:else}{index + 1}{/if}</div>
           <div style="min-width:0">
             <div class="st">{step.title}</div>
-            <div class="sd" title={step.detail}>{step.detail}</div>
+            <!-- In full: a long detail (a refusal, a file name) wraps instead of being cut. -->
+            <div class="sd" style="white-space:normal;overflow-wrap:anywhere">{step.detail}</div>
           </div>
         </div>
       {/each}
@@ -153,7 +158,11 @@
           <div><span class="chip {word.tone}">{#if word.tone !== "off"}<span class="dot {word.tone}"></span>{/if}{word.word}</span></div>
         </div>
       {:else}
-        <div class="tr faint" style="grid-template-columns:minmax(0,1fr);min-height:24px;font-size:11px;border-bottom:0"><div>None yet on this computer.</div></div>
+        {#if app.ready}
+          <div class="tr faint" style="grid-template-columns:minmax(0,1fr);min-height:24px;font-size:11px;border-bottom:0"><div>None yet on this computer.</div></div>
+        {:else}
+          <Skel rows={1} style="min-height:24px;border-bottom:0" />
+        {/if}
       {/each}
     </div>
   </section>
@@ -183,7 +192,7 @@
             {#if run.status === "retrying" || run.status === "stopped"}
               <dt>Attempts</dt><dd>{run.attempt} so far, never gives up on its own</dd>
             {/if}
-            <dt>Last error</dt><dd title={run.error}>{run.error}</dd>
+            <dt>Last error</dt><dd style="white-space:normal;overflow-wrap:anywhere" data-last-error>{run.error}</dd>
             {#if run.status === "retrying"}
               <dt>Backoff</dt><dd>{secs(run.retry_in_ms)}, capped at {secs(flash?.backoff_cap_ms ?? 0)} between tries</dd>
               <dt>Next try</dt><dd class="num">in {Math.ceil(waitLeft / 1000)} s</dd>
@@ -205,7 +214,8 @@
             <span class="sp"></span>
             <button class="btn sm quiet" onclick={bundle}><Icon name="bundle" />Make support bundle</button>
           </div>
-          <div class="faint ell" style="font-size:11px" title={bundled}>
+          <!-- Where the bundle was written, in full. -->
+          <div class="faint" style="font-size:11px;white-space:normal;overflow-wrap:anywhere" data-bundled>
             {bundled || "Stop retrying is a manual off. Nothing starts again until you press Retry."}
           </div>
         </div>
@@ -224,40 +234,54 @@
       <section class="panel" data-panel="image" data-image={image?.state ?? "none"}>
         <div class="ph">
           <h2>Image</h2><span class="grow"></span><span class="chip neu">first-flash image</span>
-          {#if !active}
-            <button class="btn sm" class:pri={image?.state !== "ready"} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
-          {/if}
+          <!-- Always in its place: it cannot be pressed while a flash is running. -->
+          <button class="btn sm" class:pri={app.ready && !active && image?.state !== "ready"} disabled={!app.ready || active} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
         </div>
         <div class="pb">
-          {#if image?.state === "refused"}
-            <div class="note err ell" style="margin-bottom:8px" title={image.words}>{image.words}</div>
-          {/if}
-          <dl class="kv">
-            <dt>File</dt><dd title={image?.path}>{image?.file ?? "none chosen yet"}</dd>
-            <dt>Size</dt>
-            <dd>
-              {#if image?.state === "ready"}{size(image.bytes)} file, {size(image.raw_bytes)} written{:else if image}{size(image.bytes)}{image.state === "reading" ? " · reading" : ""}{:else}·{/if}
+          <!-- The same four rows in every state, so the panels below never move. A refused file's
+               reason takes the place of the three rows that have nothing to say about it. -->
+          <dl class="kv" style="grid-template-rows:repeat(4,auto)">
+            <dt style="grid-area:1/1">File</dt>
+            <dd style="grid-area:1/2" data-file>
+              {#if !app.ready}<div class="ph-skel" style="width:40%;margin-top:3px"></div>
+              {:else if image}{image.file} <span class="faint">in {folder(image.path)}</span>
+              {:else}none chosen yet{/if}
             </dd>
-            <dt>Built for</dt><dd>{image?.state === "ready" ? image.board : "·"}</dd>
-            <dt>Signature</dt><dd>{signatureWords(image, settings()?.security ?? false)}</dd>
+            {#if image?.state === "refused"}
+              <dt style="grid-area:2/1;visibility:hidden">Size</dt>
+              <dt style="grid-area:3/1;visibility:hidden">Built for</dt>
+              <dt style="grid-area:4/1;visibility:hidden">Signature</dt>
+              <dd class="note err" style="grid-area:2/1/5/-1;white-space:normal;overflow:hidden" data-refused>{image.words}</dd>
+            {:else}
+              <dt style="grid-area:2/1">Size</dt>
+              <dd style="grid-area:2/2">
+                {#if image?.state === "ready"}{size(image.bytes)} file, {size(image.raw_bytes)} written{:else if image}{size(image.bytes)}{image.state === "reading" ? " · reading" : ""}{:else}·{/if}
+              </dd>
+              <dt style="grid-area:3/1">Built for</dt><dd style="grid-area:3/2">{image?.state === "ready" ? image.board : "·"}</dd>
+              <dt style="grid-area:4/1">Signature</dt><dd style="grid-area:4/2">{signatureWords(image, settings()?.security ?? false)}</dd>
+            {/if}
           </dl>
         </div>
       </section>
       <section class="panel" data-panel="board">
         <div class="ph">
           <h2>Board</h2><span class="grow"></span>
-          {#if board}
+          {#if !app.ready}
+            <span class="chip info"><span class="dot info"></span>Scanning</span>
+          {:else if board}
             <span class="chip acc"><span class="dot acc"></span>found in boot ROM</span>
           {:else}
             <span class="chip info"><span class="dot spin"></span>Looking on USB</span>
           {/if}
         </div>
-        {#if board}
+        {#if !app.ready}
+          <div class="pb"><Skel rows={4} row="" style="height:18px;display:flex;align-items:center" /><div class="note" style="margin-top:8px;visibility:hidden">·</div></div>
+        {:else if board}
           <div class="pb">
             <dl class="kv">
               <dt>Found on</dt><dd>USB {port} · boot ID {board.identity.attributes["usb-id"] ?? "not reported"}</dd>
               <dt>Family</dt><dd>{rom?.label ?? board.identity.model ?? "boot ROM"}{inLoaderMode ? " · now in loader mode" : ""}</dd>
-              <dt>Loader</dt><dd title={rom?.loader}>{rom?.loader ?? "none in this build for this family"}</dd>
+              <dt>Loader</dt><dd style="white-space:normal;overflow-wrap:anywhere" data-loader>{rom?.loader ?? "none in this build for this family"}</dd>
               <dt>Flasher image</dt><dd>not in this build</dd>
             </dl>
             <div class="note" class:warn={loaded} style="margin-top:8px" data-note="limit">
@@ -278,8 +302,17 @@
             {/each}
           </div>
         {:else}
-          <div class="pb muted" data-board="none">
-            No board is in its boot ROM. Plug one in over USB with its boot button held; it shows up here as soon as it does, and Atlas keeps looking.
+          <!-- The same rows as for a board that was found, so the panel keeps its height and the log below does not move. -->
+          <div class="pb" data-board="none">
+            <dl class="kv">
+              <dt>Found on</dt><dd class="faint">·</dd>
+              <dt>Family</dt><dd class="faint">·</dd>
+              <dt>Loader</dt><dd class="faint">·</dd>
+              <dt>Flasher image</dt><dd class="faint">·</dd>
+            </dl>
+            <div class="note" style="margin-top:8px">
+              No board is in its boot ROM. Plug one in over USB with its boot button held; it shows up here as soon as it does, and Atlas keeps looking.
+            </div>
           </div>
         {/if}
       </section>
@@ -299,8 +332,10 @@
                 <div class="ln"><span class="t">{clock(line.at_ms)}</span><span class="lv-{line.level}">{line.level}</span><span>{line.text}</span></div>
               {/each}
             </div>
-          {:else}
+          {:else if app.ready}
             <div class="faint" style="font-size:11px">Nothing has been sent yet.</div>
+          {:else}
+            <Skel rows={2} row="" style="height:17px;display:flex;align-items:center" />
           {/if}
         </div>
       </section>

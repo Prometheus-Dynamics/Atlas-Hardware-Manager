@@ -26,7 +26,7 @@ export type Screen = { name: string; hash: string; ready: (page: Page, bridge: B
 const BOARD = `#/board/${encodeURIComponent(DEMO.running.id)}`;
 async function boardRead(page: Page) {
   await demoSettled(page);
-  await expect(page.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(page.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
   await expect(page.locator("[data-slot]")).toHaveCount(4);
 }
 
