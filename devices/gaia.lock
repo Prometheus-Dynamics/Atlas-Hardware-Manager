@@ -1,6 +1,9 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 1ae21b98 (pin move 11, 2026-11-22, the coordinator's rev): Gaia next with the board QEMU profile complete
+# (c23dd1dc: the RAM-boot mode, the stock host, the forward) and the guard that fails a build on any extended attribute
+# in the root (raze-base passed it, per the coordinator). Before: bb98a262.
 # Moved to bb98a262 (D6, 2026-11-22, the coordinator's rev): Gaia next with recipe rpi-ramdisk-boot (987984b3), assembled
 # files (7a5bbb16, F12: components' fragments of /etc/mdev.conf in the product's order) and rpi-ramdisk-boot-generated
 # (the generator's board overlay in boot.img), for the bcm2712 flasher. No existing node changed (new nodes
@@ -35,4 +38,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "bb98a262e669d03eaf39629753c70920e4dda6e6"
+commit = "1ae21b98509efba00bc6c0150fa8281670fe26e1"

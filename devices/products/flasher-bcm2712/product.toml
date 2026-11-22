@@ -33,6 +33,7 @@ ref = "2026.08"
 flasher-lemnosd = "../../components/flasher-lemnosd/component.toml"
 flasher-lemnos-orion = "../../components/flasher-lemnos-orion/component.toml"
 flasher-lemnos-restart = "../../components/flasher-lemnos-restart/component.toml"
+flasher-lemnos-way-back = "../../components/flasher-lemnos-way-back/component.toml"
 flasher-lemnos-busybox = "../../components/flasher-lemnos-busybox/component.toml"
 raze-flasher-board = "../../components/raze-flasher-board/component.toml"
 flasher-orion = "../../components/flasher-orion/component.toml"
@@ -43,7 +44,7 @@ lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 [[images]]
 name = "flasher-bcm2712"
 board = "../../boards/raze/board.toml"
-components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing", "flasher-init"]
+components = ["flasher-lemnosd", "flasher-lemnos-orion", "flasher-lemnos-restart", "flasher-lemnos-way-back", "flasher-lemnos-busybox", "raze-flasher-board", "flasher-orion", "flasher-lemnos0", "lemnos0-addressing", "flasher-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
 recipe = "rpi-ramdisk-boot-generated"
 

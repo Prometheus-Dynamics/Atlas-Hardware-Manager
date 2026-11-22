@@ -1,0 +1,35 @@
+# The bcm2712 flasher's lemnos-way-back: the static tool its /init (components/flasher-init) runs on its own failure
+# paths to set the firmware's one-shot RPIBOOT through the property mailbox (/dev/vcio) before it restarts, so a
+# RAM-booted flasher that cannot start returns to the PC's USB boot instead of booting the eMMC (the return rule for
+# untried RAM images). It runs before lemnosd exists and talks to the firmware alone.
+#
+# Two Lemnos pins in one flasher, on purpose (coordinator 2026-11-22, choice A):
+#   - this component: Lemnos a6251ecf, because the tool first ships in 612aea88 (WAY-BACK-TOOL);
+#   - flasher-lemnosd, flasher-lemnos-orion, flasher-lemnos-restart: Lemnos da86d0b3 (FLASH-BCM2712), the flasher's
+#     proven daemon, an ancestor of a6251ecf that has no way-back.
+# DEBT: close the split when the flasher moves to a newer Lemnos after its flasher faults are fixed (pr/stack-D6F):
+# then all four take one rev and this paragraph goes.
+version = 1
+name = "flasher-lemnos-way-back"
+description = "the bcm2712 flasher's lemnos-way-back (Lemnos a6251ecf, service profile): RPIBOOT on /init's failure paths"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "a6251ecfb815752880f399e4e137634d022d4a2d"  # Lemnos next: WAY-BACK-TOOL, BOOTFILES-OWNER, TICK-BOUND, TRIAL-COUNT; coordinator 2026-11-22, pin move 11
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "lemnos-way-back"
+profile = "service"
+
+[[install]]
+from = "bin/lemnos-way-back"
+to = "/usr/bin/lemnos-way-back"
+mode = "0755"

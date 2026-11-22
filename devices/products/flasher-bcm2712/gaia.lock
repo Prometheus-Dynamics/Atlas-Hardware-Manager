@@ -35,6 +35,17 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
+[source."flasher-lemnos-way-back.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."flasher-lemnos-way-back.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "a6251ecfb815752880f399e4e137634d022d4a2d"
+commit = "a6251ecfb815752880f399e4e137634d022d4a2d"
+
 [source."flasher-lemnosd.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"

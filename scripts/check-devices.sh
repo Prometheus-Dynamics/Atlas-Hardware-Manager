@@ -128,10 +128,21 @@ broken_failed_as_it_must() {
 # The Lemnos rule (AGENTS.md: every Lemnos component in a product is locked to ONE rev). Every source of
 # the Lemnos repository in a product's gaia.lock is one [source.*] block with a url and a commit: the
 # commits of those blocks must be one. Prints the distinct revs, one per line.
+#
+# One named exception (coordinator 2026-11-22, choice A): in products/flasher-bcm2712, the source
+# flasher-lemnos-way-back.src alone may be at another Lemnos rev. The tool first ships in Lemnos 612aea88, after the
+# flasher's own Lemnos (da86d0b3), and it runs before lemnosd exists, talking to the firmware alone. DEBT: this goes when
+# the flasher moves to one newer Lemnos after its flasher faults are fixed (pr/stack-D6F); see
+# devices/components/flasher-lemnos-way-back/component.toml. $2, when given, is the one source name exempted.
+lemnos_one_rev_exempt() {
+  case $1 in
+    products/flasher-bcm2712/product.toml) echo "flasher-lemnos-way-back.src" ;;
+  esac
+}
 lemnos_revs() {
-  awk '
-    /^\[/ { lem = 0; next }
-    /^url = .*Prometheus-Dynamics\/Lemnos/ { lem = 1; next }
+  awk -v exempt="${2:-}" '
+    /^\[/ { lem = 0; name = $0; sub(/^\[source\."/, "", name); sub(/"\]$/, "", name); skip = (exempt != "" && name == exempt); next }
+    /^url = .*Prometheus-Dynamics\/Lemnos/ { lem = !skip; next }
     /^commit = / && lem { c = $0; sub(/^commit = "/, "", c); sub(/"$/, "", c); print c }
   ' "$1" | sort -u
 }
@@ -141,7 +152,7 @@ lemnos_two_revs() {
   local revs=() r
   while IFS= read -r r; do
     [[ -n $r ]] && revs+=("$r")
-  done < <(lemnos_revs "$1")
+  done < <(lemnos_revs "$1" "${2:-}")
   [[ ${#revs[@]} -le 1 ]] && return 0
   local more=$(( ${#revs[@]} - 2 )) tail=""
   (( more > 0 )) && tail=" (and $more more)"
@@ -173,8 +184,17 @@ EOF
     echo "check-devices: self-test: the two-rev refusal does not name both revs" >&2; rc=1
   fi
   lemnos_two_revs "$one" >/dev/null || { echo "check-devices: self-test: a lock with one Lemnos rev was refused" >&2; rc=1; }
+  # The named exception exempts exactly the one source it names, and nothing else.
+  lemnos_two_revs "$two" "b.src" >/dev/null || { echo "check-devices: self-test: the exempted source still counted" >&2; rc=1; }
+  if lemnos_two_revs "$two" "c.src" >/dev/null; then
+    echo "check-devices: self-test: an exemption naming another source let two revs through" >&2; rc=1
+  fi
+  [[ $(lemnos_one_rev_exempt products/flasher-bcm2712/product.toml) == flasher-lemnos-way-back.src ]] \
+    || { echo "check-devices: self-test: the flasher's way-back exception is not the one named" >&2; rc=1; }
+  [[ -z $(lemnos_one_rev_exempt products/raze-base/product.toml) ]] \
+    || { echo "check-devices: self-test: a slot product has a Lemnos exception" >&2; rc=1; }
   rm -f "$two" "$one"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos one-rev rule refuses two revs and passes one"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos one-rev rule refuses two revs, passes one, and exempts only the one named source"
   return $rc
 }
 
@@ -2150,7 +2170,7 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     fi
   fi
   # The Lemnos rule: every Lemnos source in this product's lock is one rev.
-  if ! lemnos_msg=$(lemnos_two_revs "$committed"); then
+  if ! lemnos_msg=$(lemnos_two_revs "$committed" "$(lemnos_one_rev_exempt "$product")"); then
     bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
   fi
   # The Lemnos board file rule: a product that carries lemnosd names its board's Lemnos board file (PR B26).
