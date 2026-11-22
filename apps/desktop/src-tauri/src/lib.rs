@@ -5,6 +5,7 @@
 //!   on a device.
 //! - [`call`]: the one way the UI asks for anything. A call has a name and JSON arguments, is
 //!   always async, and every failed one is written to the app's log with what was asked.
+//! - [`board`]: the board page's work: one board's readings, logs, actions and slots.
 //! - [`view`]: what the UI is sent. State reaches the UI as events carrying whole snapshots, so
 //!   the UI never replays steps.
 //! - [`drivers`]: the real drivers and the computer's own links.
@@ -14,6 +15,7 @@
 //!
 //! The UI is in `apps/desktop/src`. It is built from the mockups in `docs/mockups`.
 
+pub mod board;
 pub mod call;
 pub mod core;
 pub mod drivers;

@@ -18,8 +18,9 @@
 //! real devices (a board is unplugged, comes back), so the click tests can show every state.
 //! They exist only in a build with this feature.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +32,7 @@ use atlas_driver_rockchip::RockchipDriver;
 use atlas_inventory::Robot;
 use atlas_mock::{MockDevice, MockFleet, SIM_FAMILY, SIM_LINK};
 use atlas_robot::{Answer, Reach, SYSTEMCORE_FAMILY};
-use atlas_session::Seed;
+use atlas_session::{RealPause, Seed, Sessions};
 use atlas_sim_node::socket::NodeDir;
 use atlas_sim_node::{Hello, Kind, SimNode};
 use atlas_types::{DeviceKey, DeviceState, Link, LinkId, LinkKind};
@@ -70,16 +71,19 @@ pub enum Scene {
     Demo,
     /// The same drivers and links with nothing plugged in.
     Empty,
+    /// The demo, with the running board a plain Orion node: no Lemnos, so no slots, readings
+    /// or actions of a board.
+    Plain,
 }
 
 impl Scene {
     /// The scene a word names: `empty`, or anything else for the demo.
     #[must_use]
     pub fn named(word: &str) -> Self {
-        if word == "empty" {
-            Self::Empty
-        } else {
-            Self::Demo
+        match word {
+            "empty" => Self::Empty,
+            "plain" => Self::Plain,
+            _ => Self::Demo,
         }
     }
 }
@@ -177,6 +181,59 @@ struct Inner {
     node: Option<Node>,
     /// The key of the simulated node's board, as the board driver reports it.
     node_id: String,
+    picks: Arc<Picks>,
+}
+
+/// The files the simulated person will choose, in order: what stands in for the file dialog
+/// where there is no window. A test queues one with `sim.pick_bundle`; with none queued the
+/// person chose nothing.
+#[derive(Debug, Default)]
+pub struct Picks {
+    queued: Mutex<VecDeque<PathBuf>>,
+}
+
+impl crate::board::Picker for Picks {
+    fn pick(&self, _title: &str, _extensions: &[&str]) -> Option<PathBuf> {
+        self.queued
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .pop_front()
+    }
+}
+
+/// The slots the simulated board starts with: the running default, the one before it, an older
+/// starred one and an older plain one. A board that was just started holds only its first slot.
+fn seed_slots(node: &SimNode) {
+    use atlas_sim_node::slots::{Entry, Good, Signed};
+    let entry = |id: &str, version: &str, seq: u64, pinned: bool| Entry {
+        id: id.into(),
+        product: "demo-os".into(),
+        board: SIM_FAMILY.into(),
+        version: version.into(),
+        variant: String::new(),
+        kernel: String::new(),
+        display_name: format!("demo-os {version}"),
+        size: 2_100_000_000,
+        verity: true,
+        signed: Signed::Unsigned,
+        good: Good::Yes,
+        failed: false,
+        failures: 0,
+        fail_reason: String::new(),
+        pinned,
+        seq,
+    };
+    let mut model = node.model();
+    model.slots.entries = vec![
+        entry("slot-1", "2026.9.12", 1, false),
+        entry("slot-2", "2026.9.30", 2, true),
+        entry("slot-3", "2026.10.20", 3, false),
+        entry("slot-4", "2026.11.2", 4, false),
+    ];
+    model.slots.active = Some("slot-4".into());
+    model.slots.default = Some("slot-4".into());
+    model.slots.previous = Some("slot-3".into());
+    model.slots.keep = 3;
 }
 
 fn mock_key(serial: &'static str) -> DeviceKey {
@@ -191,7 +248,7 @@ impl World {
     /// simulated node's port or socket) is left out and returned as a line for the log.
     pub fn install(parts: &mut Parts, scene: Scene, teams: &TeamList) -> (Self, Vec<String>) {
         let mut problems = Vec::new();
-        let demo = scene == Scene::Demo;
+        let demo = scene != Scene::Empty;
         for (id, kind, label) in [
             (USB_LINK, LinkKind::UsbNetwork, "USB 1-2"),
             (NETWORK_LINK, LinkKind::Ethernet, "Network"),
@@ -254,12 +311,18 @@ impl World {
         let hello = Hello {
             product: "demo-os".into(),
             os_version: "2026.11.2".into(),
+            slot: "slot-4".into(),
             ..Hello::default()
         };
         let node_id = format!("{}:{}", hello.family, hello.serial);
         let mut seeds = Vec::new();
+        let kind = if scene == Scene::Plain {
+            Kind::Plain
+        } else {
+            Kind::WithLemnos(hello)
+        };
         let node = demo
-            .then(|| start_node(Kind::WithLemnos(hello)))
+            .then(|| start_node(kind))
             .and_then(|started| started.map_err(|error| problems.push(error)).ok());
         if let Some(node) = &node {
             let address = format!("orion+tcp://127.0.0.1:{}", node.port);
@@ -270,7 +333,12 @@ impl World {
                 }
             }
         }
-        parts.registry.register(Arc::new(BoardDriver::new(seeds)));
+        let sessions = Arc::new(Sessions::new(Arc::new(RealPause)));
+        parts.registry.register(Arc::new(BoardDriver::with_sessions(
+            seeds,
+            sessions.clone(),
+        )));
+        parts.sessions = Some(sessions);
 
         let world = Self {
             inner: Arc::new(Inner {
@@ -281,6 +349,7 @@ impl World {
                 net,
                 node,
                 node_id,
+                picks: Arc::new(Picks::default()),
             }),
         };
         (world, problems)
@@ -308,7 +377,7 @@ impl World {
     /// boards, puts the controller in its robot, and unplugs the old board once it was seen, so
     /// the list holds an offline record. Called once, when the core is open.
     pub fn settle(&self, core: &Core) {
-        if self.inner.scene != Scene::Demo {
+        if self.inner.scene == Scene::Empty {
             return;
         }
         core.change_inventory(|inventory, _| {
@@ -377,10 +446,12 @@ impl World {
                 (false, _) => *running = None,
                 (true, true) => {}
                 (true, false) => {
-                    *running = Some(
-                        SimNode::start_with(&node.dir, &node.kind, Some(node.port))
-                            .map_err(|error| CallError(format!("the simulated node: {error}")))?,
-                    );
+                    let started = SimNode::start_with(&node.dir, &node.kind, Some(node.port))
+                        .map_err(|error| CallError(format!("the simulated node: {error}")))?;
+                    if node.kind != Kind::Plain {
+                        seed_slots(&started);
+                    }
+                    *running = Some(started);
                 }
             }
             return Ok(());
@@ -416,10 +487,70 @@ impl World {
         }
     }
 
+    /// What stands in for the file dialog.
+    #[must_use]
+    pub fn picker(&self) -> Arc<dyn crate::board::Picker> {
+        self.inner.picks.clone()
+    }
+
+    /// Runs `with` on the simulated Orion node, when it is running.
+    pub fn with_node<T>(&self, with: impl FnOnce(&SimNode) -> T) -> Option<T> {
+        let node = self.inner.node.as_ref()?;
+        let running = node.running.lock().unwrap_or_else(|e| e.into_inner());
+        running.as_ref().map(with)
+    }
+
+    /// The simulated USB bus the boot ROM driver looks at.
+    #[must_use]
+    pub fn bus(&self) -> &Arc<SimBus> {
+        &self.inner.bus
+    }
+
+    /// The id of the simulated node's board.
+    #[must_use]
+    pub fn node_id(&self) -> &str {
+        &self.inner.node_id
+    }
+
+    /// Writes a slot bundle for the simulated board under `dir` and queues it as the next file
+    /// the person chooses. `board` overrides the board the bundle says it is for.
+    fn pick_bundle(
+        &self,
+        dir: &std::path::Path,
+        id: &str,
+        version: &str,
+        board: Option<&str>,
+    ) -> Result<PathBuf, String> {
+        let rootfs = format!("rootfs of {id} at {version}\n")
+            .repeat(40_000)
+            .into_bytes();
+        let boot: [(&str, &[u8]); 2] = [
+            ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
+            ("kernel.img", b"kernel bytes"),
+        ];
+        let mut manifest = atlas_sim_node::bundle::manifest(id, version, &rootfs, &boot);
+        manifest["product"] = Value::String("demo-os".into());
+        manifest["display_name"] = Value::String(format!("demo-os {version}"));
+        if let Some(board) = board {
+            manifest["board"] = Value::String(board.into());
+        }
+        let bytes = atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot);
+        std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        let path = dir.join(format!("demo-os-{version}.tar"));
+        std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
+        self.inner
+            .picks
+            .queued
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push_back(path.clone());
+        Ok(path)
+    }
+
     /// The ids of every simulated device, for a test that wants to know what there is.
     #[must_use]
     pub fn ids(&self) -> BTreeSet<String> {
-        if self.inner.scene != Scene::Demo {
+        if self.inner.scene == Scene::Empty {
             return BTreeSet::new();
         }
         let mut ids: BTreeSet<String> = self.tags().into_iter().map(|tag| tag.id).collect();
@@ -443,6 +574,9 @@ fn start_node(kind: Kind) -> Result<Node, String> {
         .map_err(|error| format!("the simulated node has no place for its socket: {error}"))?;
     let node = SimNode::start_with(&dir, &kind, None)
         .map_err(|error| format!("the simulated node did not start: {error}"))?;
+    if kind != Kind::Plain {
+        seed_slots(&node);
+    }
     Ok(Node {
         port: node.network().port(),
         dir,
@@ -471,6 +605,73 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 .await
                 .map_err(|error| CallError(error.to_string()))??;
             Ok(Value::Null)
+        }
+        // Queues a slot bundle as the next file the person chooses in a file dialog.
+        "sim.pick_bundle" => {
+            #[derive(Deserialize)]
+            struct Bundle {
+                slot: String,
+                version: String,
+                board: Option<String>,
+            }
+            let Bundle {
+                slot,
+                version,
+                board,
+            } = args(name, arguments)?;
+            let dir = core
+                .dirs()
+                .map(|dirs| dirs.data.join("sim-files"))
+                .ok_or_else(|| CallError::from("the app has no data directory"))?;
+            let path = tokio::task::spawn_blocking(move || {
+                world.pick_bundle(&dir, &slot, &version, board.as_deref())
+            })
+            .await
+            .map_err(|error| CallError(error.to_string()))?
+            .map_err(CallError)?;
+            Ok(Value::String(path.display().to_string()))
+        }
+        // The simulated node's test hooks: each changes the board's state at once.
+        "sim.node" => {
+            #[derive(Deserialize)]
+            struct Hook {
+                /// Seconds to move the board's slot clock on.
+                clock: Option<u64>,
+                healthy: Option<bool>,
+                hold_installs: Option<bool>,
+                log: Option<String>,
+                /// Answers how many runs of this action the node took.
+                runs: Option<String>,
+                lemnos: Option<bool>,
+            }
+            let hook: Hook = args(name, arguments)?;
+            tokio::task::spawn_blocking(move || {
+                world.with_node(|node| {
+                    if let Some(healthy) = hook.healthy {
+                        node.slot_set_healthy(healthy);
+                    }
+                    if let Some(hold) = hook.hold_installs {
+                        node.hold_installs(hold);
+                    }
+                    if let Some(secs) = hook.clock {
+                        node.slot_clock_advance(secs);
+                    }
+                    if let Some(line) = &hook.log {
+                        node.model().log(line);
+                    }
+                    match hook.lemnos {
+                        Some(true) => node.resume_lemnos(),
+                        Some(false) => node.stop_lemnos(),
+                        None => {}
+                    }
+                    hook.runs
+                        .as_deref()
+                        .map_or(Value::Null, |action| Value::from(node.runs_started(action)))
+                })
+            })
+            .await
+            .map_err(|error| CallError(error.to_string()))?
+            .ok_or_else(|| CallError::from("the simulated node is not running"))
         }
         "sim.ids" => {
             serde_json::to_value(world.ids()).map_err(|error| CallError(error.to_string()))

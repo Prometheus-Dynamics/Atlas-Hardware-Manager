@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
-import { demoSettled, expect, test, type Scene } from "./bridge";
+import { DEMO, demoSettled, expect, test, type Bridge, type Scene } from "./bridge";
 
 const OUT = process.env.ATLAS_SCREENS_DIR ?? "";
 const MOCKUPS = resolve(import.meta.dirname, "../../../docs/mockups");
@@ -21,7 +21,14 @@ const PLEX = [400, 500, 600].map((w) => font("IBM Plex Sans", "ibm-plex-sans", w
 
 /** One screen: its name, where it is in the app, what must be on it before the picture, and
  *  the mockup it is built from. Each item adds its screens here. */
-export type Screen = { name: string; hash: string; ready: (page: Page) => Promise<void>; mockup?: string; scene?: Scene };
+export type Screen = { name: string; hash: string; ready: (page: Page, bridge: Bridge) => Promise<void>; mockup?: string; scene?: Scene };
+
+const BOARD = `#/board/${encodeURIComponent(DEMO.running.id)}`;
+async function boardRead(page: Page) {
+  await demoSettled(page);
+  await expect(page.locator('[data-panel="readings"] .tile')).toHaveCount(5);
+  await expect(page.locator("[data-slot]")).toHaveCount(4);
+}
 
 export const SCREENS: Screen[] = [
   {
@@ -42,6 +49,79 @@ export const SCREENS: Screen[] = [
       await expect(page.locator(".empty-box")).toBeVisible();
     },
   },
+  // The board page as the mockup draws it: a slot being written, a trial running, a fallback, a
+  // pinned slot and a removal being confirmed in place, with the board's log beside them.
+  {
+    name: "board",
+    hash: BOARD,
+    mockup: "board.html",
+    ready: async (page, bridge) => {
+      await boardRead(page);
+      for (const line of ["boot: slot-4 confirmed as default", "system: reboot requested from Atlas", "warn: camera: 2 frames dropped in the last 60 s", "boot: trial boot of slot-3, waiting for confirm", "update: slot-5: writing started"])
+        await bridge.call("sim.node", { log: line });
+      await page.locator('[data-slot="slot-3"]').getByRole("button", { name: "Trial" }).click();
+      await expect(page.locator('[data-slot="slot-3"] .chip.warn')).toBeVisible();
+      await bridge.call("sim.node", { hold_installs: true });
+      await bridge.call("sim.pick_bundle", { slot: "slot-5", version: "2026.11.14" });
+      await page.getByRole("button", { name: "Install…" }).click();
+      await expect(page.locator("[data-install]")).toBeVisible();
+      await page.locator('[data-slot="slot-1"]').getByRole("button", { name: "Remove" }).click();
+      await expect(page.locator(".lines .ln").nth(4)).toBeVisible();
+      await page.waitForTimeout(9000); // a minute of readings would be better; nine seconds draws a line
+    },
+  },
+  {
+    name: "board-idle",
+    hash: BOARD,
+    ready: async (page) => {
+      await boardRead(page);
+    },
+  },
+  {
+    name: "board-hardware",
+    hash: BOARD,
+    ready: async (page) => {
+      await boardRead(page);
+      await page.locator('[data-panel="dock"] .tabbar').getByText("Hardware", { exact: true }).click();
+      await expect(page.locator("[data-device]")).toHaveCount(5);
+    },
+  },
+  {
+    name: "board-files",
+    hash: BOARD,
+    ready: async (page) => {
+      await boardRead(page);
+      await page.locator('[data-panel="dock"] .tabbar').getByText("Files", { exact: true }).click();
+    },
+  },
+  {
+    name: "board-offline",
+    hash: BOARD,
+    ready: async (page, bridge) => {
+      await boardRead(page);
+      await bridge.call("sim.set_online", { id: DEMO.running.id, online: false });
+      await expect(page.locator("header.top .chip.off")).toBeVisible();
+    },
+  },
+  {
+    name: "board-failed-install",
+    hash: BOARD,
+    ready: async (page, bridge) => {
+      await boardRead(page);
+      await bridge.call("sim.pick_bundle", { slot: "slot-9", version: "2026.12.1", board: "another-board" });
+      await page.getByRole("button", { name: "Install…" }).click();
+      await expect(page.locator('[data-install="failed"]')).toBeVisible();
+    },
+  },
+  {
+    name: "board-plain",
+    hash: "#/devices",
+    scene: "plain",
+    ready: async (page) => {
+      await page.locator("aside.side").getByText("board", { exact: true }).click();
+      await expect(page.locator('[data-slots-state="none"]')).toBeVisible();
+    },
+  },
 ];
 
 test.describe("pictures", () => {
@@ -50,11 +130,11 @@ test.describe("pictures", () => {
     for (const screen of SCREENS) {
       test.describe(() => {
         test.use({ scene: screen.scene ?? "demo" });
-        test(`${screen.name} (${scheme})`, async ({ app }) => {
+        test(`${screen.name} (${scheme})`, async ({ app, bridge }) => {
         mkdirSync(OUT, { recursive: true });
         await app.emulateMedia({ colorScheme: scheme });
         await app.evaluate((hash) => (location.hash = hash), screen.hash);
-        await screen.ready(app);
+        await screen.ready(app, bridge);
         await app.evaluate(() => document.fonts.ready);
         await app.screenshot({ path: join(OUT, `${screen.name}-${scheme}.png`) });
         });

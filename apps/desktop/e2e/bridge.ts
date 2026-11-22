@@ -18,7 +18,7 @@ export type Bridge = {
   stop(): Promise<void>;
 };
 
-export type Scene = "demo" | "empty";
+export type Scene = "demo" | "empty" | "plain";
 
 export async function startBridge(dataDir: string, scene: Scene = "demo"): Promise<Bridge> {
   if (!BRIDGE) throw new Error("ATLAS_UI_BRIDGE is not set: run scripts/ui-gate.sh");

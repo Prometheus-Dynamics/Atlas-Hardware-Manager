@@ -29,7 +29,7 @@ use atlas_board::BoardDriver;
 use atlas_driver_disk::DiskDriver;
 use atlas_inventory::Inventory;
 use atlas_robot::{HttpReach, Teams};
-use atlas_session::Seed;
+use atlas_session::{RealPause, Seed, Sessions};
 use atlas_types::{Link, LinkId, LinkKind};
 
 use crate::core::Parts;
@@ -108,7 +108,12 @@ pub fn real(teams: &TeamList) -> (Parts, Vec<String>) {
     }
     let list = std::env::var("ATLAS_ORION_ADDRESSES").unwrap_or_default();
     let (seeds, refused) = seeds_from(&list, &network);
-    parts.registry.register(Arc::new(BoardDriver::new(seeds)));
+    let sessions = Arc::new(Sessions::new(Arc::new(RealPause)));
+    parts.registry.register(Arc::new(BoardDriver::with_sessions(
+        seeds,
+        sessions.clone(),
+    )));
+    parts.sessions = Some(sessions);
     (parts, refused)
 }
 

@@ -57,6 +57,7 @@ pub fn options_from_env() -> Options {
 /// Opens the window and runs until it closes.
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let core = tauri::async_runtime::block_on(Core::open(options_from_env()));
             let mut updates = core.subscribe();
@@ -79,6 +80,8 @@ pub fn run() {
                     }
                 }
             });
+            core.boards()
+                .set_picker(std::sync::Arc::new(Dialog(app.handle().clone())));
             app.manage(core);
             Ok(())
         })
@@ -111,4 +114,21 @@ pub fn run() {
             tauri::async_runtime::block_on(core.save_now());
         }
     });
+}
+
+/// The system's file dialog, opened from the core (never from the page: the page gets no file
+/// access of its own).
+struct Dialog(tauri::AppHandle);
+
+impl crate::board::Picker for Dialog {
+    fn pick(&self, title: &str, extensions: &[&str]) -> Option<std::path::PathBuf> {
+        use tauri_plugin_dialog::DialogExt;
+        self.0
+            .dialog()
+            .file()
+            .set_title(title)
+            .add_filter(title, extensions)
+            .blocking_pick_file()
+            .and_then(|file| file.into_path().ok())
+    }
 }

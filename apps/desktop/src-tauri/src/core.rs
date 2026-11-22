@@ -111,6 +111,9 @@ pub struct Parts {
     pub registry: DriverRegistry,
     pub links: Vec<Link>,
     pub job_kinds: Vec<Arc<dyn JobKind>>,
+    /// The session registry the board driver keeps its nodes in. The board page reaches a node
+    /// through it, so a node has one connection.
+    pub sessions: Option<Arc<atlas_session::Sessions>>,
 }
 
 impl std::fmt::Debug for Parts {
@@ -152,6 +155,8 @@ struct Inner {
     jobs: Jobs,
     holds: DeviceHolds,
     scan: Mutex<Option<ScanControl>>,
+    sessions: Option<Arc<atlas_session::Sessions>>,
+    boards: crate::board::Boards,
     #[cfg(feature = "sim")]
     sim: Option<crate::sim::World>,
 }
@@ -260,6 +265,7 @@ impl Core {
             registry,
             links: link_list,
             job_kinds,
+            sessions,
         } = parts;
 
         let events = Events::new(1024);
@@ -269,6 +275,11 @@ impl Core {
         links.set(link_list);
         let (updates, _) = broadcast::channel(256);
 
+        let boards = crate::board::Boards::new(dirs.as_ref().map(|dirs| dirs.data.as_path()));
+        #[cfg(feature = "sim")]
+        if let Some(world) = &sim {
+            boards.set_picker(world.picker());
+        }
         let core = Self {
             inner: Arc::new(Inner {
                 mode,
@@ -288,6 +299,8 @@ impl Core {
                 jobs,
                 holds: holds.clone(),
                 scan: Mutex::new(None),
+                sessions,
+                boards,
                 #[cfg(feature = "sim")]
                 sim,
             }),
@@ -334,6 +347,24 @@ impl Core {
     #[must_use]
     pub fn jobs(&self) -> &Jobs {
         &self.inner.jobs
+    }
+
+    /// The session registry the scan keeps Orion nodes in, when the board driver is registered.
+    #[must_use]
+    pub fn sessions(&self) -> Option<&Arc<atlas_session::Sessions>> {
+        self.inner.sessions.as_ref()
+    }
+
+    /// The board pages' shared state.
+    #[must_use]
+    pub fn boards(&self) -> &crate::board::Boards {
+        &self.inner.boards
+    }
+
+    /// Publishes the inventory again: something beside the records changed (a board's default
+    /// slot was read).
+    pub fn republish_inventory(&self) {
+        self.publish_inventory();
     }
 
     #[must_use]
@@ -411,7 +442,11 @@ impl Core {
     }
 
     fn publish_inventory(&self) {
-        let view = self.with_inventory(|inventory| InventoryView::of(inventory, now_ms()));
+        let mut view = self.with_inventory(|inventory| InventoryView::of(inventory, now_ms()));
+        let defaults = self.inner.boards.defaults();
+        for device in &mut view.devices {
+            device.default_version = defaults.get(&device.id).cloned();
+        }
         self.publish_as(topic::INVENTORY, &view);
     }
 

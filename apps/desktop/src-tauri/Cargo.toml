@@ -52,6 +52,12 @@ atlas-catalog = { path = "../../../crates/core/catalog" }
 atlas-driver-disk = { path = "../../../crates/drivers/disk" }
 atlas-robot = { path = "../../../crates/drivers/robot" }
 atlas-session = { path = "../../../crates/board/session" }
+atlas-actions = { path = "../../../crates/board/actions" }
+atlas-board-slots = { path = "../../../crates/drivers/board-slots" }
+atlas-slots = { path = "../../../crates/core/slots" }
+atlas-topics = { path = "../../../crates/board/topics" }
+orion = { workspace = true }
+tauri-plugin-dialog = "2"
 # The simulated devices (feature `sim`): the mock fleet, the simulated Orion node, the simulated
 # USB bus under the real boot ROM driver, and a made-up disk list under the real disk driver.
 atlas-mock = { path = "../../../crates/drivers/mock", optional = true }
