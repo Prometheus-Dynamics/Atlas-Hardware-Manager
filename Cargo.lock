@@ -131,12 +131,22 @@ dependencies = [
 name = "atlas-app"
 version = "2026.1.0-dev"
 dependencies = [
+ "async-trait",
+ "atlas-board",
+ "atlas-catalog",
+ "atlas-disk",
  "atlas-driver",
+ "atlas-driver-disk",
+ "atlas-driver-rockchip",
  "atlas-inventory",
  "atlas-jobs",
  "atlas-log",
  "atlas-mock",
+ "atlas-robot",
+ "atlas-session",
+ "atlas-sim-node",
  "atlas-types",
+ "atlas-usb",
  "serde",
  "serde_json",
  "tauri",

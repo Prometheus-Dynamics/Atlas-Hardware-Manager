@@ -52,6 +52,12 @@ export type Device = {
   robot: string | null;
   shown: Capability[];
   offers_reported: boolean;
+  /** What the catalog calls the model, when it knows it. */
+  model_name: string | null;
+  /** `controller`: a robot's controller that does not run Orion yet. */
+  role: "controller" | null;
+  /** The default slot's version, once a slot list was read for the board (F4 fills it). */
+  default_version: string | null;
 };
 
 export type Robot = { name: string; team: string | null; notes: string | null };
@@ -62,7 +68,9 @@ export type Inventory = { devices: Device[]; robots: Robot[]; activity: Activity
 
 export type ScanProblem = { family: string; link: string; error: string; timed_out: boolean; attempt: number; retry_in_ms: number };
 
-export type Scan = { paused: boolean; links: string[]; first_round_done: boolean; problems: ScanProblem[] };
+export type Link = { id: string; kind: LinkKind; label: string };
+
+export type Scan = { paused: boolean; links: Link[]; first_round_done: boolean; problems: ScanProblem[] };
 
 export type JobStatus =
   | { status: "queued" } | { status: "running" } | { status: "paused" } | { status: "done" } | { status: "cancelled" }

@@ -26,6 +26,7 @@ use atlas_types::{DeviceKey, Family, Link, LinkId, LinkKind};
 use serde_json::Value;
 use tokio::sync::{Notify, broadcast};
 
+use crate::drivers::TeamList;
 use crate::paths::Dirs;
 use crate::settings::Settings;
 use crate::view::{InventoryView, ScanProblem, ScanView, Update, topic};
@@ -56,6 +57,9 @@ pub struct Options {
     pub dirs: Option<Dirs>,
     pub mode: Mode,
     pub scan: ScanConfig,
+    /// Which simulated world the simulated mode builds: `demo` (one device in every state) or
+    /// `empty` (nothing plugged in). Read only in the simulated mode.
+    pub scene: String,
 }
 
 impl Options {
@@ -65,6 +69,7 @@ impl Options {
             dirs,
             mode,
             scan: ScanConfig::default(),
+            scene: "demo".into(),
         }
     }
 }
@@ -140,6 +145,8 @@ struct Inner {
     save_wanted: Notify,
     settings: Mutex<Settings>,
     links: Arc<Links>,
+    /// The teams the robot drivers look for, kept equal to the inventory's robots.
+    teams: TeamList,
     registry: DriverRegistry,
     seen: Mutex<Seen>,
     jobs: Jobs,
@@ -182,7 +189,12 @@ impl Core {
     /// runtime. It never fails: a file that cannot be used is put aside and said in the log, and
     /// the app opens without it.
     pub async fn open(options: Options) -> Self {
-        let Options { dirs, mode, scan } = options;
+        let Options {
+            dirs,
+            mode,
+            scan,
+            scene,
+        } = options;
         let log = dirs
             .as_ref()
             .and_then(|dirs| Logger::open(dirs.logs(), atlas_log::Config::default()).ok())
@@ -224,16 +236,26 @@ impl Core {
             .map(|dirs| Settings::load(&dirs.settings()))
             .unwrap_or_default();
 
+        let teams = TeamList::default();
+        teams.follow(&inventory);
         #[cfg(feature = "sim")]
-        let (parts, sim) = if mode == Mode::Sim {
+        let (parts, sim, unused) = if mode == Mode::Sim {
             let mut parts = Parts::default();
-            let world = crate::sim::World::install(&mut parts);
-            (parts, Some(world))
+            let (world, unused) =
+                crate::sim::World::install(&mut parts, crate::sim::Scene::named(&scene), &teams);
+            (parts, Some(world), unused)
         } else {
-            (crate::drivers::real(), None)
+            let (parts, unused) = crate::drivers::real(&teams);
+            (parts, None, unused)
         };
         #[cfg(not(feature = "sim"))]
-        let parts = crate::drivers::real();
+        let (parts, unused) = {
+            let _ = scene;
+            crate::drivers::real(&teams)
+        };
+        for line in unused {
+            log.notice(&format!("left out at start: {line}"));
+        }
         let Parts {
             registry,
             links: link_list,
@@ -260,6 +282,7 @@ impl Core {
                 save_wanted: Notify::new(),
                 settings: Mutex::new(settings),
                 links: Arc::clone(&links),
+                teams,
                 registry: registry.clone(),
                 seen: Mutex::new(Seen::default()),
                 jobs,
@@ -280,6 +303,10 @@ impl Core {
         tokio::spawn(core.clone().save_when_wanted());
         let control = start_scan(registry, links, events, scan, holds);
         *lock(&core.inner.scan) = Some(control);
+        #[cfg(feature = "sim")]
+        if let Some(world) = core.sim() {
+            world.settle(&core);
+        }
         core
     }
 
@@ -393,7 +420,7 @@ impl Core {
         let seen = lock(&self.inner.seen);
         let view = ScanView {
             paused: seen.paused,
-            links: links.iter().map(|link| link.label.clone()).collect(),
+            links: links.clone(),
             first_round_done: links
                 .iter()
                 .all(|link| self.link_reported(&seen, &link.id, &link.kind)),
@@ -413,6 +440,7 @@ impl Core {
     }
 
     fn inventory_changed(&self) {
+        self.with_inventory(|inventory| self.inner.teams.follow(inventory));
         self.publish_inventory();
         self.inner.save_wanted.notify_one();
     }
@@ -494,12 +522,11 @@ impl Core {
                 );
                 let outcome =
                     lock(&self.inner.inventory).observe(identity, kind, capabilities, now_ms());
-                if outcome == Outcome::Unchanged {
-                    // Only the time it was last seen moved: worth saving, not worth a redraw.
-                    self.inner.save_wanted.notify_one();
-                } else {
-                    self.inventory_changed();
-                }
+                // An answer is rare (a device is asked who it is when it appears and then about
+                // once a minute), and even one that changes nothing else moves when each link
+                // last answered, which is what the list shows a record's links by.
+                let _: Outcome = outcome;
+                self.inventory_changed();
             }
             Event::Discovered {
                 family,

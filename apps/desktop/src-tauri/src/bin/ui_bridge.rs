@@ -86,6 +86,7 @@ struct Args {
     dist: PathBuf,
     port: u16,
     data: Option<PathBuf>,
+    scene: String,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -93,6 +94,7 @@ fn parse_args() -> Result<Args, String> {
         dist: PathBuf::from("dist"),
         port: 0,
         data: None,
+        scene: "demo".into(),
     };
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
@@ -105,6 +107,7 @@ fn parse_args() -> Result<Args, String> {
                     .map_err(|_| "--port needs a number".to_string())?
             }
             "--data" => args.data = Some(PathBuf::from(value()?)),
+            "--scene" => args.scene = value()?,
             _ => return Err(format!("unknown argument {word}")),
         }
     }
@@ -117,7 +120,7 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             eprintln!(
-                "atlas-ui-bridge: {error}\nusage: atlas-ui-bridge [--dist DIR] [--port N] [--data DIR]"
+                "atlas-ui-bridge: {error}\nusage: atlas-ui-bridge [--dist DIR] [--port N] [--data DIR] [--scene demo|empty]"
             );
             std::process::exit(2);
         }
@@ -135,7 +138,9 @@ fn main() {
     let data = args.data.clone().unwrap_or_else(|| {
         std::env::temp_dir().join(format!("atlas-ui-bridge-{}", std::process::id()))
     });
-    let core = runtime.block_on(Core::open(Options::new(Some(Dirs::under(data)), Mode::Sim)));
+    let mut options = Options::new(Some(Dirs::under(data)), Mode::Sim);
+    options.scene = args.scene.clone();
+    let core = runtime.block_on(Core::open(options));
 
     let feed = Arc::new(Feed::default());
     {

@@ -3,26 +3,29 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SIZES, expect, expectNoOverflow, startBridge, test } from "./bridge";
+import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, startBridge, test } from "./bridge";
 
 test("the simulated devices arrive by events and fill the tree", async ({ app }) => {
   const side = app.locator("aside.side");
   await expect(side.locator(".brand b")).toHaveText("Atlas");
   await expect(side.locator(".brand span")).toHaveText(/^\d{4}\.\d+\.\d+-dev/);
   // One device in every state, found by the scan with no call from the page.
-  await expect(side.locator("a.nav .dot")).toHaveCount(5);
-  await expect(side.locator(".sec")).toHaveText(["Devices", "Disks", "Tools"]);
+  await demoSettled(app);
   await expect(side.locator("a.nav .dot.acc")).toHaveCount(1); // the board in its boot ROM
+  // The robot, its controller under it, then the boards on this computer.
+  await expect(side.locator("a.nav .t")).toHaveText([
+    "All devices", "Practice field", "sc-practice", "bench-a", "bench-b", "bench-c", "old-bench", "SD card 64 GB", "Flash a board", "Settings",
+  ]);
 });
 
 test("a board that goes away moves to Offline, and comes back", async ({ app, bridge }) => {
   const side = app.locator("aside.side");
-  await expect(side.locator("a.nav .dot.ok")).toHaveCount(2);
-  await bridge.call("sim.set_online", { id: "simulated:SIM-RUN-1", online: false });
-  await expect(side.locator(".sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
-  await expect(side.locator("a.nav.off")).toHaveText("simulated:SIM-RUN-1");
-  await bridge.call("sim.set_online", { id: "simulated:SIM-RUN-1", online: true });
-  await expect(side.locator(".sec")).toHaveText(["Devices", "Disks", "Tools"]);
+  await demoSettled(app);
+  await expect(side.locator("a.nav.off")).toHaveText(["old-bench"]);
+  await bridge.call("sim.set_online", { id: DEMO.recovery.id, online: false });
+  await expect(side.locator("a.nav.off")).toHaveText(["bench-c", "old-bench"]);
+  await bridge.call("sim.set_online", { id: DEMO.recovery.id, online: true });
+  await expect(side.locator("a.nav.off")).toHaveText(["old-bench"]);
 });
 
 test("the tree leads to each screen, and the selected row shows it", async ({ app }) => {
@@ -44,19 +47,16 @@ test("it opens with the last known inventory before any scan answers", async ({ 
   const first = await startBridge(dataDir);
   const page = await browser.newPage();
   await page.goto(first.url);
-  await expect(page.locator("aside.side a.nav .dot")).toHaveCount(5);
-  // Unplug one, so the saved inventory holds an offline record too.
-  await first.call("sim.set_online", { id: "simulated:SIM-REC-1", online: false });
-  await expect(page.locator("aside.side a.nav.off")).toHaveCount(1);
+  await demoSettled(page);
   await page.waitForTimeout(2500); // the inventory is saved at most every two seconds
   await first.stop();
 
   const second = await startBridge(dataDir);
   // What the core holds the moment it has opened, before the page asks: everything it knew.
   const snapshot = (await second.call("snapshot")) as { topics: { inventory: { devices: { presence: string }[] } } };
-  expect(snapshot.topics.inventory.devices).toHaveLength(5);
+  expect(snapshot.topics.inventory.devices).toHaveLength(6);
   await page.goto(second.url);
-  await expect(page.locator("aside.side a.nav .dot")).toHaveCount(5);
+  await demoSettled(page);
   await page.close();
   await second.stop();
   rmSync(dataDir, { recursive: true, force: true });
@@ -65,7 +65,7 @@ test("it opens with the last known inventory before any scan answers", async ({ 
 for (const size of SIZES) {
   test(`nothing overflows at ${size.width}x${size.height}`, async ({ app }) => {
     await app.setViewportSize(size);
-    await expect(app.locator("aside.side a.nav .dot")).toHaveCount(5);
+    await demoSettled(app);
     await expectNoOverflow(app);
   });
 }

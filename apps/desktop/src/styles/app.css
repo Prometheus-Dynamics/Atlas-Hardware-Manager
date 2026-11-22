@@ -25,3 +25,9 @@ button.rowbtn { all: unset; display: contents; cursor: default; }
 /* Text can be selected where it is data a person copies (logs, terminal, keys), not elsewhere. */
 body { user-select: none; -webkit-user-select: none; }
 .lines, .term, .mono, .kv dd { user-select: text; -webkit-user-select: text; }
+
+/* A list that holds more records than its panel shows scrolls inside the panel; the page itself
+   never does. The header row stays where it is. */
+.rows { flex: 1; min-height: 0; min-width: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin; }
+.tr.link { cursor: default; }
+.tr.link:focus-visible { outline-offset: -2px; }

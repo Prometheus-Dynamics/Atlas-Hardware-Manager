@@ -3,7 +3,7 @@
 // disks, and what is offline. One record per board, whatever links it is seen on.
 
 import type { Device, Inventory } from "../api/types";
-import { pageOf } from "./state";
+import { nameOf, pageOf } from "./state";
 
 export type RobotEntry = {
   device: Device;
@@ -22,7 +22,7 @@ export type Groups = {
   offline: Device[];
 };
 
-const byName = (a: Device, b: Device) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+const byName = (a: Device, b: Device) => nameOf(a).localeCompare(nameOf(b)) || a.id.localeCompare(b.id);
 
 /** The device a record is reached through, when its followed link is a gateway. */
 export function gatewayOf(device: Device): string | undefined {
@@ -30,11 +30,6 @@ export function gatewayOf(device: Device): string | undefined {
   if (followed?.kind.kind !== "gateway") return undefined;
   const via = followed.kind.via as { family?: string; serial?: string; node?: string };
   return via.family !== undefined ? `${via.family}:${via.serial}` : via.node;
-}
-
-/** Whether a record is a robot's controller: a robot device that relays to boards. */
-export function isController(device: Device): boolean {
-  return device.identity.state === "robot-device" && device.shown.includes("gateway");
 }
 
 export function tree(inventory: Inventory): Groups {
@@ -47,7 +42,7 @@ export function tree(inventory: Inventory): Groups {
     const entries: RobotEntry[] = [];
     const behind = (parent: Device) => members.filter((device) => gatewayOf(device) === parent.id);
     for (const device of members.filter((member) => gatewayOf(member) === undefined || !members.some((m) => m.id === gatewayOf(member)))) {
-      entries.push({ device, depth: 0, page: isController(device) ? "systemcore" : pageOf(device) });
+      entries.push({ device, depth: 0, page: pageOf(device) });
       for (const child of behind(device)) entries.push({ device: child, depth: 1, page: pageOf(child) });
     }
     robots.push({ name, entries });

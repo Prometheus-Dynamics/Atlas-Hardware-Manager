@@ -41,7 +41,10 @@ pub fn options_from_env() -> Options {
                 Dirs::under(std::env::temp_dir().join(format!("atlas-sim-{}", std::process::id())))
             }
         };
-        return Options::new(Some(dirs), Mode::Sim);
+        let mut options = Options::new(Some(dirs), Mode::Sim);
+        // `ATLAS_SIM=empty` is the world with nothing plugged in; any other value is the demo.
+        options.scene = std::env::var("ATLAS_SIM").unwrap_or_default();
+        return options;
     }
     if wants_sim {
         eprintln!(

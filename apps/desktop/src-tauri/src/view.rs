@@ -11,7 +11,7 @@
 use atlas_inventory::{
     DeviceRecord, Health, HistoryKind, Inventory, LinkSighting, Presence, Robot,
 };
-use atlas_types::{CapabilityKind, CapabilitySet, DeviceKey, Identity, Offers};
+use atlas_types::{CapabilityKind, CapabilitySet, DeviceKey, Identity, Link, Offers};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -52,6 +52,14 @@ pub struct DeviceView {
     /// Whether the device's offers were read. When not, a kind that is not shown may still be
     /// offered, and the UI says so instead of hiding it.
     pub offers_reported: bool,
+    /// What the catalog calls the device's model, when its model is a board the catalog knows.
+    pub model_name: Option<String>,
+    /// `controller` for a robot's controller that does not run Orion yet (the robot drivers'
+    /// SystemCore): the one robot device Atlas offers something for.
+    pub role: Option<&'static str>,
+    /// The version of the board's default slot, when a slot list has been read for it. The
+    /// device list has none of its own: the board page's slot work fills it (F4).
+    pub default_version: Option<String>,
 }
 
 impl DeviceView {
@@ -71,6 +79,19 @@ impl DeviceView {
             robot: record.robot.clone(),
             shown: shown(&record.capabilities, record),
             offers_reported: record.capabilities.offers() == Offers::Reported,
+            model_name: record.identity.model.as_deref().and_then(|model| {
+                atlas_catalog::embedded()
+                    .boards
+                    .iter()
+                    .find(|board| board.model == model)
+                    .map(|board| board.display_name.clone())
+            }),
+            role: record
+                .key
+                .family()
+                .is_some_and(|family| family.as_str() == atlas_robot::SYSTEMCORE_FAMILY)
+                .then_some("controller"),
+            default_version: None,
         }
     }
 }
@@ -158,8 +179,8 @@ pub struct ScanProblem {
 pub struct ScanView {
     /// The manual off: no new calls start while it is set.
     pub paused: bool,
-    /// The links the scan looks at now, by label.
-    pub links: Vec<String>,
+    /// The links the scan looks at now. A record's link sightings name these by id.
+    pub links: Vec<Link>,
     /// Whether every driver has answered once on every link since the app opened. Until then a
     /// record from the last run is shown as it was last known.
     pub first_round_done: bool,

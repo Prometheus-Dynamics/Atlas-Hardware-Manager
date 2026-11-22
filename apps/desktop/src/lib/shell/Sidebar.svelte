@@ -4,7 +4,7 @@
   import Icon from "../ui/Icon.svelte";
   import { app, inventory } from "../stores/app.svelte";
   import { href, route } from "../stores/route.svelte";
-  import { pageOf, stateOf } from "../devices/state";
+  import { nameOf, pageOf, stateOf } from "../devices/state";
   import { tree } from "../devices/tree";
 
   const groups = $derived(tree(inventory()));
@@ -19,6 +19,9 @@
   <a class="nav" class:on={route.page === "devices"} href={href("devices")} style="--d:0">
     <Icon name="chip" /><span class="t">All devices</span>
   </a>
+  {#if inventory().devices.length === 0}
+    <a class="nav off" href={href("devices")} style="--d:1"><span class="t">No devices yet</span></a>
+  {/if}
   {#each groups.robots as robot (robot.name)}
     <a class="nav" class:on={on("robot", robot.name)} href={href("robot", robot.name)} style="--d:1">
       <Icon name="robot" /><span class="t">{robot.name}</span><span class="meta">robot</span>
@@ -31,22 +34,22 @@
         href={href(entry.page, entry.device.id)}
         style="--d:{2 + entry.depth}"
       >
-        <span class="dot {state.dot}"></span><span class="t">{entry.device.name}</span>
+        <span class="dot {state.dot}"></span><span class="t">{nameOf(entry.device)}</span>
       </a>
     {/each}
   {/each}
   {#each groups.boards as device (device.id)}
     {@const state = stateOf(device)}
     <a class="nav" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
-      <span class="dot {state.dot}"></span><span class="t">{device.name}</span>
+      <span class="dot {state.dot}"></span><span class="t">{nameOf(device)}</span>
     </a>
   {/each}
 
   {#if groups.offline.length > 0}
     <div class="sec up">Offline</div>
     {#each groups.offline as device (device.id)}
-      <a class="nav off" class:on={on("board", device.id)} href={href("board", device.id)} style="--d:1">
-        <span class="dot off"></span><span class="t">{device.name}</span>
+      <a class="nav off" class:on={on(pageOf(device), device.id)} href={href(pageOf(device), device.id)} style="--d:1">
+        <span class="dot off"></span><span class="t">{nameOf(device)}</span>
       </a>
     {/each}
   {/if}
@@ -55,7 +58,7 @@
     <div class="sec up">Disks</div>
     {#each groups.disks as device (device.id)}
       <a class="nav" class:on={on("disk", device.id)} href={href("disk", device.id)} style="--d:1">
-        <span class="dot info"></span><span class="t">{device.name}</span>
+        <span class="dot info"></span><span class="t">{nameOf(device)}</span>
       </a>
     {/each}
   {/if}

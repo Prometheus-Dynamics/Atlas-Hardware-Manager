@@ -7,7 +7,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
-import { expect, test } from "./bridge";
+import { demoSettled, expect, test, type Scene } from "./bridge";
 
 const OUT = process.env.ATLAS_SCREENS_DIR ?? "";
 const MOCKUPS = resolve(import.meta.dirname, "../../../docs/mockups");
@@ -21,14 +21,25 @@ const PLEX = [400, 500, 600].map((w) => font("IBM Plex Sans", "ibm-plex-sans", w
 
 /** One screen: its name, where it is in the app, what must be on it before the picture, and
  *  the mockup it is built from. Each item adds its screens here. */
-export type Screen = { name: string; hash: string; ready: (page: Page) => Promise<void>; mockup?: string };
+export type Screen = { name: string; hash: string; ready: (page: Page) => Promise<void>; mockup?: string; scene?: Scene };
 
 export const SCREENS: Screen[] = [
   {
-    name: "shell",
+    name: "devices",
     hash: "#/devices",
+    mockup: "devices.html",
     ready: async (page) => {
-      await expect(page.locator("aside.side a.nav .dot")).toHaveCount(5);
+      await demoSettled(page);
+      await expect(page.locator(".tr.dev")).toHaveCount(6);
+    },
+  },
+  {
+    name: "devices-empty",
+    hash: "#/devices",
+    mockup: "devices-empty.html",
+    scene: "empty",
+    ready: async (page) => {
+      await expect(page.locator(".empty-box")).toBeVisible();
     },
   },
 ];
@@ -37,13 +48,16 @@ test.describe("pictures", () => {
   test.skip(OUT === "", "set ATLAS_SCREENS_DIR to take pictures");
   for (const scheme of ["dark", "light"] as const) {
     for (const screen of SCREENS) {
-      test(`${screen.name} (${scheme})`, async ({ app }) => {
+      test.describe(() => {
+        test.use({ scene: screen.scene ?? "demo" });
+        test(`${screen.name} (${scheme})`, async ({ app }) => {
         mkdirSync(OUT, { recursive: true });
         await app.emulateMedia({ colorScheme: scheme });
         await app.evaluate((hash) => (location.hash = hash), screen.hash);
         await screen.ready(app);
         await app.evaluate(() => document.fonts.ready);
         await app.screenshot({ path: join(OUT, `${screen.name}-${scheme}.png`) });
+        });
       });
       if (screen.mockup) {
         test(`${screen.name} mockup (${scheme})`, async ({ page }) => {

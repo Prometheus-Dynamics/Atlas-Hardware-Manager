@@ -18,9 +18,11 @@ export type Bridge = {
   stop(): Promise<void>;
 };
 
-export async function startBridge(dataDir: string): Promise<Bridge> {
+export type Scene = "demo" | "empty";
+
+export async function startBridge(dataDir: string, scene: Scene = "demo"): Promise<Bridge> {
   if (!BRIDGE) throw new Error("ATLAS_UI_BRIDGE is not set: run scripts/ui-gate.sh");
-  const child: ChildProcess = spawn(BRIDGE, ["--dist", DIST, "--port", "0", "--data", dataDir], {
+  const child: ChildProcess = spawn(BRIDGE, ["--dist", DIST, "--port", "0", "--data", dataDir, "--scene", scene], {
     stdio: ["ignore", "pipe", "inherit"],
   });
   const url = await new Promise<string>((done, fail) => {
@@ -55,10 +57,12 @@ export async function startBridge(dataDir: string): Promise<Bridge> {
   };
 }
 
-export const test = base.extend<{ bridge: Bridge; app: Page }>({
-  bridge: async ({}, use) => {
+export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }>({
+  // The simulated world a test runs in: `test.use({ scene: "empty" })` for nothing plugged in.
+  scene: ["demo", { option: true }],
+  bridge: async ({ scene }, use) => {
     const dataDir = mkdtempSync(join(tmpdir(), "atlas-e2e-"));
-    const bridge = await startBridge(dataDir);
+    const bridge = await startBridge(dataDir, scene);
     await use(bridge);
     await bridge.stop();
     rmSync(dataDir, { recursive: true, force: true });
@@ -115,3 +119,22 @@ export const SIZES = [
   { width: 1320, height: 860 },
   { width: 1830, height: 1030 },
 ] as const;
+
+/** The demo world's records by the name each is shown under, and the id a call names it by. */
+export const DEMO = {
+  controller: { name: "sc-practice", id: "systemcore:9999" },
+  running: { name: "bench-a", id: "simulated:0123456789abcdef" },
+  bootRom: { name: "bench-b", id: "rockchip-maskrom:usb-1-3" },
+  recovery: { name: "bench-c", id: "simulated:SIM-REC-1" },
+  offline: { name: "old-bench", id: "simulated:SIM-OLD-1" },
+  disk: { name: "SD card 64 GB", id: "removable-disk:SIM-CARD-1" },
+} as const;
+
+/** Waits until the demo world has settled in the tree: every record found, named, and the old
+ *  board gone offline. */
+export async function demoSettled(page: Page) {
+  const side = page.locator("aside.side");
+  await expect(side.locator("a.nav .dot")).toHaveCount(6);
+  await expect(side.locator(".sec")).toHaveText(["Devices", "Offline", "Disks", "Tools"]);
+  for (const record of Object.values(DEMO)) await expect(side.getByText(record.name, { exact: true })).toBeVisible();
+}
