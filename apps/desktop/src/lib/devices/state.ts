@@ -57,12 +57,25 @@ const diskSize = (device: Device) => {
   return Number.isFinite(bytes) && bytes > 0 ? size(bytes) : "";
 };
 
+/** A boot ROM's model without the USB id it was found by ("Rockchip boot ROM (2207:350b)"). The
+ *  id is said where the board is flashed, not beside its name. */
+const romModel = (model: string) => model.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, "");
+
+/** The chip family of a board in its boot ROM, in the short words the mockup uses ("Rockchip
+ *  family"), read from the model its boot ROM driver reports ("Rockchip boot ROM"). A model
+ *  that is not written that way is shown as it is. */
+const romFamily = (model: string) => {
+  const found = /^(.+?)\s+boot ROM$/i.exec(romModel(model));
+  return found ? `${found[1]} family` : romModel(model);
+};
+
 /** The device's name: the person's label or the device's own name; a device that has neither is
  *  called by what it is (its model, and for a disk its size), not by its key. */
 export function nameOf(device: Device): string {
   if (device.label !== null || device.identity.name !== null) return device.name;
   const model = device.model_name ?? device.identity.model;
   if (model === null) return device.name;
+  if (device.identity.state === "boot-rom") return romModel(model);
   return device.identity.state === "removable-disk" ? `${model} ${diskSize(device)}`.trim() : model;
 }
 
@@ -78,6 +91,7 @@ export function kindOf(device: Device): string {
     // What it runs and at which version; a device that names no product is called by its model.
     return [versions["product"] ?? what, version].filter(Boolean).join(" ");
   }
+  if (state === "boot-rom") return named && what ? romFamily(what) : "";
   return named ? what : "";
 }
 

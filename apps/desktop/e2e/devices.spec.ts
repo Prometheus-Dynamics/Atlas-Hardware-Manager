@@ -48,6 +48,8 @@ test("every state is one row, under its group, with its words and its links", as
   await expect(rom.locator(".chip.acc")).toHaveText("Boot ROM, waiting");
   await expect(rom.locator("button.btn.sm.pri")).toHaveText("Flash");
   await expect(cells(rom).nth(2).locator(".chip.neu")).toHaveText(["USB 1-3 · boot ROM"]);
+  // Beside its name: its chip family in two words. The USB id it was found by is not here.
+  await expect(cells(rom).nth(0)).toHaveText("bench-b Rockchip family");
   await expect(app.locator(".tr.dev button")).toHaveCount(1);
 
   await expect(row(app, DEMO.recovery).locator(".chip.warn")).toHaveText("Recovery");
