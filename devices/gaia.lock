@@ -1,6 +1,9 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to b5d7b99f (pin move 11, 2026-11-22, the coordinator's rev): Gaia next with the board QEMU profile's firmware
+# mailbox stand-in (dfff04f0: /dev/vcio takes the RPIBOOT order 0x0003808b and the boot count set/get) and the ROCK 5C
+# example (b5d7b99f; no node raze-base uses changed). Before: 1ae21b98.
 # Moved to 1ae21b98 (pin move 11, 2026-11-22, the coordinator's rev): Gaia next with the board QEMU profile complete
 # (c23dd1dc: the RAM-boot mode, the stock host, the forward) and the guard that fails a build on any extended attribute
 # in the root (raze-base passed it, per the coordinator). Before: bb98a262.
@@ -38,4 +41,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "1ae21b98509efba00bc6c0150fa8281670fe26e1"
+commit = "b5d7b99fba2be2889e87590ec3a36ea7187b68ca"
