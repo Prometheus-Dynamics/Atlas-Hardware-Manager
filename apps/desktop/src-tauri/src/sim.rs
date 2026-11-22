@@ -1004,14 +1004,39 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             }
             Ok(Value::Null)
         }
-        // The simulated card: `hold` makes a write to it wait until it is let go.
+        // The simulated disks: `hold` makes a write wait until it is let go; `stick` plugs a second
+        // disk in or takes it out.
         "sim.disk" => {
             #[derive(Deserialize)]
             struct Card {
-                hold: bool,
+                hold: Option<bool>,
+                /// Plugs a second removable disk in (a USB stick), or takes it out.
+                stick: Option<bool>,
             }
-            let Card { hold } = args(name, arguments)?;
-            world.inner.disks.hold.store(hold, Ordering::Relaxed);
+            let Card { hold, stick } = args(name, arguments)?;
+            if let Some(hold) = hold {
+                world.inner.disks.hold.store(hold, Ordering::Relaxed);
+            }
+            if let Some(plugged) = stick {
+                let mut disks = world
+                    .inner
+                    .disks
+                    .disks
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                disks.retain(|disk| disk.name != "sim-stick");
+                if plugged {
+                    disks.push(Disk {
+                        path: "/dev/sim-stick".into(),
+                        name: "sim-stick".into(),
+                        size_bytes: 16_000_000_000,
+                        model: Some("USB stick".into()),
+                        serial: Some("SIM-STICK-1".into()),
+                        usb_port: Some("2-1".into()),
+                        ..card()
+                    });
+                }
+            }
             Ok(Value::Null)
         }
         "sim.ids" => {

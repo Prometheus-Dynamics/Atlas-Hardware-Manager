@@ -134,15 +134,15 @@
       {/each}
     </div>
     <div class="subhead"><h2 class="up" style="margin:0;color:var(--fg-muted)">Recent flashes here</h2></div>
-    <div class="fill" style="padding:2px 10px" data-panel="recent">
-      {#each (flash?.recent ?? []).slice(0, 6) as recent, index (recent.at_ms + recent.name)}
+    <div style="padding:2px 10px;flex:none" data-panel="recent">
+      {#each (flash?.recent ?? []).slice(0, 3) as recent (recent.at_ms + recent.name)}
         {@const word = recentWord(recent)}
-        <div class="tr" class:more-s={index >= 3} style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px;padding:0">
+        <div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px">
           <div><b>{recent.name}</b> <span class="faint">{when(recent.at_ms, app.now)}</span></div>
           <div><span class="chip {word.tone}">{#if word.tone !== "off"}<span class="dot {word.tone}"></span>{/if}{word.word}</span></div>
         </div>
       {:else}
-        <div class="faint" style="font-size:11px;padding:6px 0">None yet on this computer.</div>
+        <div class="tr faint" style="grid-template-columns:minmax(0,1fr);min-height:24px;font-size:11px;border-bottom:0"><div>None yet on this computer.</div></div>
       {/each}
     </div>
   </section>

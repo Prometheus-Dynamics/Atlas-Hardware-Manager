@@ -106,7 +106,8 @@
         {/each}
       </div>
     {/if}
-    <div style="margin-top:auto;border-top:1px solid var(--hairline);padding:8px 10px;min-height:52px;display:flex;align-items:center;min-width:0" data-foot={write ? write.status : confirming ? "confirm" : "idle"} data-phase={write?.phase}>
+    <div style="margin-top:auto;border-top:1px solid var(--hairline);padding:8px 10px;min-height:52px;min-width:0" data-foot={write ? write.status : confirming ? "confirm" : "idle"} data-phase={write?.phase}>
+      <div style="display:flex;align-items:center;min-height:24px;min-width:0">
       {#if write?.status === "writing"}
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
           <div class="bar" class:info={write.phase !== "writing"} style="height:6px"><i style="width:{percent}%"></i></div>
@@ -147,6 +148,7 @@
         <div class="muted ell" style="flex:1">Writes {image.file} to {nameOf(chosen)} ({dev(chosen)}). Everything on it is erased.</div>
         <button class="btn sm pri" style="margin-left:8px" onclick={() => (confirming = true)}>Erase and write…</button>
       {/if}
+      </div>
     </div>
   </section>
 </Page>

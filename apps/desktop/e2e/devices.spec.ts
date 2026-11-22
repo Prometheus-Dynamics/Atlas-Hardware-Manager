@@ -92,7 +92,7 @@ test("a row opens its record's screen, and Flash opens the flash flow for that b
   await row(app, DEMO.bootRom).getByRole("button", { name: "Flash" }).click();
   await expect(app).toHaveURL(/#\/flash\/rockchip-maskrom%3Ausb-1-3$/);
   await expect(title(app)).toHaveText("Flash a board");
-  await expect(app.locator("aside.side a.nav.on")).toHaveText("bench-b");
+  await expect(app.locator("aside.side a.nav.on")).toHaveText("Flash a board");
 });
 
 test("a board that is unplugged moves to Offline in place, says so in the events, and comes back", async ({ app, bridge }) => {

@@ -208,7 +208,9 @@ export const SCREENS: Screen[] = [
     hash: DISK,
     mockup: "flash-disk.html",
     ready: async (page, bridge) => {
-      await diskReady(page, bridge);
+      await flashReady(page, bridge);
+      await bridge.call("sim.disk", { stick: true });
+      await expect(page.locator("[data-disk]")).toHaveCount(2);
       await page.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
       await expect(page.locator("[data-foot] .q")).toBeVisible();
     },

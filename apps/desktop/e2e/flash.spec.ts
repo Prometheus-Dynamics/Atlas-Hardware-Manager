@@ -200,6 +200,24 @@ test("a card: the erase is confirmed in place, then written and read back", asyn
   await expect(foot).toHaveAttribute("data-foot", "idle");
 });
 
+test("with two disks the person chooses which, and the question names the chosen one", async ({ app, bridge }) => {
+  await openDisk(app);
+  await bridge.call("sim.disk", { stick: true });
+  await expect(app.locator("[data-disk]")).toHaveCount(2);
+  const stick = app.locator("[data-disk]", { hasText: "USB stick 16 GB" });
+  await expect(stick).not.toHaveClass(/sel/);
+  await stick.click();
+  await expect(stick).toHaveClass(/sel/);
+  await expect(app.locator("header.top .chip.info")).toHaveText("sim-stick selected");
+  await chooseImage(app, bridge);
+  await app.locator("[data-foot]").getByRole("button", { name: "Erase and write…" }).click();
+  await expect(app.locator("[data-foot] .q")).toContainText("Erase sim-stick (USB stick 16 GB)");
+  // Choosing the other disk withdraws the question: it was about the first one.
+  await app.locator(`[data-disk="${DEMO.disk.id}"]`).click();
+  await expect(app.locator("[data-foot]")).toHaveAttribute("data-foot", "idle");
+  await expect(app.locator("[data-foot]")).toContainText("SD card 64 GB");
+});
+
 test("a card pulled while it is written is waited for, and a write can be cancelled", async ({ app, bridge }) => {
   await openDisk(app);
   await chooseImage(app, bridge);

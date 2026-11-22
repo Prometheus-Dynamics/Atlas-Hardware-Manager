@@ -268,7 +268,13 @@ fn repeatable(stop: atlas_usb::Stop) -> DriverError {
     if stop.is_refusal() {
         DriverError::Flash(stop)
     } else {
-        DriverError::Unreachable(stop.to_string())
+        // The stop's own sentence, without the one-word tag it starts with.
+        let text = stop.to_string();
+        let words = match text.split_once(": ") {
+            Some((tag, rest)) if tag.chars().all(|c| c.is_ascii_lowercase() || c == ' ') => rest,
+            _ => &text,
+        };
+        DriverError::Other(words.to_owned())
     }
 }
 

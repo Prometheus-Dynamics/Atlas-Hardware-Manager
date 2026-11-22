@@ -9,7 +9,9 @@
 
   const groups = $derived(tree(inventory()));
   const shortVersion = $derived(app.version.split("+")[0] ?? "");
-  const on = (page: string, arg = "") => route.page === page && (arg === "" || route.arg === arg);
+  // The flash flow is one tool: its row under Tools is the selected one whichever board it is
+  // working on, as the mockups draw it.
+  const on = (page: string, arg = "") => page !== "flash" && route.page === page && (arg === "" || route.arg === arg);
 </script>
 
 <aside class="side">
@@ -64,7 +66,7 @@
   {/if}
 
   <div class="sec up">Tools</div>
-  <a class="nav" class:on={route.page === "flash" && route.arg === ""} href={href("flash")} style="--d:0">
+  <a class="nav" class:on={route.page === "flash"} href={href("flash")} style="--d:0">
     <Icon name="bolt" /><span class="t">Flash a board</span>
   </a>
   <a class="nav" class:on={route.page === "settings"} href={href("settings")} style="--d:0">
