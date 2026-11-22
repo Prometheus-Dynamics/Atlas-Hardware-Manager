@@ -259,8 +259,15 @@ for (const size of SIZES) {
     await expect(app.locator('[data-panel="failure"]')).toBeVisible();
     await expect(app.locator('[data-panel="log"] .ln').nth(2)).toBeVisible();
     await expectNoOverflow(app);
+    // Stopped by hand before the board answers: while it is retrying, the next try (a quarter of a
+    // second in, at first) sends the loader on its own once the board answers, and the panel with
+    // its buttons goes away before a click can land. Stopped, nothing runs until Retry is pressed.
+    const failure = app.locator('[data-panel="failure"]');
+    await failure.getByRole("button", { name: "Stop retrying" }).click();
+    await expect(failure).toHaveAttribute("data-status", "stopped");
+    await expectNoOverflow(app);
     await bridge.call("sim.rom", { fresh: true });
-    await app.locator('[data-panel="failure"]').getByRole("button", { name: "Retry now" }).click();
+    await failure.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(app.locator('[data-flash-chip="loaded"]')).toBeVisible();
     await expectNoOverflow(app);
     await app.locator("aside.side").getByText(DEMO.disk.name, { exact: true }).click();
