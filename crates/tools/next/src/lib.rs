@@ -24,6 +24,7 @@ mod link;
 mod offers;
 mod pins;
 mod report;
+mod time;
 pub mod usb_boot;
 
 use std::ffi::OsString;
@@ -80,6 +81,8 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               released image): bench.seed, bench.pub, bench.keys in a new directory
 
   hold <address> <seconds>    hold: bench check only. Takes the session's hold on a pinned board through the same hold the app's terminal and jobs use, sends nothing else, and prints each lease renewal and any lapse. Exit 0 when the lease was kept, 1 on a lapse or no renewal.
+
+  time <address> <seconds>    time: bench check only. The session offers this computer's time to a board it finds; this reads what became of the offer, prints each time the board asks, and the board's clock against this computer's before and after. Exit 0 when the board took the time, asked for it and says its clock is synced; 1 otherwise.
 
   offers <address> --out <file.json>
                               offers: bench only. Records what the board's node offers (facts, resources and each device's describe, topics) into one JSON file, for the sim's fixture. Reads only; exit 0 when the file was written, 1 otherwise.

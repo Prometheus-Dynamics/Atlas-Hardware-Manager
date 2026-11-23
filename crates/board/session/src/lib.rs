@@ -61,6 +61,7 @@ pub mod long;
 pub mod monitor;
 mod seed;
 mod sessions;
+pub mod time;
 pub mod words;
 
 pub use backoff::Backoff;
@@ -73,3 +74,4 @@ pub use long::{
 pub use monitor::{CALL_WAIT, Handle, Monitor, PROGRAM, Pause, Presence, RealPause, SessionError};
 pub use seed::{Seed, check_address};
 pub use sessions::Sessions;
+pub use time::TimeOffer;

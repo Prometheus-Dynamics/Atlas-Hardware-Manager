@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use atlas_session::{FailureKind, Handle, Pause, Presence, RealPause, SessionError, Sessions};
+use atlas_session::{
+    FailureKind, Handle, Pause, Presence, RealPause, SessionError, Sessions, TimeOffer,
+};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use common::scratch;
 use orion::{Address, ClientError};
@@ -103,6 +105,48 @@ async fn a_call_runs_on_the_live_client_and_returns_what_it_answers() {
         .await
         .expect("the call is answered");
     assert!(!name.is_empty());
+}
+
+/// The session offers this computer's time once it finds the node. The simulated node's comm core
+/// takes no time from operators (its time sync is off), so the offer is refused `unsupported`:
+/// that is recorded as "not wanted", the session stays up, calls run, and the record goes back to
+/// "not offered" when the node is lost. A board that takes the offer is not shown here: no
+/// simulated node disciplines or measures a clock.
+#[tokio::test]
+async fn an_offer_of_time_a_board_does_not_want_is_recorded_and_costs_the_session_nothing() {
+    let dir = scratch("time-offer");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    assert_eq!(*handle.time_offer().borrow(), TimeOffer::NotOffered);
+    connected(&handle).await;
+
+    let mut offer = handle.time_offer();
+    tokio::time::timeout(
+        DEADLINE,
+        offer.wait_for(|offer| *offer != TimeOffer::NotOffered),
+    )
+    .await
+    .expect("the offer is answered")
+    .expect("the monitor is running");
+    assert_eq!(*offer.borrow(), TimeOffer::NotWanted);
+
+    let name = handle
+        .with_client(|orion| -> Result<String, orion::Error> { Ok(orion.node()?.name) })
+        .await
+        .expect("a call still runs after the refused offer");
+    assert!(!name.is_empty());
+    assert!(matches!(handle.presence(), Presence::Found(_)));
+
+    drop(node);
+    lost(&handle).await;
+    tokio::time::timeout(
+        DEADLINE,
+        offer.wait_for(|offer| *offer == TimeOffer::NotOffered),
+    )
+    .await
+    .expect("a lost node has no offer")
+    .expect("the monitor is running");
 }
 
 #[tokio::test]

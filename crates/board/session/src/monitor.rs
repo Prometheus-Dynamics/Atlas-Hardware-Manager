@@ -51,6 +51,7 @@ use crate::lease::{self, Clock, Hold, Lease, Renewals, Shared as LeaseShared};
 use crate::long::{
     AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
+use crate::time::{self, TimeOffer};
 
 /// The program name this crate connects as.
 pub const PROGRAM: &str = "atlas";
@@ -399,9 +400,18 @@ pub struct Handle {
     busy: Arc<Waits>,
     /// How long a call refused busy is sent again before it is a refusal ([`busy::BOUND`]).
     busy_bound: Duration,
+    /// What became of the session's offer of this computer's time (see [`crate::time`]).
+    time: watch::Receiver<TimeOffer>,
 }
 
 impl Handle {
+    /// What became of this session's offer of the operator's time, as a watch: taken (and how
+    /// often the board asks), not wanted by this board, or refused. It starts again at
+    /// [`TimeOffer::NotOffered`] whenever the node is lost.
+    pub fn time_offer(&self) -> watch::Receiver<TimeOffer> {
+        self.time.clone()
+    }
+
     /// The address this monitor keeps.
     pub const fn address(&self) -> &Address {
         &self.address
@@ -759,6 +769,7 @@ impl Monitor {
         bound: Duration,
     ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
+        let (time_sender, time) = watch::channel(TimeOffer::NotOffered);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
@@ -795,6 +806,7 @@ impl Monitor {
                     last_listed: None,
                     period_read: false,
                     serial: thread_serial,
+                    time: time_sender,
                 };
                 keeper.run();
             })
@@ -809,6 +821,7 @@ impl Monitor {
                 serial,
                 busy: Arc::new(Waits::new()),
                 busy_bound: busy::BOUND,
+                time,
             },
             orders,
             stop,
@@ -881,6 +894,8 @@ struct Keeper {
     clock: Clock,
     /// Whether the current silence has been recorded as a lapse already.
     lapse_marked: bool,
+    /// What became of this session's offer of the operator's time (see [`crate::time`]).
+    time: watch::Sender<TimeOffer>,
     /// The node this session is connected to, while it is Found.
     node: Option<Node>,
     /// The number of the session, counted by each connect that finds the node (see [`Handle::session`]).
@@ -928,8 +943,12 @@ impl Keeper {
                         let session = SESSIONS.fetch_add(1, Ordering::SeqCst) + 1;
                         self.serial.store(session, Ordering::SeqCst);
                         self.sender.send_replace(Presence::Found(node));
+                        // The board takes its time from what it is connected to: offered once a
+                        // session, after the node is announced, so a slow answer delays nobody.
+                        self.time.send_replace(time::offer(&orion));
                         let ended = self.serve(&orion);
                         self.node = None;
+                        self.time.send_replace(TimeOffer::NotOffered);
                         if self.stopped() {
                             break;
                         }
@@ -1234,6 +1253,11 @@ impl Keeper {
             // queued behind a turn's calls or steps.
             if let Err(reason) = self.keep_alive(orion) {
                 return Some(reason);
+            }
+            // The board asks for the time on this session; the count is kept for whoever shows it.
+            let asked = time::asked(&self.time.borrow(), orion);
+            if let Some(now) = asked {
+                self.time.send_replace(now);
             }
             // The calls of this turn: parked operations first (they waited for a slot), then
             // every call queued now. A call that arrives during the turn waits for the next one.

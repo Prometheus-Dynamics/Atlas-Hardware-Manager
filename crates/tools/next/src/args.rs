@@ -17,6 +17,8 @@ pub enum Verb {
     Remove(String),
     /// `hold <address> <seconds>`: the bench's hold check, for this many seconds.
     Hold(u64),
+    /// `time <address> <seconds>`: the bench's check that the board takes this computer's time.
+    Time(u64),
     /// `offers <address> --out <file>`: bench only. Records what the board's node offers (facts, resources and
     /// each device's describe, topics) into one JSON file, for the sim's fixture.
     Offers(PathBuf),
@@ -109,11 +111,12 @@ pub fn parse(args: &[String]) -> Parsed {
         Some("bench-key") => return parse_bench_key(&args[1..]),
         Some("cycle") => return parse_cycle(&args[1..]),
         Some("usb-boot") => return parse_usb_boot(&args[1..]),
-        Some("hold") => return parse_hold(&args[1..]),
+        Some("hold") => return parse_seconds("hold", Verb::Hold, &args[1..]),
+        Some("time") => return parse_seconds("time", Verb::Time, &args[1..]),
         Some("offers") => return parse_offers(&args[1..]),
         Some(other) => {
             return Parsed::Usage(format!(
-                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key, cycle, usb-boot, hold and offers"
+                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key, cycle, usb-boot, hold, time and offers"
             ));
         }
     }
@@ -407,9 +410,9 @@ fn parse_offers(args: &[String]) -> Parsed {
     })
 }
 
-/// Reads the operands of `hold`: `<address>`, `<seconds>`, and optionally `--state`, `--identity`,
-/// `--json`, `--help`.
-fn parse_hold(args: &[String]) -> Parsed {
+/// Reads the operands of `hold` and of `time`: `<address>`, `<seconds>`, and optionally `--state`,
+/// `--identity`, `--json`, `--help`.
+fn parse_seconds(name: &str, verb: fn(u64) -> Verb, args: &[String]) -> Parsed {
     let mut positional: Vec<&str> = Vec::new();
     let mut state = None;
     let mut identity = None;
@@ -434,21 +437,21 @@ fn parse_hold(args: &[String]) -> Parsed {
         }
     }
     let [address, seconds] = positional.as_slice() else {
-        return Parsed::Usage(
-            "hold takes an address and a number of seconds: hold <address> <seconds>".into(),
-        );
+        return Parsed::Usage(format!(
+            "{name} takes an address and a number of seconds: {name} <address> <seconds>"
+        ));
     };
     let seconds = match seconds.parse::<u64>() {
         Ok(0) | Err(_) => {
             return Parsed::Usage(format!(
-                "hold takes whole seconds, at least 1 (got {seconds:?})"
+                "{name} takes whole seconds, at least 1 (got {seconds:?})"
             ));
         }
         Ok(seconds) => seconds,
     };
     Parsed::Run(Command {
         address: (*address).to_owned(),
-        verb: Verb::Hold(seconds),
+        verb: verb(seconds),
         json,
         state,
         reflashed: false,
@@ -574,6 +577,14 @@ mod tests {
         assert!(matches!(parse(&words("hold a soon")), Parsed::Usage(_)));
         assert!(matches!(parse(&words("hold a 9 extra")), Parsed::Usage(_)));
         assert!(matches!(parse(&words("hold a 9 --nope")), Parsed::Usage(_)));
+        assert!(matches!(
+            parse(&words("time orion+tcp://[::1]:9200 90")),
+            Parsed::Run(Command {
+                verb: Verb::Time(90),
+                ..
+            })
+        ));
+        assert!(matches!(parse(&words("time a 0")), Parsed::Usage(_)));
     }
 
     #[test]
