@@ -1,0 +1,20 @@
+[package]
+name = "atlas-orion-settings"
+description = "The check that every setting an image gives Orion is one the Orion it pins reads: the image's orion.conf and each ORION_* variable of its orion-comm and orion-node units, read by the pinned Orion's own settings code. A test crate; nothing ships from it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# Orion's own settings readers, at the commit the image's `orion` component pins (the test holds the two revs equal).
+# comm-app with the features the image's binary has (Orion's crates/bins/orion: the defaults and the three links):
+# a key of a part that is not built in is unknown to the board, so it must be unknown here too.
+orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0", features = ["link-serial", "link-can", "link-usb"] }
+orion-node-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0" }
+orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0" }
+toml = "0.8"
+
+[lints]
+workspace = true
