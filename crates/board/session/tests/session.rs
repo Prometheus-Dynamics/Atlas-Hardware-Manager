@@ -129,6 +129,157 @@ async fn a_call_that_fails_on_a_live_session_is_a_failure_not_a_gone_node() {
 }
 
 #[tokio::test]
+async fn a_busy_board_is_asked_again_on_the_backoff_and_the_caller_never_sees_the_busy() {
+    let dir = scratch("busy-again");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    // The board has no room twice (Orion's busy: the call was not taken), then takes it.
+    let mut asked = 0_u32;
+    let started = Instant::now();
+    let answer = handle
+        .with_client(move |_| -> Result<u32, orion::Error> {
+            asked += 1;
+            if asked <= 2 {
+                Err(orion::Error::Client(ClientError::refused(
+                    orion::types::Error::Busy,
+                    "",
+                )))
+            } else {
+                Ok(asked)
+            }
+        })
+        .await;
+    assert_eq!(answer.ok(), Some(3), "asked three times, answered once");
+    // The two waits are the failure rule's first two delays (250 ms, then 500 ms).
+    assert!(
+        started.elapsed() >= Duration::from_millis(750),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(matches!(handle.presence(), Presence::Found(_)));
+
+    // Any other refusal is handed back at once, asked only once.
+    let mut refused_asked = 0_u32;
+    let refused = handle
+        .with_client(move |_| -> Result<(), orion::Error> {
+            refused_asked += 1;
+            assert_eq!(
+                refused_asked, 1,
+                "a refusal that is not busy is never asked again"
+            );
+            Err(orion::Error::Client(ClientError::refused(
+                orion::types::Error::DigestMismatch,
+                "",
+            )))
+        })
+        .await;
+    match refused {
+        Err(SessionError::Failed(failure)) => assert_eq!(failure.kind(), FailureKind::Refused),
+        other => panic!("expected the refusal, got {other:?}"),
+    }
+}
+
+fn busy() -> orion::Error {
+    orion::Error::Client(ClientError::refused(
+        orion::types::Error::Busy,
+        "held by another",
+    ))
+}
+
+#[tokio::test]
+async fn a_board_busy_past_the_bound_is_a_refusal_with_its_words_and_the_wait_was_shown() {
+    let dir = scratch("busy-bound");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .unwrap()
+        .with_busy_bound(Duration::from_secs(4));
+    connected(&handle).await;
+    let mut shown = handle.busy_wait();
+    assert_eq!(*shown.borrow_and_update(), None, "nothing waits yet");
+
+    let started = Instant::now();
+    let call = {
+        let handle = handle.clone();
+        tokio::spawn(async move {
+            handle
+                .with_client(|_| -> Result<(), orion::Error> { Err(busy()) })
+                .await
+        })
+    };
+    // The wait is listed before it has lasted long: by the try whose delay crosses two seconds.
+    tokio::time::timeout(Duration::from_secs(3), shown.changed())
+        .await
+        .expect("the wait is shown in time")
+        .expect("the session is up");
+    let wait = shown.borrow_and_update().expect("a wait is shown");
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(wait.bound, Duration::from_secs(4));
+
+    // Past the bound it is the refusal it is: Orion's busy, with the board's own words.
+    let refused = call.await.expect("the call ended");
+    match refused {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Busy);
+            assert_eq!(failure.text(), "held by another");
+        }
+        other => panic!("expected the busy refusal, got {other:?}"),
+    }
+    // Delays 250, 500, 1000, 2000 ms: the next one (4 s) would pass the bound, so it ends at 3.75 s.
+    let took = started.elapsed();
+    assert!(
+        took >= Duration::from_millis(3750) && took < Duration::from_secs(6),
+        "{took:?}"
+    );
+    // The call is over, so nothing is shown any more, and the session is still up.
+    assert_eq!(*handle.busy_wait().borrow(), None);
+    assert!(matches!(handle.presence(), Presence::Found(_)));
+}
+
+#[tokio::test]
+async fn a_person_stops_a_busy_wait_and_the_call_ends_at_once_as_the_refusal() {
+    let dir = scratch("busy-stop");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let call = {
+        let handle = handle.clone();
+        tokio::spawn(async move {
+            handle
+                .with_client(|_| -> Result<(), orion::Error> { Err(busy()) })
+                .await
+        })
+    };
+    let mut shown = handle.busy_wait();
+    tokio::time::timeout(Duration::from_secs(3), shown.wait_for(Option::is_some))
+        .await
+        .expect("the wait is shown in time")
+        .expect("the session is up");
+    let stopped = Instant::now();
+    handle.stop_busy();
+    let refused = tokio::time::timeout(Duration::from_secs(1), call)
+        .await
+        .expect("the call ends when the wait is stopped, not at the 30 s bound")
+        .expect("the call ended");
+    assert!(
+        matches!(&refused, Err(SessionError::Failed(failure)) if failure.kind() == FailureKind::Busy),
+        "{refused:?}"
+    );
+    assert!(stopped.elapsed() < Duration::from_secs(1));
+    assert_eq!(*handle.busy_wait().borrow(), None);
+}
+
+#[tokio::test]
 async fn a_denied_refusal_keeps_its_kind_whatever_its_words() {
     let dir = scratch("denied-kind");
     let node = start(&dir, None);
@@ -308,12 +459,15 @@ async fn a_queued_call_whose_caller_gave_up_is_not_started_later() {
     // caller gives up.
     let (release, held) = std::sync::mpsc::channel::<()>();
     let (started, is_started) = tokio::sync::oneshot::channel::<()>();
+    let mut started = Some(started);
     let blocker = {
         let handle = handle.clone();
         tokio::spawn(async move {
             handle
                 .with_client(move |_| -> Result<(), orion::Error> {
-                    let _ = started.send(());
+                    if let Some(started) = started.take() {
+                        let _ = started.send(());
+                    }
                     let _ = held.recv();
                     Ok(())
                 })

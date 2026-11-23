@@ -105,11 +105,11 @@ fn long_handle(handle: &Handle) -> Handle {
 fn labelled_call(
     log: &Log,
     label: &str,
-) -> impl FnOnce(&Orion) -> Result<String, orion::Error> + Send + 'static {
+) -> impl FnMut(&Orion) -> Result<String, orion::Error> + Send + 'static {
     let log = log.clone();
     let label = label.to_owned();
     move |orion| {
-        log.push(Event::Call(label));
+        log.push(Event::Call(label.clone()));
         orion.node().map(|node| node.name)
     }
 }

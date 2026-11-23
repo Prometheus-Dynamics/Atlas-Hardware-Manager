@@ -82,6 +82,8 @@ export type Install = {
   stage: "preparing" | "waiting" | "sending" | "installing" | "unknown" | "done" | "failed" | "cancelled";
   percent: number | null;
   detail: string;
+  /** Set while the install waits out a busy board: the line to show in place of the stage's own. */
+  busy?: string;
   final: boolean;
   file: string;
   sent: number | null;
@@ -93,6 +95,8 @@ export type BoardView = {
   reach: "orion" | "none";
   read_ms: number;
   said: { what: string; ok: boolean; words: string; at_ms: number } | null;
+  /** A call the board keeps answering busy is being sent again: for how long, and until when it is a refusal. */
+  busy?: { for_s: number; bound_s: number };
   connection?: { live: true } | { live: false; reason: string; stale_ms: number };
   hardware?: BoardDevice[];
   logs?: { time_ms: number; text: string }[];

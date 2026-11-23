@@ -417,6 +417,8 @@ impl BoardActions {
                         }
                         match run.wait(left.min(POLL)) {
                             Ok(_) => {}
+                            // // Busy: the board had no room and did not take it; the session asks again (`Handle::with_client`).
+                            Err(error) if error.is_busy() => return Err(OrionError::Client(error)),
                             Err(ClientError::Refused { error, detail }) => {
                                 return Ok(Started::Refused(Failure::of_core(error, detail)));
                             }
@@ -446,6 +448,11 @@ impl BoardActions {
                 name: name.to_owned(),
                 reason,
             }),
+            // Busy past the session's bound, or stopped by a person: the board never took the
+            // start, so it is a refusal, with the board's words.
+            Err(SessionError::Failed(reason)) if reason.kind() == FailureKind::Busy => {
+                Err(ActionError::Refused(reason))
+            }
             Err(SessionError::Failed(reason)) => Err(ActionError::Failed(reason)),
         }
     }
@@ -504,6 +511,8 @@ impl BoardActions {
                     let mut run = attach(orion, call, handle)?;
                     match run.wait(POLL) {
                         Ok(update) => Ok(Seen::of(update)),
+                        // // Busy: the board had no room and did not take it; the session asks again (`Handle::with_client`).
+                        Err(error) if error.is_busy() => Err(OrionError::Client(error)),
                         Err(ClientError::Refused { error, detail }) => {
                             Ok(Seen::Refused(Failure::of_core(error, detail)))
                         }
@@ -696,6 +705,8 @@ impl BoardActions {
                 })?;
                 match run.finish(wait) {
                     Ok(finished) => Ok(Direct::Ended(finished)),
+                    // // Busy: the board had no room and did not take it; the session asks again (`Handle::with_client`).
+                    Err(error) if error.is_busy() => Err(OrionError::Client(error)),
                     Err(ClientError::Refused { error, detail }) => {
                         Ok(Direct::Refused(Failure::of_core(error, detail)))
                     }
@@ -720,6 +731,11 @@ impl BoardActions {
                 name: name.to_owned(),
                 reason: Failure::other(reason),
             }),
+            // Busy past the session's bound, or stopped by a person: the board never took the
+            // run, so it is a refusal with the board's words, not an outcome nobody knows.
+            Err(SessionError::Failed(reason)) if reason.kind() == FailureKind::Busy => {
+                Err(ActionError::Refused(reason))
+            }
             Err(SessionError::Failed(reason)) => Err(ActionError::Unknown {
                 name: name.to_owned(),
                 reason,

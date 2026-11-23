@@ -145,6 +145,7 @@
   };
   function installLine(): string {
     if (!install) return "";
+    if (install.busy) return install.busy;
     if (install.stage === "sending" && install.sent !== null && install.total !== null)
       return `${Math.round(install.percent ?? 0)}% · ${size(install.sent)} of ${size(install.total)} · ordinary update`;
     if (install.percent !== null) return `${Math.round(install.percent)}% · ${install.detail}`;
@@ -266,6 +267,10 @@
       {/each}
     {/snippet}
     {#snippet actions()}
+      {#if board?.busy}
+        <span class="chip warn" data-board-busy><span class="dot warn"></span>The board is busy · trying again · {board.busy.for_s} s of {board.busy.bound_s} s</span>
+        <button class="btn" data-busy-stop onclick={() => call("board.busy.stop", { id }).catch(() => {})}>Stop</button>
+      {/if}
       {#if missing}<span class="faint" data-not-offered>{missing}</span>{/if}
       <button class="btn" class:dis={!locate} disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
       <button class="btn" class:dis={!reboot} disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>

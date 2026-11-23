@@ -484,6 +484,14 @@ async fn read(core: Core, first: Target) {
         });
         if let Some(handle) = handle {
             let found = matches!(handle.presence(), Presence::Found(_));
+            // A call that the board keeps answering busy is being sent again: said on the page with how
+            // long, so nobody waits on a silent button, and stopped from there (`board.busy.stop`).
+            if let Some(wait) = *handle.busy_wait().borrow() {
+                view["busy"] = json!({
+                    "for_s": wait.since.elapsed().as_secs(),
+                    "bound_s": wait.bound.as_secs(),
+                });
+            }
             if read_at != target.address {
                 read_at.clone_from(&target.address);
                 history = History::default();
@@ -560,6 +568,16 @@ async fn read(core: Core, first: Target) {
                 && let Some(stage) = installs.stage(following.job)
             {
                 view["install"] = stage_json(&stage, &following.file);
+                // An install that is waiting out a busy board says so in its own line, in the chip's
+                // words: one story on the page, not "starting" beside a chip that says busy.
+                if let Some(busy) = view.get("busy").cloned()
+                    && view["install"]["final"] == json!(false)
+                {
+                    view["install"]["busy"] = json!(format!(
+                        "the board is busy; trying again ({} s of {} s)",
+                        busy["for_s"], busy["bound_s"]
+                    ));
+                }
             }
         }
         core.publish(&topic, view);
@@ -683,6 +701,16 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
         "board.close" => {
             let OnBoard { id } = args(name, arguments)?;
             lock(&core.boards().open).remove(&id);
+            Ok(Value::Null)
+        }
+        // A person stops waiting for a busy board: each call being sent again ends now, as the
+        // refusal the board last gave, in the board's words.
+        "board.busy.stop" => {
+            let OnBoard { id } = args(name, arguments)?;
+            let target = target(core, &id)?;
+            if let Some(handle) = handle(core, &target) {
+                handle.stop_busy();
+            }
             Ok(Value::Null)
         }
         // Runs one short action the board offers, by its name in the list read from the board.

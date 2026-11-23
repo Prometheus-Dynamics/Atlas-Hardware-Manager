@@ -189,7 +189,7 @@ async fn a_call_with_no_answer_ends_at_its_own_bound_while_a_held_push_still_com
         .with_bridge(move |orion| {
             let mut run = orion.run(&ActionCall {
                 name: "arm.call",
-                target,
+                target: target.clone(),
                 args: b"",
                 deadline_ms: 0,
                 detached: false,

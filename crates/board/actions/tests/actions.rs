@@ -702,12 +702,15 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     // Hold the monitor on a call of its own, so the start queued behind it is not answered in time.
     let (release, held) = mpsc::channel::<()>();
     let (holding, is_holding) = oneshot::channel::<()>();
+    let mut holding = Some(holding);
     let blocker = {
         let handle = handle.clone();
         tokio::spawn(async move {
             handle
                 .with_client(move |_| -> Result<(), orion::Error> {
-                    let _ = holding.send(());
+                    if let Some(holding) = holding.take() {
+                        let _ = holding.send(());
+                    }
                     let _ = held.recv();
                     Ok(())
                 })

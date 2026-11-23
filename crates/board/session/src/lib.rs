@@ -52,6 +52,7 @@
 //! This crate depends on Orion and `atlas-types` only. It is not a driver and knows no family.
 
 pub mod backoff;
+pub mod busy;
 pub mod double;
 mod failure;
 pub mod lease;
@@ -63,6 +64,7 @@ mod sessions;
 pub mod words;
 
 pub use backoff::Backoff;
+pub use busy::BusyWait;
 pub use failure::{Failure, FailureKind};
 pub use lease::{Clock, Hold, LEASE, LEASE_RENEW, Lease, RENEW_WAIT, RenewalEvent, Renewals};
 pub use long::{

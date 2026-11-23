@@ -521,7 +521,8 @@ fn incomplete(session: u64, contract: &str) -> String {
 ///
 /// # Errors
 ///
-/// [`orion::Error`] when the session is gone.
+/// [`orion::Error`] when the session is gone, or when the board was busy and did not take the
+/// call (asked again by [`crate::Handle::with_client`]).
 pub fn describe(orion: &Orion, resource: &str) -> Result<Answer, orion::Error> {
     let Ok(call) = describe_call(resource) else {
         return Ok(Err(Failure::other(format!(
@@ -543,6 +544,9 @@ pub fn describe(orion: &Orion, resource: &str) -> Result<Answer, orion::Error> {
             }
             _ => Err(Failure::other(finished.detail)),
         }),
+        // Busy: the board had no room and did not take the call; the session asks again
+        // (`Handle::with_client`), so it is never a description's answer.
+        Err(error) if error.is_busy() => Err(orion::Error::Client(error)),
         // A refusal keeps its kind: a node that turns this client away (`denied`) says so to the caller.
         Err(error @ (ClientError::Refused { .. } | ClientError::Denied(_))) => {
             let text = match &error {

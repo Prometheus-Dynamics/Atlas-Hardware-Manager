@@ -45,7 +45,8 @@ use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
-use crate::failure::Failure;
+use crate::busy::{self, BusyWait, Waiting, Waits};
+use crate::failure::{Failure, FailureKind};
 use crate::lease::{self, Clock, Hold, Lease, Renewals, Shared as LeaseShared};
 use crate::long::{
     AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
@@ -394,6 +395,10 @@ pub struct Handle {
     /// Counts the sessions this monitor has connected: each connect that finds the node takes the
     /// next number (see [`Handle::session`]).
     serial: Arc<AtomicU64>,
+    /// The session's calls that are waiting out a busy board (see [`crate::busy`]).
+    busy: Arc<Waits>,
+    /// How long a call refused busy is sent again before it is a refusal ([`busy::BOUND`]).
+    busy_bound: Duration,
 }
 
 impl Handle {
@@ -450,6 +455,30 @@ impl Handle {
         }
     }
 
+    /// The same handle, with its calls sent again for `bound` when the board answers busy, in
+    /// place of [`busy::BOUND`]. For tests, which cannot wait the real bound out.
+    #[must_use]
+    pub fn with_busy_bound(&self, bound: Duration) -> Self {
+        Self {
+            busy_bound: bound,
+            ..self.clone()
+        }
+    }
+
+    /// The busy wait this session shows: `Some` while one of its calls has been refused busy for
+    /// long enough to say so ([`busy::SHOWN_AFTER`]) and is still being sent again. For the page a
+    /// person is looking at.
+    #[must_use]
+    pub fn busy_wait(&self) -> watch::Receiver<Option<BusyWait>> {
+        self.busy.shown()
+    }
+
+    /// A person's act: stop waiting for the busy board. Every call of this session that is being
+    /// sent again is handed back now, as the refusal it last got.
+    pub fn stop_busy(&self) {
+        self.busy.stop();
+    }
+
     /// Runs `call` on the node's live client and returns what it answers.
     ///
     /// The closure runs on the monitor's own thread, which is the only place the client may be
@@ -462,10 +491,16 @@ impl Handle {
     /// call, the monitor has stopped, or the node does not answer within the handle's call wait
     /// (`CALL_WAIT` unless the sessions were built with another). The
     /// closure's own error ends up as [`SessionError::Failed`] when the session is still up.
+    ///
+    /// A closure that ends with Orion's busy (`is_busy`: the board had no room for the call and did
+    /// not take it) is run again after the failure rule's next delay, so it may run more than once.
+    /// The wait is shown once it is long ([`Handle::busy_wait`]) and is bounded: after
+    /// [`busy::BOUND`] with no success, or when a person stops it ([`Handle::stop_busy`]), the busy
+    /// is handed back as [`SessionError::Failed`] of kind [`FailureKind::Busy`], with the board's words.
     pub async fn with_client<T, F>(&self, call: F) -> Result<T, SessionError>
     where
         T: Send + 'static,
-        F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
+        F: FnMut(&Orion) -> Result<T, orion::Error> + Send + 'static,
     {
         self.send_call(call, false).await
     }
@@ -481,25 +516,61 @@ impl Handle {
     pub async fn with_bridge<T, F>(&self, call: F) -> Result<T, SessionError>
     where
         T: Send + 'static,
-        F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
+        F: FnMut(&Orion) -> Result<T, orion::Error> + Send + 'static,
     {
         self.send_call(call, true).await
     }
 
+    /// Sends `call` and waits for its answer. A board that answers Busy had no room for the call
+    /// yet and did not take it (Orion 2f52e457, `is_busy`: "never a final no"), so the call is sent
+    /// again after the failure rule's next delay ([`Backoff`]). The wait is listed for the page once
+    /// it will have lasted [`busy::SHOWN_AFTER`], and it ends as the refusal it is when the next try
+    /// would come after the handle's bound ([`busy::BOUND`]) or a person stops it: Orion says busy
+    /// for more than load, and what is not load never clears by waiting.
     async fn send_call<T, F>(&self, call: F, bridge: bool) -> Result<T, SessionError>
     where
         T: Send + 'static,
-        F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
+        F: FnMut(&Orion) -> Result<T, orion::Error> + Send + 'static,
     {
-        self.ready()?;
-        let (reply, answer) = oneshot::channel();
-        let job: Box<dyn Job> = Box::new(Call {
-            call,
-            reply,
-            bridge,
-        });
-        self.queue(job)?;
-        self.answer(answer).await?
+        let call = Arc::new(std::sync::Mutex::new(call));
+        let mut backoff = Backoff::default();
+        let mut waiting: Option<Waiting> = None;
+        let mut stops = self.busy.stops();
+        loop {
+            self.ready()?;
+            let (reply, answer) = oneshot::channel();
+            let shared = Arc::clone(&call);
+            let job: Box<dyn Job> = Box::new(Call {
+                call: move |orion: &Orion| {
+                    let mut call = shared
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    (*call)(orion)
+                },
+                reply,
+                bridge,
+            });
+            self.queue(job)?;
+            match self.answer(answer).await? {
+                Err(SessionError::Failed(failure)) if failure.kind() == FailureKind::Busy => {
+                    let wait =
+                        waiting.get_or_insert_with(|| Waiting::begin(&self.busy, self.busy_bound));
+                    let delay = backoff.next_delay();
+                    let then = wait.waited() + delay;
+                    if then > self.busy_bound {
+                        return Err(SessionError::Failed(failure));
+                    }
+                    if then >= busy::SHOWN_AFTER {
+                        wait.show();
+                    }
+                    tokio::select! {
+                        () = tokio::time::sleep(delay) => {}
+                        _ = stops.changed() => return Err(SessionError::Failed(failure)),
+                    }
+                }
+                answered => return answered,
+            }
+        }
     }
 
     /// A hold on this node's board: while it exists, the session keeps the board's lease alive
@@ -736,6 +807,8 @@ impl Monitor {
                 call_wait,
                 lease: shared,
                 serial,
+                busy: Arc::new(Waits::new()),
+                busy_bound: busy::BOUND,
             },
             orders,
             stop,
