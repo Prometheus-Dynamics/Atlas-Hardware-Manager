@@ -434,6 +434,41 @@ async fn a_silent_session_with_a_hold_records_a_lapse_and_one_without_does_not()
 }
 
 #[tokio::test]
+async fn a_session_that_stays_down_past_the_lease_is_a_lapse_though_the_board_never_comes_back() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("down-lapse"), &with_lemnos(), None);
+    let sessions = sessions(lease(), &clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let hold = handle.hold();
+    clock.advance(RENEW);
+    renewed(&handle, &node, 1, "a renewal while the board is there").await;
+    let mut lapses = handle.lapses();
+    assert_eq!(*lapses.borrow_and_update(), 0);
+
+    // The board goes and does not come back (a wedged link, a board with no power).
+    drop(node);
+    lost(&handle).await;
+    clock.advance(PERIOD + Duration::from_secs(1));
+    tokio::time::timeout(DEADLINE, lapses.changed())
+        .await
+        .expect("a session down for longer than the board's lease is a lapse, counted while it is still down")
+        .expect("the monitor is running");
+    assert_eq!(*lapses.borrow(), 1);
+    assert!(
+        hold.lapsed(),
+        "the hold sees it, without the board ever answering again"
+    );
+    // It is one lapse however long the board stays away.
+    clock.advance(PERIOD * 3);
+    let_turns_run().await;
+    assert_eq!(*lapses.borrow(), 1, "one silence, one lapse");
+}
+
+#[tokio::test]
 async fn holds_are_per_board() {
     let clock = Clock::manual();
     let node_a = start_node(&scratch("per-board-a"), &with_lemnos(), None);
