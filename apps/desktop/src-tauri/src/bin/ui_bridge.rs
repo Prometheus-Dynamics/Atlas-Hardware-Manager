@@ -10,14 +10,19 @@
 //! - `GET /updates?after=N` answers the updates after number N, waiting up to twenty seconds for
 //!   one. `{"resync": true}` means N is older than what is kept: read `snapshot` again.
 //!
+//! With `--request-log PATH` it writes one line when a worker takes a request and one when it has
+//! answered it (wall time in ms, the worker, the method and path, and for a call its name), so a
+//! request that never ends is seen on the server's side too.
+//!
 //! It listens on 127.0.0.1 only, and answers a call only to a page it served itself (the
 //! `Origin` header), so another site open in the same browser cannot drive it.
 
 use std::collections::VecDeque;
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use atlas_app::paths::Dirs;
 use atlas_app::view::Update;
@@ -87,6 +92,22 @@ struct Args {
     port: u16,
     data: Option<PathBuf>,
     scene: String,
+    request_log: Option<PathBuf>,
+}
+
+/// The request log (`--request-log`): each line is written and flushed as it happens, so a run
+/// that is killed keeps every line before it.
+struct RequestLog(Mutex<File>);
+
+impl RequestLog {
+    fn line(&self, text: &str) {
+        let ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis());
+        let mut file = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = writeln!(file, "{ms} {text}");
+        let _ = file.flush();
+    }
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -95,6 +116,7 @@ fn parse_args() -> Result<Args, String> {
         port: 0,
         data: None,
         scene: "demo".into(),
+        request_log: None,
     };
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
@@ -108,6 +130,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "--data" => args.data = Some(PathBuf::from(value()?)),
             "--scene" => args.scene = value()?,
+            "--request-log" => args.request_log = Some(PathBuf::from(value()?)),
             _ => return Err(format!("unknown argument {word}")),
         }
     }
@@ -179,8 +202,22 @@ fn main() {
     let origin = format!("http://127.0.0.1:{port}");
     println!("atlas-ui-bridge: listening on {origin}");
 
+    let log = match &args.request_log {
+        Some(path) => match File::create(path) {
+            Ok(file) => Some(Arc::new(RequestLog(Mutex::new(file)))),
+            Err(error) => {
+                eprintln!(
+                    "atlas-ui-bridge: cannot write the request log {}: {error}",
+                    path.display()
+                );
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
     let workers: Vec<_> = (0..WORKERS)
-        .map(|_| {
+        .map(|worker| {
+            let log = log.clone();
             let server = Arc::clone(&server);
             let feed = Arc::clone(&feed);
             let core = core.clone();
@@ -189,7 +226,17 @@ fn main() {
             let origin = origin.clone();
             std::thread::spawn(move || {
                 while let Ok(request) = server.recv() {
-                    serve(request, &core, &handle, &feed, &dist, &origin);
+                    let what = format!("w{worker} {} {}", request.method(), request.url());
+                    if let Some(log) = &log {
+                        log.line(&format!("begin {what}"));
+                    }
+                    let started = Instant::now();
+                    let call = serve(request, &core, &handle, &feed, &dist, &origin);
+                    if let Some(log) = &log {
+                        let took = started.elapsed().as_millis();
+                        let call = call.map(|name| format!(" call {name}")).unwrap_or_default();
+                        log.line(&format!("end {what} {took} ms{call}"));
+                    }
                 }
             })
         })
@@ -212,6 +259,7 @@ fn json_reply(request: Request, status: u16, body: &Value) {
     );
 }
 
+/// Answers one request. Gives the call's name for a `/call` whose body was read, for the log.
 fn serve(
     mut request: Request,
     core: &Core,
@@ -219,7 +267,7 @@ fn serve(
     feed: &Feed,
     dist: &Path,
     origin: &str,
-) {
+) -> Option<String> {
     let url = request.url().to_owned();
     let (path, query) = url.split_once('?').unwrap_or((&url, ""));
     match (request.method(), path) {
@@ -230,11 +278,12 @@ fn serve(
                 .find(|h| h.field.equiv("Origin"))
                 .is_some_and(|h| h.value.as_str() == origin);
             if !from_here {
-                return json_reply(
+                json_reply(
                     request,
                     403,
                     &json!({ "error": "calls are answered only to the page this bridge serves" }),
                 );
+                return None;
             }
             let mut body = String::new();
             if request
@@ -243,14 +292,16 @@ fn serve(
                 .read_to_string(&mut body)
                 .is_err()
             {
-                return json_reply(
+                json_reply(
                     request,
                     400,
                     &json!({ "error": "the call could not be read" }),
                 );
+                return None;
             }
             let Ok(asked) = serde_json::from_str::<Value>(&body) else {
-                return json_reply(request, 400, &json!({ "error": "the call is not JSON" }));
+                json_reply(request, 400, &json!({ "error": "the call is not JSON" }));
+                return None;
             };
             let name = asked
                 .get("name")
@@ -267,6 +318,7 @@ fn serve(
                 reply["last"] = json!(feed.last());
             }
             json_reply(request, 200, &reply);
+            Some(name)
         }
         (Method::Get, "/updates") => {
             let after = query
@@ -275,13 +327,20 @@ fn serve(
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0);
             json_reply(request, 200, &feed.after(after));
+            None
         }
-        (Method::Get, _) => serve_file(request, dist, path),
-        _ => json_reply(
-            request,
-            405,
-            &json!({ "error": "not a call this bridge answers" }),
-        ),
+        (Method::Get, _) => {
+            serve_file(request, dist, path);
+            None
+        }
+        _ => {
+            json_reply(
+                request,
+                405,
+                &json!({ "error": "not a call this bridge answers" }),
+            );
+            None
+        }
     }
 }
 

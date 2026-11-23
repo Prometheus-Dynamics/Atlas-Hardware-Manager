@@ -2,7 +2,7 @@
 // so every test sees the simulated devices from the beginning and no test sees another's state.
 import { test as base, expect, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -20,9 +20,12 @@ export type Bridge = {
 
 export type Scene = "demo" | "empty" | "plain";
 
-export async function startBridge(dataDir: string, scene: Scene = "demo"): Promise<Bridge> {
+/** Starts the bridge. With `requestLog`, the bridge writes each request's begin and end there (see
+ *  `--request-log`), so a request that stalls is seen from the server's side too. */
+export async function startBridge(dataDir: string, scene: Scene = "demo", requestLog?: string): Promise<Bridge> {
   if (!BRIDGE) throw new Error("ATLAS_UI_BRIDGE is not set: run scripts/ui-gate.sh");
-  const child: ChildProcess = spawn(BRIDGE, ["--dist", DIST, "--port", "0", "--data", dataDir, "--scene", scene], {
+  const extra = requestLog ? ["--request-log", requestLog] : [];
+  const child: ChildProcess = spawn(BRIDGE, ["--dist", DIST, "--port", "0", "--data", dataDir, "--scene", scene, ...extra], {
     stdio: ["ignore", "pipe", "inherit"],
   });
   const url = await new Promise<string>((done, fail) => {
@@ -60,11 +63,23 @@ export async function startBridge(dataDir: string, scene: Scene = "demo"): Promi
 export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }>({
   // The simulated world a test runs in: `test.use({ scene: "empty" })` for nothing plugged in.
   scene: ["demo", { option: true }],
-  bridge: async ({ scene }, use) => {
+  // A test that fails keeps, beside its output (and its trace), the bridge's request log and the
+  // app's own log; a test that passes keeps neither.
+  bridge: async ({ scene }, use, testInfo) => {
     const dataDir = mkdtempSync(join(tmpdir(), "atlas-e2e-"));
-    const bridge = await startBridge(dataDir, scene);
+    const requestLog = testInfo.outputPath("bridge-requests.log");
+    const bridge = await startBridge(dataDir, scene, requestLog);
     await use(bridge);
     await bridge.stop();
+    if (testInfo.status === testInfo.expectedStatus) {
+      rmSync(requestLog, { force: true });
+    } else {
+      try {
+        copyFileSync(join(dataDir, "state", "log", "atlas.log"), testInfo.outputPath("atlas.log"));
+      } catch {
+        // An app that never wrote its log leaves nothing to keep.
+      }
+    }
     rmSync(dataDir, { recursive: true, force: true });
   },
   // The page, opened on the app, with every console error and page error failing the test.

@@ -16,5 +16,8 @@ export default defineConfig({
     colorScheme: "dark",
     deviceScaleFactor: 1,
     viewport: { width: 1320, height: 860 },
+    // A red test is explained from its own run: its trace is kept (beside the bridge's request
+    // log and the app's log, see bridge.ts), and a test that passes keeps none.
+    trace: "retain-on-failure",
   },
 });
