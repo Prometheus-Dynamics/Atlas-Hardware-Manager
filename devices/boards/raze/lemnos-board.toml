@@ -262,6 +262,11 @@ config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
 # (RP1 PWM1 channel 3, pwm@9c000, period 41566 ns, VERIFIED on Raze #2 by Lemnos 2026-11-13; dev's 70 % floor) and
 # its fan-control come back with Lemnos's fix (PWM-SYSFS-UNIT) or a kernel pwm-fan fallback with the thermal zone, as on
 # 993 (scripts/check-devices.sh, the fan owner rule, refuses a PWM fan without one). The F3 port revisits it.
+# Pin move 10 (Lemnos 7b4fdb25, Lemnos's answer 2026-11-22): the hog STAYS. The root phase's `pwm channels` grant
+# runs under the unmodified unit in a guest against a stand-in attribute (Lemnos PWM-SYSFS-UNIT, HOTPLUG-GRANT), but
+# pwm-channel-fan bound under the packaged unit on a PWM chip has run nowhere yet. It comes back as Lemnos
+# testing/boards/reference.toml's fan, cpu-thermal and fan-control (pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3,
+# frequency_hz 24057, floor 700 for dev's 70 %) once Lemnos's guest stanza and one board step prove it.
 
 # The board's temperature (read only; the trial's temperature checks read it). The thermal zone is read by its
 # sysfs path; dev matched the zone by its type (cpu-thermal) and zone0 is the reference's path: CHECK at G1.

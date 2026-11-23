@@ -18,6 +18,12 @@ pub enum FailureKind {
     OtherKey,
     /// The comm core refused the request with a code other than `denied`. The code is kept.
     Refused,
+    /// The comm core said it is busy (`busy`, code 11): a bounded queue or resource is full, and
+    /// asking again later may find it free. Orion's own BUSY only; a Lemnos BUSY is [`FailureKind::Lemnos`].
+    Busy,
+    /// The board's Lemnos program refused the action with its own status code, as a rejected run
+    /// (Lemnos BUSY is 16). Its code is kept. Orion's codes are never this kind.
+    Lemnos,
     /// Anything else: a broken or silent connection, a protocol fault, a transfer's own error.
     Other,
 }
@@ -73,15 +79,23 @@ impl Failure {
         }
     }
 
-    /// A refusal the comm core made with `core`. `denied` is its own kind; any other code is
-    /// [`FailureKind::Refused`] with the code.
+    /// A refusal the comm core made with `core`. `denied` is its own kind, `busy` is [`FailureKind::Busy`],
+    /// and any other code is [`FailureKind::Refused`] with the code. The code is never read as a Lemnos
+    /// status: Orion's `DigestMismatch` is 16 too, and it is only a refusal.
     #[must_use]
     pub fn of_core(core: CoreError, text: String) -> Self {
-        if core == CoreError::Denied {
-            Self::new(FailureKind::Denied, Some(core.code()), text)
-        } else {
-            Self::new(FailureKind::Refused, Some(core.code()), text)
-        }
+        let kind = match core {
+            CoreError::Denied => FailureKind::Denied,
+            CoreError::Busy => FailureKind::Busy,
+            _ => FailureKind::Refused,
+        };
+        Self::new(kind, Some(core.code()), text)
+    }
+
+    /// A refusal the board's Lemnos program made with its status `code` (a rejected run's status).
+    #[must_use]
+    pub fn lemnos(code: u16, text: impl Into<String>) -> Self {
+        Self::new(FailureKind::Lemnos, Some(code), text)
     }
 
     /// The kind.
@@ -151,13 +165,24 @@ mod tests {
     }
 
     #[test]
-    fn another_comm_core_refusal_keeps_its_code_and_is_not_denied() {
+    fn orions_busy_is_its_own_kind_with_its_code() {
         let failure = Failure::of(&OrionError::Client(ClientError::refused(
             CoreError::Busy,
             "",
         )));
+        assert_eq!(failure.kind(), FailureKind::Busy);
+        assert_eq!(failure.code(), Some(11));
+        assert!(!failure.is_denied());
+    }
+
+    #[test]
+    fn another_comm_core_refusal_keeps_its_code_and_is_not_denied() {
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::DigestMismatch,
+            "digest does not match",
+        )));
         assert_eq!(failure.kind(), FailureKind::Refused);
-        assert_eq!(failure.code(), Some(CoreError::Busy.code()));
+        assert_eq!(failure.code(), Some(16));
         assert!(!failure.is_denied());
     }
 

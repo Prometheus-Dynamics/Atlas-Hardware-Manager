@@ -17,6 +17,9 @@ pub enum Behaviour {
     Refuse(String),
     /// Runs and fails: the outcome is `Failed` and nothing changes.
     Fail(String),
+    /// Runs normally, over this many of the node's ticks, and says how far it is on each one. A test
+    /// uses it to read a run's progress; no board action is slow by name.
+    Slow(u32),
     /// Starts, then never makes progress or finishes until it is cancelled.
     Stall,
     /// The service restarts as this run starts: every running job is lost (`-4`), and this

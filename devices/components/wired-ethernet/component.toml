@@ -1,0 +1,17 @@
+# Wired Ethernet for a board that is reached over a robot network or a cable straight into a laptop (coordinator's ruling,
+# 2026-11-22, pin move 11's bar). Matched by type, not name: systemd names a CM5's RP1 GEM end0 and other boards' MACs eth0,
+# end0 or enpXsY, and the old Raze image (993) listed end0 end1 eth0 eth1 by name; Type=ether takes all of them.
+# The USB gadget's link is left out twice over: networkd gives it type `gadget` (networkctl: "lemnos0 gadget"), and the
+# file also says Name=!lemnos* so a gadget driver that reports `ether` still can't put a second DHCP client on it.
+# scripts/check-wired-ethernet.py tests the match. bringup-network (Type=ether, Name=!usb0, DHCP only) is not reused: it
+# has no link-local and excludes the bring-ups' usb0, not lemnos0.
+# No mDNS: resolved is not on the image (raze.fragment); that is the user's choice against RAM, not taken here.
+# networkd is the OS's (see bringup-network's note); systemd-networkd-wait-online stays masked, so boot never waits on it.
+version = 1
+name = "wired-ethernet"
+description = "Wired Ethernet by DHCP, matched by type (not the USB gadget's link), with IPv4 link-local when no DHCP server answers and IPv6 link-local always."
+
+[[install]]
+from = { file = "files/20-wired-ethernet.network" }
+to = "/etc/systemd/network/20-wired-ethernet.network"
+mode = "0644"

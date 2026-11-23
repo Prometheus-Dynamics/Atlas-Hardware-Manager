@@ -18,8 +18,10 @@ mod args;
 pub mod bench_key;
 mod commands;
 mod cycle;
+mod hold;
 pub mod identity;
 mod link;
+mod offers;
 mod pins;
 mod report;
 pub mod usb_boot;
@@ -77,6 +79,11 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory
 
+  hold <address> <seconds>    hold: bench check only. Takes the session's hold on a pinned board through the same hold the app's terminal and jobs use, sends nothing else, and prints each lease renewal and any lapse. Exit 0 when the lease was kept, 1 on a lapse or no renewal.
+
+  offers <address> --out <file.json>
+                              offers: bench only. Records what the board's node offers (facts, resources and each device's describe, topics) into one JSON file, for the sim's fixture. Reads only; exit 0 when the file was written, 1 otherwise.
+
 options:
   --state <dir>      where pins and the trial's saved watches live
                      (default: $XDG_DATA_HOME/atlas-next, else ~/.local/share/atlas-next)
@@ -106,8 +113,8 @@ pub struct Env {
     pub recheck: Duration,
     /// Set by the binary when Ctrl-C should stop a trial's following. `None` means it never does.
     pub stop: Option<Arc<Notify>>,
-    /// Whether the Lemnos this build pins publishes the boot id (`info.last_attempt.boot`, I5k).
-    /// The binary takes `cycle::INFO_IN_PIN`; a test sets it when its simulated board has the field.
+    /// Whether the Lemnos this build pins publishes the boot id (`info.last_attempt.boot`). The binary
+    /// takes `cycle::INFO_IN_PIN`; a test sets it false for a board without the field.
     pub info_in_pin: bool,
 }
 

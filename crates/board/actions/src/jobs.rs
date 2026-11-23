@@ -196,7 +196,7 @@ impl JobKind for ActionKind {
             None => {
                 self.update(&spec.nonce, |tracked| tracked.starting = true);
                 let started = board
-                    .start_encoded(&spec.name, args::encode(&spec.words))
+                    .start_encoded(&spec.name, args::encode(&spec.words), None)
                     .await;
                 self.update(&spec.nonce, |tracked| tracked.starting = false);
                 match started {

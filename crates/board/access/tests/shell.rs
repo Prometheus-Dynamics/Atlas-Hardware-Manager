@@ -191,6 +191,7 @@ async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_
             period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
+            keep_renewing: true,
         })
         .with_clock(clock.clone());
     let handle = handle_for(&sessions, node.network().port());
@@ -204,7 +205,10 @@ async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_
     clock.advance(Duration::from_secs(61));
     match end_of(&mut term).await {
         End::HoldLapsed(reason) => {
-            assert!(reason.contains("may have dropped this shell"), "{reason}");
+            assert!(
+                reason.contains("may have dropped the hold on this shell"),
+                "{reason}"
+            );
         }
         other => panic!("the shell ends as a lapse, not {other:?}"),
     }

@@ -592,10 +592,13 @@ async fn a_push_is_not_continued_on_another_board_and_the_job_fails() {
         other => panic!("expected the job failed, got {other:?}"),
     }
     assert_ne!(push.progress().stage, Stage::Committed);
+    // Once a person has accepted its key, the other board is the session's board, and the session
+    // may renew its lease there (a bridge `describe`, a read: LEASE_IN_FORCE since pin move 12).
+    // That is the only call it may get: nothing of the push is a run on it.
     assert_eq!(
         other.calls_received(),
-        0,
-        "still no call on the other board"
+        other.bridge_calls_started(),
+        "the other board got no call but the session's lease renewals"
     );
     assert!(
         !other
@@ -678,6 +681,7 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
             period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
+            keep_renewing: true,
         })
         .with_clock(clock.clone());
     let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();

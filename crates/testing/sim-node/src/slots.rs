@@ -180,8 +180,7 @@ pub struct Slots {
     /// `list` never shows it. Off, a signature that does not verify with a key on the list is
     /// refused, an unknown key is `not_checked_unknown_key`, and nothing else is refused. On, an
     /// install that is unsigned or signed by an untrusted key is refused.
-    // LOCK: Lemnos L2. Today: the board has no security switch in the sim's sense; a known key with
-    // a bad signature installs as untrusted, and no install is refused for signing.
+    // The pin's security switch: on, a bundle not signed by a trusted key is refused at install (board: Lemnos bbb3c420 drivers/system-slots/src/lib.rs:43, and drivers/slot-store/src/signing.rs:340).
     pub board_security: bool,
     /// The board this node is, as its hello `family` fact. A slot built for another board is
     /// refused for set-default and trial.
@@ -320,7 +319,8 @@ impl Slots {
 
     /// With security on, a slot whose signature is not verified is not made the default or tried
     /// (I5g). The refusal names the reason in `error`, as every refusal does.
-    // LOCK: Lemnos L2. Today: set_default and trial do not look at the signature.
+    // The pin's set_default and trial check the slot's signature too (board: Lemnos bbb3c420
+    // drivers/system-slots/src/lib.rs:2491 and :2521, `fits_signature`).
     fn check_signature_policy(&self, entry: &Entry) -> Result<(), Status> {
         if self.board_security && !matches!(entry.signed, Signed::Trusted { .. }) {
             return Err(Status::new(
@@ -368,7 +368,8 @@ impl Slots {
     pub fn check_signed(&self, signed: &Signed) -> Result<(), Status> {
         match signed {
             Signed::Trusted { .. } => Ok(()),
-            // LOCK: Lemnos L2. Today: no install is refused for its signature.
+            // The pin refuses an install whose bundle is not signed by a trusted key while security is on
+            // (board: Lemnos bbb3c420 drivers/system-slots/src/lib.rs:43).
             _ if self.board_security => Err(Status::new(
                 code::NOT_PERMITTED,
                 "security is on and the bundle is not signed by a trusted key",
@@ -749,7 +750,7 @@ impl Slots {
                     "pinned": entry.pinned,
                     "failures": entry.failures,
                     "failed": entry.failed,
-                    // LOCK: Lemnos L2. Today: no `signature` field in a slot's list.
+                    // board: Lemnos bbb3c420 drivers/system-slots/src/lib.rs:1397 (the `signature` word of a slot).
                     "signature": outcome_label(&entry.signed),
                 })
             })

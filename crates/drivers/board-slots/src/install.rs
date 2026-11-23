@@ -9,12 +9,15 @@
 //!    here, before any byte or call reaches the board.
 //! 3. **accept `<size>`**: the board checks there is room. Repeatable: it changes nothing, so a
 //!    call that came back as unknown is sent again.
-//! 4. **Sending**: the bundle is pushed (`atlas_files`) to the name `slot-<nonce>.tar`, which the
-//!    board's sink takes into `.incoming`. A push resumes by itself: the board says how many bytes
+//! 4. **Sending**: the bundle is pushed (`atlas_files`) to `lemnos/<device>/slot-<nonce>.tar`, where
+//!    `<device>` is the device that carries `system.slots/1` (found once per install, see
+//!    [`atlas_session::lemnos::inbox`]). The bridge takes files only under `lemnos/`. A push resumes by itself: the board says how many bytes
 //!    it holds, so acknowledged bytes are not sent again. The push is started once and kept; a
 //!    retry of this step waits for that same push.
-//! 5. **install_file `<name> <pin> false`**: a long action. Started once and its run number kept
-//!    in the step state; a retry follows that run and never starts it again. A start that was
+//! 5. **install_file `<name> <pin> false`**: a long action, started on the same device as the push.
+//!    Started once and its run number kept in the step state; a retry follows that run and never
+//!    starts it again. A start refused NOT_FOUND says the pushed bundle is not in that device's
+//!    inbox (see [`missing_bundle`]). A start that was
 //!    sent and not confirmed ends the job with the words "not sent again": the board may have
 //!    started it, and the person checks the list before trying again.
 //! 6. **Installing**: the run's progress; the result is the new slot's id.
@@ -36,7 +39,7 @@
 //!
 //! **Cancel.** [`SlotInstalls::cancel`] cancels the job, cancels the push, and asks the board to
 //! stop its install run, then checks that the run ended cancelled. The board deletes the pushed
-//! file when a job ends, so nothing is left in `.incoming`.
+//! file when a job ends, so nothing is left in the device's inbox.
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -72,10 +75,9 @@ pub const REPLACED: &str = "the board at this address was replaced by another on
 /// What an install ends with when its session lapsed while the install's hold existed: the board
 /// may have dropped what the install was doing, so its state is not known from here.
 pub const LAPSED: &str = "the board may have dropped this install's hold: no request reached its bridge within the lease, so what the board did with the install is not known; check the slot list before installing again";
-/// The sink a pushed bundle lands in (the board's `.incoming`), as the file name's prefix.
-// LOCK: Lemnos L1 (system.slots `.incoming` sink, I5e): the bridge's file sink for the device takes
-// this name; today's lock names the same directory, so the prefix is data to be checked at the lock move.
-pub const INCOMING: &str = "slots/.incoming/";
+/// Lemnos's NOT_FOUND status as a Lemnos failure keeps it (the magnitude: a Lemnos status is kept
+/// without its sign, as BUSY is 16). A start refused with it names no pushed file.
+const LEMNOS_NOT_FOUND: u16 = 2;
 /// How often a push's progress is looked at while the install waits for it.
 const PUSH_POLL: Duration = Duration::from_millis(20);
 const PUSH_FILE_TAG: &str = "slot";
@@ -177,6 +179,9 @@ struct Run {
     /// The board's slot ids before the install's start was sent (the snapshot the new slot is found
     /// against). Taken once, before the start.
     before: Option<Vec<String>>,
+    /// The device that carries `system.slots/1`, found once: the push goes to its inbox and the
+    /// install starts on it.
+    device: Option<String>,
     /// Whether the run's answer has been followed once. A stored run number is followed at most
     /// once; the board's list decides the outcome after that.
     followed: bool,
@@ -273,9 +278,10 @@ enum Step {
 
 fn wait_of(error: &ActionError) -> Option<String> {
     match error {
-        ActionError::NotConnected(reason) | ActionError::NotAnswering(reason) => {
-            Some(reason.clone())
-        }
+        // Nothing was sent, and the board is not answering yet: wait, and try again.
+        ActionError::NotConnected(reason)
+        | ActionError::NotAnswering(reason)
+        | ActionError::NotYet(reason) => Some(reason.clone()),
         ActionError::Lost { reason, .. } | ActionError::Unknown { reason, .. } => {
             Some(reason.text().to_owned())
         }
@@ -286,21 +292,17 @@ fn wait_of(error: &ActionError) -> Option<String> {
 /// Why an install is unknown while it checks, as the app and the CLI say it.
 const LOST_REASON: &str = "the session was lost while this ran; checking the board";
 
-/// The kind check for an install's answer: the node answers an install with the new slot's id, a
-/// short name of letters, digits, `-` and `_`. Anything else (a list, a refusal's text, a document)
-/// is refused, and is not read as an id.
+/// The kind check for an install's answer: the node answers an install with the new slot's id, and
+/// an id is what Lemnos's own `valid_id` accepts at the pin (`[a-z0-9._-]`, at most 64, no leading
+/// dot: lemnos-slot-store store.rs:147). Anything else (a list, a refusal's text, a document) is
+/// refused, and is not read as an id.
 fn slot_id_answer(output: &[u8]) -> Result<(), String> {
-    let text = std::str::from_utf8(output).map_err(|_| "answer that is not text".to_owned())?;
-    let is_id = !text.is_empty()
-        && text.len() <= 64
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
-    if is_id {
+    let text = std::str::from_utf8(output).map_err(|_| "an answer that is not text".to_owned())?;
+    if lemnos_slot_store::store::valid_id(text) {
         Ok(())
     } else {
         let preview: String = text.chars().take(60).collect();
-        Err(format!("`{preview}`, which is not a slot id"))
+        Err(format!("`{preview}`"))
     }
 }
 
@@ -323,6 +325,24 @@ async fn slot_ids(board: &BoardActions) -> Result<Vec<String>, String> {
         .into_iter()
         .map(|slot| slot.id)
         .collect())
+}
+
+/// The sentence for people when the board has no pushed bundle to install under the name.
+#[must_use]
+pub fn missing_bundle(name: &str, device: &str) -> String {
+    let inbox = atlas_session::lemnos::inbox(device);
+    format!(
+        "the board has no pushed bundle named {name} in its {device} inbox ({inbox}); the push did not reach the board's {device} device"
+    )
+}
+
+/// The Lemnos failure a refused start carries when its status is NOT_FOUND: the board found no
+/// pushed file under the name.
+fn not_found(error: &ActionError) -> Option<&Failure> {
+    error.failure().filter(|failure| {
+        matches!(failure.kind(), atlas_session::FailureKind::Lemnos)
+            && failure.code() == Some(LEMNOS_NOT_FOUND)
+    })
 }
 
 fn classify(error: &ActionError) -> Step {
@@ -417,7 +437,7 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
-                    // LOCK: Lemnos L2: a signed bundle needs slot.key (the bundle writer's, D13); the
+                    // LOCK: Lemnos bbb3c420 drivers/slot-store/src/signing.rs:502-507: a signed bundle needs slot.key (the key id); the
                     // bundle written here is only as signed as `atlas_bundle::bundle_from_image` makes it.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));
@@ -504,13 +524,28 @@ impl InstallKind {
         Ok(())
     }
 
-    /// Step 4: the push, started once and waited for.
+    /// The device that carries the slots contract, found once per install. The push and the install
+    /// both go to it, so a retry never splits them between two devices.
+    async fn device(&self, spec: &Spec, board: &BoardActions) -> Result<String, Step> {
+        if let Some(device) = self.with_run(&spec.nonce, |run| run.device.clone()) {
+            return Ok(device);
+        }
+        let device = board
+            .device(atlas_session::lemnos::SLOTS)
+            .await
+            .map_err(|error| classify(&error))?;
+        self.with(&spec.nonce, |run| run.device = Some(device.clone()));
+        Ok(device)
+    }
+
+    /// Step 4: the push, started once and waited for, into the inbox of `device`.
     async fn push(
         &self,
         spec: &Spec,
         handle: &Handle,
         bundle: &Path,
         size: u64,
+        device: &str,
     ) -> Result<(), Step> {
         if self
             .with_run(&spec.nonce, |run| run.pushed.then_some(()))
@@ -532,7 +567,7 @@ impl InstallKind {
                 &self.push_kind,
                 jobs,
                 handle,
-                &format!("{INCOMING}{}", spec.dest),
+                &format!("{}{}", atlas_session::lemnos::inbox(device), spec.dest),
                 Box::new(file),
             )
             .await
@@ -569,7 +604,12 @@ impl InstallKind {
     }
 
     /// Step 5 and 6: install_file, started once, then followed to its result.
-    async fn install(&self, spec: &Spec, board: &BoardActions) -> Result<String, Step> {
+    async fn install(
+        &self,
+        spec: &Spec,
+        board: &BoardActions,
+        device: &str,
+    ) -> Result<String, Step> {
         let call = match self.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => call,
             None => {
@@ -603,8 +643,9 @@ impl InstallKind {
                 let runs = Arc::clone(&self.runs);
                 let nonce = spec.nonce.clone();
                 let starter = board.clone();
+                let on_device = device.to_owned();
                 let started = tokio::spawn(async move {
-                    let result = starter.start(&action, &words).await;
+                    let result = starter.start_on(&action, &words, &on_device).await;
                     let call = result.as_ref().ok().cloned();
                     // Recorded only while the install is still known: an install already ended
                     // (a cancel that gave up waiting) gets no new entry.
@@ -634,7 +675,16 @@ impl InstallKind {
                             "the board did not confirm that {name} started, so it was not sent again; check the slot list before installing again: {reason}"
                         )));
                     }
-                    Err(error) => return Err(classify(&error)),
+                    Err(error) => {
+                        return Err(match not_found(&error) {
+                            Some(failure) => Step::Refused(Failure::new(
+                                failure.kind(),
+                                failure.code(),
+                                missing_bundle(&spec.dest, device),
+                            )),
+                            None => classify(&error),
+                        });
+                    }
                 }
             }
         };
@@ -757,20 +807,28 @@ impl InstallKind {
                         )),
                         // The board's refusal stays typed (its code says BUSY); the list's agreement is
                         // added to its words.
-                        None => match error {
-                            ActionError::Refused(failure) | ActionError::Failed(failure) => {
-                                Step::Refused(Failure::new(
-                                    failure.kind(),
-                                    failure.code(),
-                                    format!(
-                                        "{} (the list confirmed nothing was installed: no new {} {} slot)",
-                                        failure.text(),
-                                        identity.product,
-                                        identity.version
-                                    ),
-                                ))
-                            }
-                            other => classify(other),
+                        // NOT_FOUND: the board has no pushed bundle under the name (the start was
+                        // accepted and the run ended with it), so the words say where it was looked for.
+                        None => match (not_found(error), error) {
+                            (Some(failure), _) => Step::Refused(Failure::new(
+                                failure.kind(),
+                                failure.code(),
+                                missing_bundle(&spec.dest, device),
+                            )),
+                            (
+                                None,
+                                ActionError::Refused(failure) | ActionError::Failed(failure),
+                            ) => Step::Refused(Failure::new(
+                                failure.kind(),
+                                failure.code(),
+                                format!(
+                                    "{} (the list confirmed nothing was installed: no new {} {} slot)",
+                                    failure.text(),
+                                    identity.product,
+                                    identity.version
+                                ),
+                            )),
+                            (None, other) => classify(other),
                         },
                     });
                 }
@@ -888,9 +946,10 @@ impl InstallKind {
         self.same_board(spec, handle)?;
         self.accept(spec, board, size).await?;
         self.same_board(spec, handle)?;
-        self.push(spec, handle, &bundle, size).await?;
+        let device = self.device(spec, board).await?;
+        self.push(spec, handle, &bundle, size, &device).await?;
         self.same_board(spec, handle)?;
-        self.install(spec, board).await
+        self.install(spec, board, &device).await
     }
 
     /// The board at the address must still be the one the install started on. A replacement
@@ -1001,6 +1060,10 @@ fn make_bundle(source: &SavedSource, scratch: &Path, partial: &Path) -> Result<(
         board: String::new(),
         kernel: kernel.clone(),
         display_name: display_name.clone(),
+        // A bundle Atlas makes from an image records neither: it is made on the PC from a built image, and its
+        // board's medium is checked by the board itself.
+        build_mode: None,
+        medium: None,
     };
     let out =
         File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;
@@ -1271,7 +1334,10 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, issued: &Issued) -> Canc
 
 #[cfg(test)]
 mod answer_tests {
-    use super::{BundleIdentity, Decision, decide, slot_id_answer};
+    use super::{
+        ActionError, BundleIdentity, Decision, Failure, decide, missing_bundle, not_found,
+        slot_id_answer,
+    };
 
     fn identity() -> BundleIdentity {
         BundleIdentity {
@@ -1367,10 +1433,26 @@ mod answer_tests {
     #[test]
     fn a_list_answer_is_refused_as_a_slot_id_and_a_slot_id_is_accepted() {
         assert!(slot_id_answer(b"slot-2").is_ok());
+        // The shape of the id a real board answered with (bar run 11, 2026-11-23): a version carries dots.
+        assert!(slot_id_answer(b"base-2026.1.0-dev.1328-c349ab5d").is_ok());
         let listing = br#"{"error":"","slots":[{"id":"slot-1"}]}"#;
         let refused = slot_id_answer(listing).expect_err("a list is not a slot id");
-        assert!(refused.contains("not a slot id"), "{refused}");
+        assert!(refused.starts_with("`{"), "{refused}");
+        assert!(slot_id_answer(b".hidden").is_err());
+        assert!(slot_id_answer(b"Slot-2").is_err());
         assert!(slot_id_answer(b"").is_err());
         assert!(slot_id_answer(&[0xff, 0xfe]).is_err());
+    }
+
+    #[test]
+    fn a_refused_start_with_not_found_says_which_file_and_inbox_were_missing() {
+        let refused = ActionError::Refused(Failure::lemnos(2, "the job could not be started"));
+        assert!(not_found(&refused).is_some(), "NOT_FOUND is named");
+        let busy = ActionError::Refused(Failure::lemnos(16, "an install is running"));
+        assert!(not_found(&busy).is_none(), "BUSY is not NOT_FOUND");
+        assert_eq!(
+            missing_bundle("slot-7.tar", "slots"),
+            "the board has no pushed bundle named slot-7.tar in its slots inbox (lemnos/slots/); the push did not reach the board's slots device"
+        );
     }
 }

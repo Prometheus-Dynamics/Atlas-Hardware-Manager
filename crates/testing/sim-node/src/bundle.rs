@@ -47,8 +47,8 @@ pub struct Verified {
 /// Signed bundles need both `slot.sig` and `slot.key`; a malformed signature or key id is refused
 /// (-22). A key id on the board's list must verify, or the bundle is refused by name (-1). A key id
 /// the board does not hold, or a board with no list, is not checked.
-// LOCK: Lemnos L2. Today: `slot.key` does not exist; a bundle signed by a known key whose signature
-// does not verify installs as untrusted; a malformed signature installs as unsigned.
+// `slot.key` is the signer's key id (board: Lemnos bbb3c420 drivers/slot-store/src/signing.rs:502-507, whose
+// refusal words for a malformed key id these are).
 fn signature_of(
     members: &BTreeMap<String, Vec<u8>>,
     manifest_bytes: &[u8],
@@ -61,12 +61,11 @@ fn signature_of(
                 .unwrap_or_default()
                 .trim_end_matches('\n');
             if !is_hex64(text) || text.bytes().any(|byte| byte.is_ascii_uppercase()) {
-                return Err(refuse("slot.key is not 64 lowercase hex digits"));
+                return Err(refuse("slot.key is not 64 hex digits"));
             }
             Some(text.to_string())
         }
     };
-    // LOCK: Lemnos L2 (slot.key, the key id member). Today: no key id member.
     match (members.get(SLOT_SIG), key_id) {
         (None, None) => Ok(Signed::Unsigned),
         (None, Some(_)) => Err(refuse("slot.key is there with no slot.sig")),

@@ -6,7 +6,7 @@
 //!
 //! Two ways to run an action:
 //!
-//! - A **short** action is one call ([`BoardActions::run`], [`BoardActions::catalog`]): started
+//! - A **short** action is one call ([`BoardActions::run`]): started
 //!   and waited for inside a single call, **not detached**. The board cancels a run whose session
 //!   ends, so a direct run is never left on the board where nobody can follow it. A direct run
 //!   that does not finish within half the call wait (at most [`DIRECT_WAIT`]) is asked to stop
@@ -20,7 +20,7 @@
 //!
 //! Retry safety of each call:
 //!
-//! - [`BoardActions::catalog`] reads the list. It changes nothing, so it may be made again.
+//! - [`BoardActions::catalog`] reads what the board offers. It changes nothing, so it may be made again.
 //! - A direct [`BoardActions::run`] is never retried by this crate: a call that did not come back
 //!   is [`ActionError::Unknown`], and the caller decides.
 //! - [`BoardActions::start`] is never retried by this crate: a start that was sent and not
@@ -34,18 +34,17 @@
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 
+use atlas_session::lease::lapse_words;
+use atlas_session::lemnos;
 use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, RunHandle, Target, Update};
 use orion::types::NodeName;
-use orion::{ClientError, Error as OrionError, Feature};
+use orion::{ClientError, Error as OrionError, Feature, Orion};
 
 use crate::args;
-use crate::catalog::{Action, Catalog, Route};
+use crate::catalog::{Action, Catalog, Reported, Route};
 use crate::error::ActionError;
 
-/// The name the board answers its action list to. A provisional name, agreed with Lemnos with the
-/// list's format (see `crates/testing/sim-node/src/actions.rs`).
-pub const CATALOG_ACTION: &str = "actions.list";
 /// How long one poll of a detached run waits for news before the session is looked at again.
 pub const POLL: Duration = Duration::from_millis(250);
 /// The longest a short action may take in one call. Half the call wait is used when that is less.
@@ -57,6 +56,17 @@ pub const DETACHED_DEADLINE_MS: u64 = 60 * 60 * 1000;
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+
+/// The sentence a run's lapse shows: the lease, the period it was kept for, and the run it may have
+/// cost. `said` is the board's own words when the run had ended with an error, else `not finished`.
+fn lapsed_reason(period: Duration, call: u64, said: &str) -> String {
+    let words = lapse_words(period, &format!("run {call}"));
+    if said == NOT_FINISHED || said.is_empty() {
+        words
+    } else {
+        format!("{words}. The board said: {said}")
+    }
+}
 
 /// The prefix a board's reply carries once the caller's lease ended and its holds were released:
 /// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
@@ -107,6 +117,111 @@ enum Direct {
     Ended(Finished),
     Refused(Failure),
     Late,
+    /// Nothing was sent: see [`Missing`].
+    Missing(Missing),
+}
+
+/// Where a run goes: the name, target and arguments the node's session takes.
+struct Aim {
+    name: String,
+    target: Target,
+    args: Vec<u8>,
+}
+
+/// Where a run of `name` with `encoded` arguments goes, read on the node's session. A Lemnos method
+/// (`system.<contract>.<method>`, see [`lemnos::method_of`]) is the call on the device that carries
+/// its contract, built in one place (`atlas_session::lemnos`): the device's resource and the
+/// bridge's `TAG:METHOD` form. Any other name runs on the node, as before.
+///
+/// Refuses, before anything is sent, a word of a Lemnos call that the bridge cannot take. The bridge
+/// splits a call's words on whitespace with no quoting or escape (`service/orion/src/calls.rs`,
+/// `serve`), so a word that is empty or has whitespace in it would arrive as a different call.
+/// Nothing is sent, and the reason names the argument.
+fn refuse_unsplit(action: &Action, words: &[String]) -> Result<(), ActionError> {
+    if lemnos::method_of(&action.name).is_none() {
+        return Ok(());
+    }
+    for (index, word) in words.iter().enumerate() {
+        let problem = if word.is_empty() {
+            "empty"
+        } else if word.chars().any(char::is_whitespace) {
+            "a word with whitespace in it"
+        } else {
+            continue;
+        };
+        let arg = match &action.args {
+            Reported::Known(args) => args
+                .get(index)
+                .map_or_else(|| format!("argument {}", index + 1), |arg| arg.name.clone()),
+            Reported::NotReported => format!("argument {}", index + 1),
+        };
+        return Err(ActionError::BadArguments(format!(
+            "{arg} is {problem}: the board's call takes its words split on spaces, with no quoting, so it is not sent"
+        )));
+    }
+    Ok(())
+}
+
+/// Why a Lemnos call is not sent: no device carries its contract, or the node lists no device.
+#[derive(Debug)]
+enum Missing {
+    Contract(String),
+    NoDevices,
+    /// The device is not answering yet, or the search did not finish: the sentence for people.
+    NotYet(String),
+    /// The node turns this client away (`denied`): the failure, with its kind.
+    Unanswered(atlas_session::Failure),
+}
+
+/// `Err` when nothing is to be sent: no device carries the contract, or there are no devices. With
+/// `device`, the call goes to that device's resource and the contract is not looked up again.
+fn aim(
+    orion: &Orion,
+    session: u64,
+    name: &str,
+    encoded: &[u8],
+    node: &NodeName,
+    device: Option<&str>,
+) -> Result<Result<Aim, Missing>, OrionError> {
+    let Some((contract, method)) = lemnos::method_of(name) else {
+        return Ok(Ok(Aim {
+            name: name.to_owned(),
+            target: Target::Node(node.clone()),
+            args: encoded.to_vec(),
+        }));
+    };
+    let resource = match device {
+        Some(device) => format!("{}{device}", lemnos::RESOURCE_PREFIX),
+        None => match lemnos::resource_cached(orion, session, &contract)? {
+            lemnos::Lookup::Found(resource) => resource,
+            lemnos::Lookup::NoContract => return Ok(Err(Missing::Contract(contract))),
+            lemnos::Lookup::NoDevices => return Ok(Err(Missing::NoDevices)),
+            lemnos::Lookup::NotYet(text) => return Ok(Err(Missing::NotYet(text))),
+            lemnos::Lookup::Unanswered(words) => return Ok(Err(Missing::Unanswered(words))),
+        },
+    };
+    // A resource the node lists under the bridge's prefix is a name the bridge can have.
+    let Ok(call) = lemnos::method_call(&resource, &contract, &method, encoded) else {
+        return Ok(Err(Missing::Contract(contract)));
+    };
+    Ok(Ok(Aim {
+        name: call.name,
+        target: call.target,
+        args: call.args,
+    }))
+}
+
+/// The error a [`Missing`] call gives: nothing was sent.
+fn not_sent(missing: Missing) -> ActionError {
+    match missing {
+        Missing::Contract(contract) => ActionError::NoContract(contract),
+        Missing::NoDevices => ActionError::NoDevices,
+        // Not final: nothing was sent, and the caller may ask again (a job waits and tries again).
+        Missing::NotYet(text) => ActionError::NotYet(text),
+        // A node that turns this client away says so as a refusal, which the caller can act on (enrol).
+        Missing::Unanswered(failure) if failure.is_denied() => ActionError::Refused(failure),
+        Missing::Unanswered(failure) => ActionError::NotAnswering(failure.to_string()),
+    }
 }
 
 impl BoardActions {
@@ -122,32 +237,42 @@ impl BoardActions {
         &self.handle
     }
 
-    /// Reads the board's action list, as one short call. A board's refusal of the read (a reply
-    /// over the bridge's size bound, or a node that lists nothing) comes back as
-    /// [`ActionError::Refused`] with the board's reason, verbatim. The simulated node answers it
-    /// as Lemnos M8 does.
+    /// Reads what the board offers to run. No action of the board is asked for a list: no board
+    /// publishes one. The names come from the node's resource list (its devices, and the
+    /// `lemnos.<device>.call` each one takes) and the methods, their arguments and whether each is a
+    /// long job come from each device's description, which the session keeps once asked
+    /// (`atlas_session::lemnos::offers`). A device that refuses its description (one that is off does)
+    /// offers nothing; a node with no devices (a plain Orion node) gives an empty list.
     ///
     /// # Errors
     ///
-    /// [`ActionError::Refused`] (a refusal, with the board's reason; a plain Orion node refuses
-    /// the read because it lists nothing); [`ActionError::NotAnswering`] when the node did not
-    /// answer; [`ActionError::BadCatalog`] when the list is not one Atlas reads.
+    /// [`ActionError::NotConnected`] (nothing sent); [`ActionError::Refused`] when every device
+    /// refused its description because the node turns this client away, with the node's reason;
+    /// [`ActionError::NotAnswering`] when every device refused it for another reason (Lemnos is
+    /// stopped on the node), or the node did not answer.
     pub async fn catalog(&self) -> Result<Catalog, ActionError> {
         // Retry: reading the list changes nothing, so the caller may make it again.
-        let done = self
-            .direct(CATALOG_ACTION, Vec::new())
+        self.node_name()?;
+        let session = self.handle.session();
+        let mut offers = self
+            .handle
+            // A read: with the descriptions kept, nothing reaches the bridge, so this is not counted
+            // as a request that renews the board's lease.
+            .with_client(move |orion| lemnos::offers(orion, session))
             .await
             .map_err(|error| match error {
-                // The board's own words, verbatim: a size refusal is never reported as "no actions".
-                refused @ (ActionError::Refused(_)
-                | ActionError::Failed(_)
-                | ActionError::Cancelled(_)) => refused,
-                other => ActionError::NotAnswering(other.to_string()),
+                SessionError::Gone(reason) => ActionError::NotAnswering(reason),
+                SessionError::Failed(failure) => ActionError::NotAnswering(failure.to_string()),
             })?;
-        // An out-buffer reply through the bridge (Lemnos M8a, in the lock since d6b9361d).
-        let text = String::from_utf8(done.output)
-            .map_err(|_| ActionError::BadCatalog("the list is not text".into()))?;
-        Catalog::parse(&text).map_err(|error| ActionError::BadCatalog(error.to_string()))
+        if offers.devices > 0 && offers.unanswered.len() == offers.devices {
+            let (_, failure) = offers.unanswered.swap_remove(0);
+            return Err(if failure.is_denied() {
+                ActionError::Refused(failure)
+            } else {
+                ActionError::NotAnswering(failure.to_string())
+            });
+        }
+        Ok(Catalog::from_offers(&offers.methods))
     }
 
     /// Runs a short action in one call and returns its result.
@@ -168,6 +293,7 @@ impl BoardActions {
         if action.route() == Route::Job {
             return Err(ActionError::NeedsJob(action.name.clone()));
         }
+        refuse_unsplit(action, words)?;
         args::check(action, words)?;
         self.direct(&action.name, args::encode(words)).await
     }
@@ -184,19 +310,77 @@ impl BoardActions {
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// [`ActionError::Refused`] with the board's reason, or [`ActionError::StartInDoubt`].
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
+        refuse_unsplit(action, words)?;
         args::check(action, words)?;
-        self.start_encoded(&action.name, args::encode(words)).await
+        self.start_encoded(&action.name, args::encode(words), None)
+            .await
     }
 
-    /// Starts `name` with `encoded` arguments, detached. The arguments must already be checked.
+    /// As [`BoardActions::start`], on device `device` (the id a [`BoardActions::device`] lookup
+    /// gave): the start goes to that device's resource, so a push and its install name one device.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::start`].
+    pub async fn start_on(
+        &self,
+        action: &Action,
+        words: &[String],
+        device: &str,
+    ) -> Result<Issued, ActionError> {
+        refuse_unsplit(action, words)?;
+        args::check(action, words)?;
+        self.start_encoded(&action.name, args::encode(words), Some(device))
+            .await
+    }
+
+    /// The id of the device that carries `contract` now (the id is the `<device>` of its
+    /// `lemnos.<device>` resource: a push into its inbox is `lemnos/<device>/`). Nothing is sent to
+    /// the device for the lookup beyond the description the session keeps.
+    ///
+    /// # Errors
+    ///
+    /// [`ActionError::NoContract`], [`ActionError::NoDevices`], [`ActionError::NotYet`] or
+    /// [`ActionError::Refused`]/[`ActionError::NotAnswering`] as [`BoardActions::run`] gives them; the
+    /// lookup itself sends nothing that is not counted in [`BoardActions::start`].
+    pub async fn device(&self, contract: &str) -> Result<String, ActionError> {
+        self.node_name()?;
+        let session = self.handle.session();
+        let asked = contract.to_owned();
+        let found = self
+            .handle
+            .with_bridge(move |orion| lemnos::resource_cached(orion, session, &asked))
+            .await
+            .map_err(|error| match error {
+                SessionError::Gone(reason) => ActionError::NotAnswering(reason),
+                SessionError::Failed(failure) => ActionError::NotAnswering(failure.to_string()),
+            })?;
+        let missing = match found {
+            lemnos::Lookup::Found(resource) => {
+                return lemnos::device_of(&resource)
+                    .map(str::to_owned)
+                    .ok_or_else(|| ActionError::NoContract(contract.to_owned()));
+            }
+            lemnos::Lookup::NoContract => Missing::Contract(contract.to_owned()),
+            lemnos::Lookup::NoDevices => Missing::NoDevices,
+            lemnos::Lookup::NotYet(text) => Missing::NotYet(text),
+            lemnos::Lookup::Unanswered(failure) => Missing::Unanswered(failure),
+        };
+        Err(not_sent(missing))
+    }
+
+    /// Starts `name` with `encoded` arguments, detached, on `device` when given (else on the device
+    /// that carries the name's contract). The arguments must already be checked.
     pub(crate) async fn start_encoded(
         &self,
         name: &str,
         encoded: Vec<u8>,
+        device: Option<&str>,
     ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
         let started = name.to_owned();
+        let on = device.map(str::to_owned);
         // Read before the start is sent: a session that changes meanwhile makes the run look
         // older than it is, so a later use treats it as another session's (the safe side).
         let session = self.handle.session();
@@ -204,10 +388,15 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name, on.as_deref())?
+                {
+                    Ok(aimed) => aimed,
+                    Err(missing) => return Ok(Started::Missing(missing)),
+                };
                 let mut run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
+                    name: &aimed.name,
+                    target: aimed.target,
+                    args: &aimed.args,
                     deadline_ms: DETACHED_DEADLINE_MS,
                     detached: true,
                 })?;
@@ -252,6 +441,7 @@ impl BoardActions {
         match sent {
             Ok(Started::Issued(issued)) => Ok(issued),
             Ok(Started::Refused(reason)) => Err(ActionError::Refused(reason)),
+            Ok(Started::Missing(missing)) => Err(not_sent(missing)),
             Err(SessionError::Gone(reason)) => Err(ActionError::StartInDoubt {
                 name: name.to_owned(),
                 reason,
@@ -326,7 +516,7 @@ impl BoardActions {
             {
                 return Err(ActionError::HoldLapsed {
                     call,
-                    reason: NOT_FINISHED.to_owned(),
+                    reason: lapsed_reason(hold.lease_period(), call, NOT_FINISHED),
                 });
             }
             match seen {
@@ -337,7 +527,11 @@ impl BoardActions {
                     if lease_ended(&finished.detail) {
                         return Err(ActionError::HoldLapsed {
                             call,
-                            reason: finished.detail,
+                            reason: lapsed_reason(
+                                hold.map_or(atlas_session::LEASE, Hold::lease_period),
+                                call,
+                                &finished.detail,
+                            ),
                         });
                     }
                     let result = followed_end(finished);
@@ -346,7 +540,11 @@ impl BoardActions {
                         (Some(hold), Err(error)) if hold.lapsed() => {
                             return Err(ActionError::HoldLapsed {
                                 call,
-                                reason: error.to_string(),
+                                reason: lapsed_reason(
+                                    hold.lease_period(),
+                                    call,
+                                    &error.to_string(),
+                                ),
                             });
                         }
                         // An end read on a later session is not trusted, failure or cancel alike:
@@ -481,13 +679,18 @@ impl BoardActions {
         let node_name = self.node_name()?;
         let wait = self.direct_wait();
         let owned = name.to_owned();
+        let session = self.handle.session();
         let answered = self
             .handle
             .with_bridge(move |orion| {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name, None)? {
+                    Ok(aimed) => aimed,
+                    Err(missing) => return Ok(Direct::Missing(missing)),
+                };
                 let mut run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
+                    name: &aimed.name,
+                    target: aimed.target,
+                    args: &aimed.args,
                     deadline_ms: 0,
                     detached: false,
                 })?;
@@ -508,6 +711,7 @@ impl BoardActions {
         match answered {
             Ok(Direct::Ended(finished)) => ended(finished),
             Ok(Direct::Refused(reason)) => Err(ActionError::Refused(reason)),
+            Ok(Direct::Missing(found)) => Err(not_sent(found)),
             Ok(Direct::Late) => Err(ActionError::NotFinished {
                 name: name.to_owned(),
                 wait,
@@ -541,6 +745,8 @@ impl Seen {
 enum Started {
     Issued(Issued),
     Refused(Failure),
+    /// Nothing was sent: see [`Missing`].
+    Missing(Missing),
 }
 
 /// Comes back to a detached run: by its handle when the node gave one, so that no other run under
@@ -581,7 +787,7 @@ fn followed_end(finished: Finished) -> Result<Done, ActionError> {
 
 /// How a run that ended is answered: the board's words for anything that did not succeed. The
 /// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
-/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
+/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_lemnos_busy`]).
 fn ended(finished: Finished) -> Result<Done, ActionError> {
     let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
     let detail = finished.detail;
@@ -600,11 +806,7 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
         }),
         // Lemnos M39: a refusal without running is Rejected with the status's code.
         Outcome::Rejected => Err(ActionError::Refused(match code {
-            Some(code) => Failure::new(
-                FailureKind::Refused,
-                Some(code),
-                reason("the board refused it, without a reason"),
-            ),
+            Some(code) => Failure::lemnos(code, reason("the board refused it, without a reason")),
             None => reason("the board refused it, without a reason").into(),
         })),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
@@ -709,7 +911,7 @@ mod tests {
     #[test]
     fn a_rejected_run_keeps_its_code_and_busy_is_read_from_it() {
         let busy = ended(finished(Outcome::Rejected, 16, "an install is running")).unwrap_err();
-        assert!(busy.is_busy(), "{busy:?}");
+        assert!(busy.is_lemnos_busy(), "{busy:?}");
         assert_eq!(busy.board_reason(), Some("an install is running"));
         // The words alone never make it busy.
         let words = ended(finished(
@@ -718,10 +920,21 @@ mod tests {
             "busy: an install is running",
         ))
         .unwrap_err();
-        assert!(!words.is_busy(), "{words:?}");
+        assert!(!words.is_lemnos_busy(), "{words:?}");
         let missing = ended(finished(Outcome::Rejected, 2, "there is no pushed file")).unwrap_err();
-        assert!(!missing.is_busy());
+        assert!(!missing.is_lemnos_busy());
         assert_eq!(missing.failure().and_then(Failure::code), Some(2));
+    }
+
+    #[test]
+    fn an_orion_refusal_with_code_16_is_not_a_lemnos_busy() {
+        // Orion's DigestMismatch is 16 too: a digest refusal from Orion is not the board being busy.
+        let digest = Failure::of(&orion::Error::Client(orion::ClientError::refused(
+            orion::types::Error::DigestMismatch,
+            "digest does not match",
+        )));
+        let error = ActionError::Refused(digest);
+        assert!(!error.is_lemnos_busy(), "{error:?}");
     }
 
     #[test]
@@ -730,7 +943,7 @@ mod tests {
         assert_eq!(failed.failure().and_then(Failure::code), None);
         let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
         assert_eq!(timed.failure().and_then(Failure::code), Some(110));
-        assert!(!timed.is_busy());
+        assert!(!timed.is_lemnos_busy());
     }
 
     #[test]

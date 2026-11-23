@@ -1006,6 +1006,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 /// The board's own security switch: on, it refuses to make an unsigned slot the
                 /// default or to try it.
                 security: Option<bool>,
+                /// Takes this device (its id, for example `reboot`) off the board for good, as on a
+                /// board whose file has no such device.
+                remove_device: Option<String>,
             }
             let hook: Hook = args(name, arguments)?;
             tokio::task::spawn_blocking(move || {
@@ -1028,6 +1031,9 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     }
                     if let Some(on) = hook.security {
                         node.model().slots.board_security = on;
+                    }
+                    if let Some(device) = &hook.remove_device {
+                        node.remove_device(device);
                     }
                     match hook.lemnos {
                         Some(true) => node.resume_lemnos(),

@@ -1,0 +1,11 @@
+# Wired Ethernet: any Ethernet-type link except the USB gadget's (lemnos0, which /run/systemd/network/10-lemnos0.network
+# configures). See devices/components/wired-ethernet/component.toml.
+[Match]
+Type=ether
+Name=!lemnos*
+
+[Network]
+DHCP=yes
+# systemd 258 (systemd.network(5)): `yes` configures IPv6 link-local always, and IPv4 link-local when DHCPv4 has been
+# unsuccessful for some time; the IPv4 link-local address is dropped once a lease is taken.
+LinkLocalAddressing=yes

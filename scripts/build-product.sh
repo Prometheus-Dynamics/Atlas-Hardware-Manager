@@ -5,6 +5,7 @@
 # by the manual CI job (`build-product` in .github/workflows/next.yml).
 #
 #   scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--tool NAME=PATH]... [--out DIR]
+#                            [--build-mode clean|dev-reuse] [--medium MEDIUM]
 #
 #   <product>     a directory name under devices/products (raze-base, rock-5c-bringup, ...)
 #   --plan        plan only: print the version and slot, run `gaia plan` with them, build nothing
@@ -20,6 +21,13 @@
 #   --jobs N      Gaia's job count (default: Gaia's own)
 #   --tool N=PATH a tool given to Gaia by name (repeatable), as `gaia build --tool`
 #   --out DIR     copy what each output holds into DIR (the image files), with their sizes and SHA-256
+#   --build-mode  clean (the default, and the only mode for a release) or dev-reuse: `gaia build --dev-reuse` (Gaia
+#                 docs/dev-reuse.md), whose generator steps see @build@ = dev-reuse, so the slot's manifest says
+#                 build.mode dev-reuse (Lemnos 7b4fdb25, `lemnos-ctl bundle --build`). Gaia refuses a dev build of a
+#                 product that signs (a signed bundle), so dev-reuse is for an unsigned product only.
+#   --medium      the medium the image is written to (@medium@, the slot manifest's `medium`). Gaia bb98a262 takes it
+#                 from each image's board, its `[flash] medium`, and has no way to give another: so the flag is checked
+#                 against every image's board and refused when one differs or states none. Without it, the board's.
 #
 # GAIA_BIN is the binary, else the one scripts/check-devices.sh built into its cache. GAIA_STORE is the content
 # store, else ${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia-store: a full build adds several GiB to it.
@@ -32,7 +40,7 @@ die() { echo "build-product: $*" >&2; exit 1; }
 # atlas_version, slot_id_for, slot_settings_args: scripts/version-rule.sh, the one rule's one place.
 source "$repo/scripts/version-rule.sh"
 
-pname="" key="" pckey="" until_step="" jobs="" out="" plan_only=0
+pname="" key="" pckey="" until_step="" jobs="" out="" plan_only=0 build_mode=clean medium=""
 tools=()
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -43,13 +51,44 @@ while [[ $# -gt 0 ]]; do
     --jobs) jobs=${2:?--jobs needs a count}; shift 2 ;;
     --tool) tools+=(--tool "${2:?--tool needs NAME=PATH}"); shift 2 ;;
     --out) out=${2:?--out needs a directory}; shift 2 ;;
+    --build-mode) build_mode=${2:?--build-mode needs clean or dev-reuse}; shift 2 ;;
+    --medium) medium=${2:?--medium needs a medium}; shift 2 ;;
     -*) die "unknown flag $1" ;;
     *) [[ -z $pname ]] || die "one product only (got $pname and $1)"; pname=$1; shift ;;
   esac
 done
-[[ -n $pname ]] || die "usage: scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--out DIR]"
+[[ -n $pname ]] || die "usage: scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--out DIR] [--build-mode clean|dev-reuse] [--medium MEDIUM]"
 product=$repo/devices/products/$pname/product.toml
 [[ -f $product ]] || die "no product $pname (have: $(ls "$repo/devices/products" | tr '\n' ' '))"
+case $build_mode in
+  clean | dev-reuse) ;;
+  *) die "--build-mode is clean or dev-reuse, not $build_mode" ;;
+esac
+if [[ -n $medium ]]; then
+  # Each image's board's [flash] medium (a board may extend a family that states it). Gaia gives @medium@ from it.
+  boards_media=$(python3 -I - "$product" <<'PY'
+import os, sys, tomllib
+product = sys.argv[1]
+with open(product, "rb") as f:
+    images = tomllib.load(f).get("images", [])
+for image in images:
+    board = os.path.normpath(os.path.join(os.path.dirname(product), image["board"]))
+    medium = None
+    while board:
+        with open(board, "rb") as f:
+            data = tomllib.load(f)
+        medium = (data.get("flash") or {}).get("medium")
+        if medium or "extends" not in data:
+            break
+        board = os.path.normpath(os.path.join(os.path.dirname(board), data["extends"]))
+    print(f"{image.get('name')} {medium or '-'}")
+PY
+  ) || die "the boards of $pname could not be read for --medium"
+  while read -r image_name image_medium; do
+    [[ $image_medium == "$medium" ]] || die "--medium $medium: image $image_name's board says ${image_medium/#-/no [flash] medium}, and Gaia takes the medium from the board only"
+  done <<<"$boards_media"
+  echo "build-product: medium $medium (every image's board says so)"
+fi
 
 lock=$repo/devices/gaia.lock
 commit=$(sed -n 's/^commit = "\(.*\)"$/\1/p' "$lock")
@@ -90,6 +129,9 @@ args+=(${tools[@]+"${tools[@]}"})
 build_only=()
 [[ -z $jobs ]] || build_only+=(--jobs "$jobs")
 [[ -z $until_step ]] || build_only+=(--until "$until_step")
+# The build mode is a `gaia build` flag; the plan shows the clean build's keys either way.
+[[ $build_mode == clean ]] || build_only+=(--dev-reuse)
+echo "build-product: build mode $build_mode"
 
 # The version (the Atlas dev scheme of this checkout's HEAD; a tracked change is refused) and, for a slot-boot
 # product, the slot: both as Gaia --settings, printed before anything runs.

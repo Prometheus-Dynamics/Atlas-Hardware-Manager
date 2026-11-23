@@ -17,11 +17,14 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atlas_board::{identity, lemnos};
+use atlas_session::Backoff;
+use atlas_session::lemnos as session_lemnos;
 use atlas_types::{Identity, LemnosState, LinkId};
 use orion::Orion;
+use orion::provider::ResourceState;
 use orion::topics::{FieldId, FieldType, Next, Status, Subscriber};
 use orion::types::NodeName;
 use orion_msg_topics::Declare;
@@ -63,11 +66,34 @@ pub(crate) struct Read {
 struct Live {
     /// Which connection this state belongs to: see [`read`].
     session: Option<String>,
+    /// The monitor's number for that connection: the key of its describe answers (see
+    /// `atlas_session::lemnos`). Zero when none.
+    number: u64,
     identity: Option<Identity>,
     topics: BTreeMap<String, Subscriber>,
     logs: Option<Subscriber>,
-    /// The descriptions asked for on this connection, by device resource name.
+    /// The descriptions asked for on this connection, by device resource name. Only a complete description
+    /// or a device that is off is kept here; a refusal of a device that is on is in `retry`.
     asked: BTreeMap<String, Asked>,
+    /// The devices whose description was refused while on, with the backoff for the next ask.
+    retry: BTreeMap<String, Retry>,
+    /// Whether the Lemnos probe's answer is final for this connection (see `lemnos::Probe`). Until it is,
+    /// the probe is asked again, on `probe_after`.
+    lemnos_settled: bool,
+    /// The backoff between probes while the answer is not final; restarted by a final answer.
+    probe_backoff: Backoff,
+    /// When the next probe may be asked, while the answer is not final.
+    probe_after: Option<Instant>,
+}
+
+/// A refused description of a device that is on: when it may be asked again, the backoff for that ask, the
+/// start of the stretch of refusals, and the board's words for the last one.
+#[derive(Clone, Debug)]
+struct Retry {
+    after: Instant,
+    backoff: Backoff,
+    since: Instant,
+    reason: String,
 }
 
 /// Reads the node at `address` on `orion`'s connection, which is the connection `session` names.
@@ -86,6 +112,7 @@ pub(crate) fn read(
     orion: &Orion,
     address: &str,
     session: &str,
+    number: u64,
     link: &LinkId,
     refresh: Option<(&RefreshCell, u64)>,
 ) -> Result<Result<Read, String>, orion::Error> {
@@ -93,12 +120,15 @@ pub(crate) fn read(
         let mut slots = cell.borrow_mut();
         let live = slots.entry(address.to_owned()).or_default();
         if live.session.as_deref() != Some(session) {
+            // The connection this state belonged to is gone: its describe answers go with it.
+            session_lemnos::forget_session(live.number);
             *live = Live {
                 session: Some(session.to_owned()),
+                number,
                 ..Live::default()
             };
         }
-        live.read(orion, link, address, refresh)
+        live.read(orion, link, address, number, refresh)
     })
 }
 
@@ -108,19 +138,34 @@ impl Live {
         orion: &Orion,
         link: &LinkId,
         address: &str,
+        number: u64,
         refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<Result<Read, String>, orion::Error> {
         orion.pump(Duration::ZERO)?;
-        if self.identity.is_none() {
+        // The probe is asked until its answer is final: a transient one (the device is not answering yet)
+        // is not kept, and the next read asks again, on the backoff.
+        let due = self.probe_after.is_none_or(|after| Instant::now() >= after);
+        if self.identity.is_none() || (!self.lemnos_settled && due) {
             let node = orion.node()?;
-            let lemnos = if lemnos::published_by(&node) {
-                lemnos::probe(orion, &node)?
+            let probe = if lemnos::published_by(&node) {
+                lemnos::probe(orion, number)?
             } else {
-                LemnosState::Absent
+                lemnos::Probe {
+                    state: LemnosState::Absent,
+                    settled: true,
+                }
             };
-            match identity::identity(&node, &lemnos, link, address) {
+            match identity::identity(&node, &probe.state, link, address) {
                 Ok(identity) => self.identity = Some(identity),
                 Err(error) => return Ok(Err(format!("the node's identity: {error}"))),
+            }
+            self.lemnos_settled = probe.settled;
+            if probe.settled {
+                self.probe_backoff.reset();
+                self.probe_after = None;
+            } else {
+                let delay = self.probe_backoff.next_delay();
+                self.probe_after = Some(Instant::now() + delay);
             }
         }
         let Some(identity) = self.identity.clone() else {
@@ -145,12 +190,18 @@ impl Live {
             }
             // The topics are subscribed before the description is asked for, so a change made
             // during the ask is seen by the next read.
-            // LOCK: Lemnos M8c's per-device generation topic (`lemnos.<device>.description`, field
-            // `generation`) is followed here. The device-set topic (`lemnos.devices`) is not
+            // LOCK: Lemnos bbb3c420 publishes the per-device generation topic (`lemnos.<device>.description`, field
+            // `generation`: publish.rs:198 and :240), and it is followed here. The device-set topic (`lemnos.devices`) is not
             // subscribed: the resource list is read on every snapshot, so an appearing or leaving
             // device is seen there, and its description is asked once when it first shows.
-            let description =
-                self.description_of(orion, &resource.name, generation_of(&topics), refresh)?;
+            let description = self.description_of(
+                orion,
+                number,
+                &resource.name,
+                generation_of(&topics),
+                resource.state == ResourceState::Pending,
+                refresh,
+            )?;
             listed.insert(resource.name.clone());
             devices.push(RawDevice {
                 resource: resource.name,
@@ -160,6 +211,8 @@ impl Live {
             });
         }
         self.asked.retain(|name, _| listed.contains(name));
+        self.retry.retain(|name, _| listed.contains(name));
+        session_lemnos::retain_described(number, &listed.iter().cloned().collect::<Vec<_>>());
         if let Some((cell, id)) = refresh
             && let Some(current) = lock(cell).as_mut().filter(|current| current.id == id)
         {
@@ -183,16 +236,30 @@ impl Live {
 
     /// The description of one device now: held when it is not due, else asked for. During a
     /// refresh the held answer is the refresh's own, so an answer it has received is not asked
-    /// again, whatever the connection did since. A node with no name yet is not asked (its state
-    /// stays pending until it has one).
+    /// again, whatever the connection did since. A device this session has already been described
+    /// for (by the Lemnos resolver, at connect) is held as that answer, not asked again. A node with
+    /// no name yet is not asked (its state stays pending until it has one).
     fn description_of(
         &mut self,
         orion: &Orion,
+        number: u64,
         device: &str,
         generation: Option<u64>,
+        off: bool,
         refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<DescriptionState, orion::Error> {
-        let held = match refresh {
+        // A refused description of a device that is on is asked again by the reader, on its backoff (a
+        // refresh asks now). Until then it is shown as not answering yet.
+        if refresh.is_none()
+            && let Some(retry) = self.retry.get(device)
+            && Instant::now() < retry.after
+        {
+            return Ok(DescriptionState::NotYet {
+                since: retry.since,
+                reason: retry.reason.clone(),
+            });
+        }
+        let mut held = match refresh {
             Some((cell, id)) => {
                 // The refresh's answer is also this connection's: once the refresh is over, the
                 // connection follows it, and does not ask again.
@@ -204,31 +271,96 @@ impl Live {
             }
             None => self.asked.get(device).cloned(),
         };
+        // Outside a refresh, a device this session has already been described for is held as that
+        // answer. A refresh asks every device that has not answered it, so its answer is not shared.
+        if held.is_none()
+            && refresh.is_none()
+            && let Some(answer) = session_lemnos::held_description(number, device)
+        {
+            // A description carries its own generation. A refusal does not: it was asked at a generation
+            // this reader never saw, so it is not taken as current. It is due at the next sample.
+            let mut adopted = asked_from(&answer, generation);
+            if !matches!(adopted.state, DescriptionState::Described(_)) {
+                adopted.generation = None;
+            }
+            held = Some(adopted);
+        }
         if !is_due(held.as_ref(), generation) {
             return Ok(held.map_or(DescriptionState::Pending, |asked| asked.state));
         }
-        let Ok(node) = orion.node()?.name.parse::<NodeName>() else {
+        // A node with no name yet is not asked: its state stays pending until it has one.
+        if orion.node()?.name.parse::<NodeName>().is_err() {
             return Ok(DescriptionState::Pending);
-        };
-        let (state, answers) = match fetch(orion, device, &node)? {
-            Ok(bytes) => match crate::description::parse_bytes(&bytes) {
-                Ok(description) => {
-                    let answers = description.device.generation;
-                    (DescriptionState::Described(Box::new(description)), answers)
+        }
+        // A held answer that is due has a generation that moved (or an answer that is not the
+        // current one), and a refresh asks each device it has not heard from: either way the device
+        // is asked again, once, and the session keeps the new answer.
+        if held.is_some() || refresh.is_some() {
+            session_lemnos::forget_description(number, device);
+        }
+        let answer = fetch(orion, number, device)?;
+        let asked = match &answer {
+            // A device that is off is not "not yet": its refusal is its answer, held as before.
+            Err(_) if off => asked_from(&answer, generation),
+            Err(reason) => {
+                let (since, mut backoff) = match self.retry.remove(device) {
+                    Some(retry) => (retry.since, retry.backoff),
+                    None => (Instant::now(), Backoff::default()),
+                };
+                let after = Instant::now() + backoff.next_delay();
+                self.retry.insert(
+                    device.to_owned(),
+                    Retry {
+                        after,
+                        backoff,
+                        since,
+                        reason: reason.to_string(),
+                    },
+                );
+                self.asked.remove(device);
+                Asked {
+                    state: DescriptionState::NotYet {
+                        since,
+                        reason: reason.to_string(),
+                    },
+                    generation: None,
                 }
-                Err(refusal) => (DescriptionState::Unreadable(refusal), generation),
-            },
-            Err(reason) => (DescriptionState::NotAvailable(reason), generation),
-        };
-        let asked = Asked {
-            state: state.clone(),
-            generation: answers,
+            }
+            Ok(_) => {
+                self.retry.remove(device);
+                asked_from(&answer, generation)
+            }
         };
         if let Some((cell, id)) = refresh {
             answer_refresh(cell, id, device, &asked);
         }
-        self.asked.insert(device.to_owned(), asked);
+        let state = asked.state.clone();
+        if !matches!(state, DescriptionState::NotYet { .. }) {
+            self.asked.insert(device.to_owned(), asked);
+        }
         Ok(state)
+    }
+}
+
+/// What a describe answer means as a held state: the description it carries, or its refusal, and the
+/// generation it answers (the description's own, or for a refusal, the topic's generation now).
+fn asked_from(answer: &session_lemnos::Answer, generation: Option<u64>) -> Asked {
+    let (state, answers) = match answer {
+        Ok(bytes) => match crate::description::parse_bytes(bytes) {
+            Ok(description) => {
+                let answers = description.device.generation;
+                (DescriptionState::Described(Box::new(description)), answers)
+            }
+            Err(refusal) => (DescriptionState::Unreadable(refusal), generation),
+        },
+        Err(reason) => (
+            DescriptionState::NotAvailable(reason.to_string()),
+            generation,
+        ),
+    };
+    Asked {
+        state,
+        generation: answers,
     }
 }
 

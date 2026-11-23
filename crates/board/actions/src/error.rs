@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use atlas_jobs::JobError;
-use atlas_session::Failure;
+use atlas_session::{Failure, FailureKind};
 use thiserror::Error;
 
 /// Why an action call gave no result.
@@ -13,9 +13,14 @@ pub enum ActionError {
     /// The board does not list this action, so it is not sent.
     #[error("the board does not list {0}")]
     NotListed(String),
-    /// The board's list is there but is not a list Atlas reads.
-    #[error("the board's action list cannot be read: {0}")]
-    BadCatalog(String),
+    /// No device on the board carries this contract, so nothing is sent.
+    #[error("this board has no {0}")]
+    NoContract(String),
+    /// The board lists no Lemnos device, so nothing is sent. Once Lemnos is up this is a fault.
+    #[error(
+        "this board lists no Lemnos devices, so nothing was sent: Lemnos is up but has published none"
+    )]
+    NoDevices,
     /// The arguments do not fit the board's description. Nothing was sent.
     #[error("{0}")]
     BadArguments(String),
@@ -77,13 +82,16 @@ pub enum ActionError {
     /// again.
     #[error("the node did not answer: {0}")]
     NotAnswering(String),
+    /// The board has the device for this action but it is not answering yet, or the search for it
+    /// did not finish. Nothing was sent, and nothing is known to be missing: the call can be made
+    /// again. The text is the sentence for people (with the time it started).
+    #[error("{0}")]
+    NotYet(String),
     /// The session was silent for longer than the board's lease while this run's hold existed:
     /// the board may have dropped the hold, and with it the run. The outcome on the board is not
-    /// known from here. `reason` is the board's own words when the run had already ended with an
-    /// error, else `not finished`.
-    #[error(
-        "the board may have dropped the hold on run {call}: no request reached its bridge within the lease (the board said: {reason})"
-    )]
+    /// known from here. `reason` is the sentence for people: the lease, the period it was kept for,
+    /// and the run it cost; with the board's own words when the run had already ended with an error.
+    #[error("{reason}")]
     HoldLapsed { call: u64, reason: String },
     /// The job could not be queued (a second job holds the board, or the job list is refused).
     #[error(transparent)]
@@ -91,15 +99,24 @@ pub enum ActionError {
 }
 
 /// Lemnos's BUSY status: the board refused the action because it is busy (an install is running,
-/// or a pending trial holds the slot). A Rejected run ends with this code (Lemnos M39).
+/// or a pending trial holds the slot). A Rejected run ends with this code (Lemnos M39). Orion's
+/// `DigestMismatch` is 16 as well, so the code alone never means Lemnos BUSY.
 pub const BUSY_CODE: u16 = 16;
 
 impl ActionError {
-    /// Whether the board refused the action as busy. Read from the run's status code, never from
-    /// the words.
+    /// Whether the board's Lemnos program refused the action as BUSY: a Lemnos-origin refusal with
+    /// status [`BUSY_CODE`]. An Orion refusal (any code, `DigestMismatch` included) is not this, and
+    /// Orion's own busy is [`crate::FailureKind::Busy`]. Read from the run's status, never the words.
     #[must_use]
-    pub fn is_busy(&self) -> bool {
-        matches!(self, Self::Refused(failure) if failure.code() == Some(BUSY_CODE))
+    pub fn is_lemnos_busy(&self) -> bool {
+        matches!(self, Self::Refused(failure)
+            if failure.kind() == FailureKind::Lemnos && failure.code() == Some(BUSY_CODE))
+    }
+
+    /// Whether the call was not sent because the board is not answering yet (see [`ActionError::NotYet`]).
+    #[must_use]
+    pub const fn is_not_yet(&self) -> bool {
+        matches!(self, Self::NotYet(_))
     }
 
     /// The message the board gave, when it gave one: the reason of a refusal, a failure or a

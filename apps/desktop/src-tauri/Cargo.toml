@@ -42,6 +42,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 atlas-driver = { path = "../../../crates/core/driver" }
+atlas-files = { path = "../../../crates/board/files" }
 atlas-inventory = { path = "../../../crates/core/inventory" }
 atlas-jobs = { path = "../../../crates/core/jobs" }
 atlas-release = { path = "../../../crates/core/release" }

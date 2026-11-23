@@ -16,13 +16,13 @@
 //! Each listing is a new appearance, so the generation moves. Their topics stay declared, as they
 //! do on a real bridge.
 //!
-//! // LOCK: the status and the generation are provider topics (`Describing::topic`). At Orion
-//! // dbd5fc08 that call declares every topic with `on_subscribe: FromNow` and takes no argument for
-//! // it (`crates/client/provider/src/lib.rs`), so a late subscriber gets nothing until the next
-//! // write. They are written on every tick until the provider takes `on_subscribe` (Orion C29 is
-//! // on `TopicDecl` only); the readings, hardware and hello topics are `TopicDecl`s and use
-//! // `OnSubscribe::Latest`. Marked for removal when the provider can declare Latest.
+//! // The status and the generation are provider topics (`Describing::topic`). At Orion 2f52e457 that call
+//! // declares every topic with `on_subscribe: FromNow` and takes no argument for it
+//! // (`crates/client/provider/src/lib.rs:124`, and :130-136 refuses `Latest` there), so a late subscriber gets
+//! // nothing until the next write. They are written on every tick until the provider can declare `Latest`;
+//! // the readings, hardware and hello topics are `TopicDecl`s and use `OnSubscribe::Latest`.
 
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -33,6 +33,7 @@ use orion::topics::{Field, FieldId, FieldType, Publisher, SampleTime};
 use crate::describe::{self, ItemKind, Reading, UnitState};
 
 /// The kind every device resource is written as. A provider's own word, not an Orion one.
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:53 (RESOURCE_KIND)
 pub const DEVICE_KIND: &str = "lemnos.device";
 /// How many samples of each value the values topic keeps.
 const HISTORY: u32 = 16;
@@ -123,6 +124,8 @@ pub struct MethodSpec {
     pub returns: &'static str,
     /// Whether it is a long job.
     pub job: bool,
+    /// Whether it returns through an out buffer: its caller may give the buffer's size as the last word.
+    pub out_buffer: bool,
 }
 
 /// One simulated device as the node describes it: the description's fields, and its items.
@@ -186,6 +189,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -193,6 +197,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[("value", "f64")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 3,
@@ -200,6 +205,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[("on", "bool")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 4,
@@ -207,6 +213,7 @@ const VANE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -282,6 +289,7 @@ const GAUGE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -289,6 +297,7 @@ const GAUGE_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -337,6 +346,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 2,
@@ -344,6 +354,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 3,
@@ -351,6 +362,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "f64",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 4,
@@ -358,6 +370,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "[f64]",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 5,
@@ -365,6 +378,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[("mm", "f64")],
         returns: "()",
         job: false,
+        out_buffer: false,
     },
     MethodSpec {
         id: 6,
@@ -372,6 +386,7 @@ const UNIT_METHODS: &[MethodSpec] = &[
         params: &[],
         returns: "str",
         job: false,
+        out_buffer: false,
     },
 ];
 
@@ -480,6 +495,7 @@ const OFF_METHODS: &[MethodSpec] = &[MethodSpec {
     params: &[],
     returns: "f64",
     job: false,
+    out_buffer: false,
 }];
 
 const OFF: &[Item] = &[Item {
@@ -515,6 +531,110 @@ const BARE: &[Item] = &[Item {
 /// The devices a simulated Lemnos node describes. One is healthy; one is retrying with a reason;
 /// one is a three-axis unit with every reading kind; one is off with a reason; one has every
 /// optional field unknown.
+/// `system.slots/1`'s methods the node answers, with the bridge's ids (Lemnos contracts/system-slots).
+const SLOTS_METHODS: &[MethodSpec] = &[
+    MethodSpec {
+        id: 1,
+        name: "list",
+        params: &[],
+        returns: "text",
+        job: false,
+        out_buffer: true,
+    },
+    MethodSpec {
+        id: 4,
+        name: "set_default",
+        params: &[("id", "text"), ("force", "bool")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 5,
+        name: "trial",
+        params: &[
+            ("id", "text"),
+            ("keep_default", "bool"),
+            ("keep_old", "bool"),
+            ("force", "bool"),
+        ],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 6,
+        name: "confirm",
+        params: &[],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 7,
+        name: "remove",
+        params: &[("id", "text")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 8,
+        name: "pin",
+        params: &[("id", "text"), ("pinned", "bool")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 9,
+        name: "set_keep",
+        params: &[("keep", "u32")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 10,
+        name: "accept",
+        params: &[("size", "u64")],
+        returns: "()",
+        job: false,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 11,
+        name: "install_file",
+        params: &[("name", "text"), ("pin", "bool"), ("keep_old", "bool")],
+        returns: "text",
+        job: true,
+        out_buffer: false,
+    },
+    MethodSpec {
+        id: 14,
+        name: "info",
+        params: &[],
+        returns: "text",
+        job: false,
+        out_buffer: true,
+    },
+];
+
+/// `system.reboot/1`'s methods the node answers, with the bridge's ids (Lemnos contracts/system-reboot).
+const REBOOT_METHODS: &[MethodSpec] = &[MethodSpec {
+    id: 1,
+    name: "reboot",
+    params: &[],
+    returns: "()",
+    job: false,
+    out_buffer: false,
+}];
+
+/// The contract hash of `system.slots/1` (see the session's names test, which checks it).
+pub const SLOTS_CONTRACT_HASH: u64 = 0xab19a1e7d0b755c6;
+/// The contract hash of `system.reboot/1` (see the session's names test, which checks it).
+pub const REBOOT_CONTRACT_HASH: u64 = 0xface08cdca5b68c0;
+
 pub const DEVICES: &[Spec] = &[
     Spec {
         id: "vane0",
@@ -586,6 +706,34 @@ pub const DEVICES: &[Spec] = &[
         status: None,
         items: BARE,
     },
+    Spec {
+        id: "slots",
+        label: "Slots",
+        bus: "",
+        address: None,
+        location: "",
+        kind: "slots",
+        state: Some(0),
+        reason: "",
+        contract: Some(("system.slots/1", "slots", SLOTS_CONTRACT_HASH)),
+        methods: SLOTS_METHODS,
+        status: Some(("ok", "")),
+        items: &[],
+    },
+    Spec {
+        id: "reboot",
+        label: "Restart",
+        bus: "",
+        address: None,
+        location: "",
+        kind: "system",
+        state: Some(0),
+        reason: "",
+        contract: Some(("system.reboot/1", "reboot", REBOOT_CONTRACT_HASH)),
+        methods: REBOOT_METHODS,
+        status: Some(("ok", "")),
+        items: &[],
+    },
 ];
 
 /// A change to a simulated device's description: its state and reason, or its label. Each one
@@ -612,6 +760,8 @@ pub struct Control {
     hold: Arc<AtomicBool>,
     refuse: Arc<AtomicBool>,
     changes: Arc<Mutex<Vec<(String, Change)>>>,
+    /// The devices a test took off the node for good (see [`Control::remove`]).
+    removed: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl Control {
@@ -630,6 +780,20 @@ impl Control {
         if let Ok(mut queue) = self.changes.lock() {
             queue.push((device.to_owned(), change));
         }
+    }
+
+    /// Takes device `device` off the node for good: it is withdrawn on the next tick and never listed
+    /// again, as on a board whose file has no such device.
+    pub fn remove(&self, device: &str) {
+        if let Ok(mut removed) = self.removed.lock() {
+            removed.insert(device.to_owned());
+        }
+    }
+
+    fn is_removed(&self, device: &str) -> bool {
+        self.removed
+            .lock()
+            .is_ok_and(|removed| removed.contains(device))
     }
 
     fn held(&self) -> bool {
@@ -671,7 +835,9 @@ impl Model {
 struct Listed {
     model: usize,
     resource: Resource,
-    values: Publisher,
+    /// The values topic, when the device has an item that publishes a value. A device with none (a slot
+    /// list, a restart) declares no values topic, as a board does.
+    values: Option<Publisher>,
     status: Option<Publisher>,
     description: Publisher,
 }
@@ -697,7 +863,7 @@ impl Devices {
         let mut models: Vec<Model> = DEVICES.iter().map(Model::new).collect();
         let live = !control.held();
         let listed = if live {
-            list(orion, &mut models)?
+            list(orion, &mut models, &control)?
         } else {
             Vec::new()
         };
@@ -729,11 +895,23 @@ impl Devices {
             return;
         }
         if !self.live {
-            if let Ok(listed) = list(orion, &mut self.models) {
+            if let Ok(listed) = list(orion, &mut self.models, &self.control) {
                 self.listed = listed;
                 self.live = true;
             }
             return;
+        }
+        // A device a test took off the node is withdrawn, and stays so.
+        let mut at = 0;
+        while at < self.listed.len() {
+            if self
+                .control
+                .is_removed(self.models[self.listed[at].model].spec.id)
+            {
+                let _ = self.listed.remove(at).resource.withdraw();
+            } else {
+                at += 1;
+            }
         }
         let tick = self.ticks;
         for listed in &mut self.listed {
@@ -742,12 +920,14 @@ impl Devices {
             let published = spec.items.iter().filter(|item| item.field.is_some());
             for (field, item) in published.enumerate() {
                 let payload = payload(item.sample, tick);
-                let _ = listed.values.publish(FieldId(field as u16), now, &payload);
+                if let Some(values) = listed.values.as_mut() {
+                    let _ = values.publish(FieldId(field as u16), now, &payload);
+                }
             }
-            // LOCK: provider topics have no `on_subscribe` at dbd5fc08; see the module note. The
-            // status and the generation are written on every tick until they can declare Latest.
+            // Provider topics declare `FromNow` at Orion 2f52e457 (provider lib.rs:124); see the module note.
+            // The status and the generation are written on every tick until they can declare Latest.
             if let (Some(status), Some((health, reason))) = (&mut listed.status, spec.status) {
-                for (index, text) in ["ready", health, reason].iter().enumerate() {
+                for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
                     let _ = status.publish(FieldId(index as u16), now, text.as_bytes());
                 }
             }
@@ -786,13 +966,21 @@ impl Devices {
         }
     }
 
+    /// Where the runs of the devices' actions arrive: the requests of a listed device. One registration
+    /// carries the runs of every action this program registered. `None` while no device is listed.
+    pub fn requests(&mut self) -> Option<&mut orion::actions::Registration> {
+        self.listed
+            .iter_mut()
+            .find_map(|listed| listed.resource.requests())
+    }
+
     /// What `call describe` on device `device` answers, or why it is refused.
     ///
     /// # Errors
     ///
     /// The refusal's words: the board does not answer `describe`, the device is not listed, or
     /// the device is not running (an off device has no description).
-    pub fn describe(&self, device: &str) -> Result<String, String> {
+    pub fn describe(&self, device: &str, lease: Option<u64>) -> Result<String, String> {
         if self.control.refused() {
             return Err("this board does not answer describe".to_owned());
         }
@@ -806,7 +994,7 @@ impl Devices {
         if model.device.state == Some(2) {
             return Err("the device isn't running".to_owned());
         }
-        let text = describe::render(&model.device, Some(model.generation));
+        let text = describe::render(&model.device, Some(model.generation), lease);
         if text.len() > REPLY_MAX {
             return Err(format!(
                 "the description is {} bytes; the reply carries at most {REPLY_MAX}, and a partial one is never sent",
@@ -855,7 +1043,7 @@ fn described(spec: &Spec) -> describe::Device {
                             .map(|(name, shape)| ((*name).to_owned(), (*shape).to_owned()))
                             .collect(),
                         returns: method.returns.to_owned(),
-                        out_buffer: false,
+                        out_buffer: method.out_buffer,
                         job: method.job,
                     })
                     .collect(),
@@ -912,11 +1100,14 @@ fn field_type(kind: Kind) -> FieldType {
 }
 
 /// Lists every device, and each listing is an appearance: its generation moves once.
-fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
+fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Listed>, String> {
     let provider = orion.provider();
     let now = SampleTime::from_nanos(1);
     let mut listed = Vec::new();
     for (index, model) in models.iter_mut().enumerate() {
+        if control.is_removed(model.spec.id) {
+            continue;
+        }
         model.generation += 1;
         let spec = model.spec;
         let builder: Describing = provider
@@ -935,9 +1126,15 @@ fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
             })
             .collect();
         let mut builder = builder;
-        let values = builder
-            .topic("values", &fields, HISTORY, MAX_PAYLOAD)
-            .map_err(|error| error.to_string())?;
+        let values = if fields.is_empty() {
+            None
+        } else {
+            Some(
+                builder
+                    .topic("values", &fields, HISTORY, MAX_PAYLOAD)
+                    .map_err(|error| error.to_string())?,
+            )
+        };
         let generation_field = [Field {
             name: "generation",
             ty: FieldType::Int,
@@ -952,15 +1149,18 @@ fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
             .map_err(|error| error.to_string())?;
         let status = match spec.status {
             Some((health, reason)) => {
+                // The pin's status fields (Lemnos bbb3c420 service/orion/src/publish.rs:248-252): `refusal` is
+                // the refusal kind in decimal, 0 for none, which a running device says.
                 let status_fields = [
                     text_field("state"),
                     text_field("health"),
                     text_field("reason"),
+                    text_field("refusal"),
                 ];
                 let mut status = builder
                     .topic("status", &status_fields, 1, 256)
                     .map_err(|error| error.to_string())?;
-                for (index, text) in ["ready", health, reason].iter().enumerate() {
+                for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
                     status
                         .publish(FieldId(index as u16), now, text.as_bytes())
                         .map_err(|error| error.to_string())?;
@@ -969,6 +1169,13 @@ fn list(orion: &Orion, models: &mut [Model]) -> Result<Vec<Listed>, String> {
             }
             None => None,
         };
+        // The device's actions are declared on its resource, as the bridge declares them: `set`, `call`
+        // and `power`, each `lemnos.<device>.<verb>` on `Target::Resource("lemnos.<device>")`.
+        for (verb, description) in crate::bridge::VERBS {
+            builder
+                .action(verb, description, crate::bridge::policy())
+                .map_err(|error| error.to_string())?;
+        }
         let resource = builder
             .publish(resource_state(spec.state.unwrap_or(0)))
             .map_err(|error| error.to_string())?;
@@ -1019,7 +1226,7 @@ mod tests {
     #[test]
     fn the_modelled_description_renders_and_the_off_device_has_its_reason() {
         let vane = described(&DEVICES[0]);
-        let text = describe::render(&vane, Some(1));
+        let text = describe::render(&vane, Some(1), None);
         assert!(
             text.starts_with("describe 1\ndevice generation=1 label=\"Wind vane\""),
             "{text}"

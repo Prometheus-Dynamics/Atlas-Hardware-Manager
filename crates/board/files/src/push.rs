@@ -254,7 +254,13 @@ pub async fn submit(
 }
 
 /// The note a push shows when its hold lapsed: the board may have dropped the partial file.
-const LAPSE_NOTE: &str = "the session was silent past the board's lease, so the board may have dropped the partial file: sending the file again from its start";
+/// The note a push shows when its hold lapsed, with the period the board gave: the partial file may be gone.
+fn lapse_note(period: std::time::Duration) -> String {
+    format!(
+        "{}. Sending the partial file again from its start",
+        atlas_session::lease::lapse_words(period, "the partial file")
+    )
+}
 
 /// The push itself: attempts until the board commits, a refusal ends it, or it is cancelled.
 /// `Err` is the reason it stopped for good. An attempt is one long operation on the node's session
@@ -302,7 +308,7 @@ async fn run(pending: &Pending) -> Result<(), String> {
             // until the board acknowledges bytes. Checked once the node is back, so the note is not
             // replaced by the wait for it.
             hold.acknowledge();
-            shared.resending(LAPSE_NOTE.to_owned());
+            shared.resending(lapse_note(hold.lease_period()));
         }
         let before = shared.acked();
         shared.sending();

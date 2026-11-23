@@ -22,8 +22,8 @@
 //! board's `trial` and `resolved` records.
 //!
 //! Names are Lemnos's contract method names (`system.slots.*`, the ones the bridge answers).
-//! // LOCK: Lemnos L1: every list/accept/install call here needs the out-buffer and long-job
-//! // forms at the L1 rev; today's lock answers the plain-argument calls and not `list`.
+//! The calls are the bridge's text words (`TAG:METHOD ARG...`, Lemnos service/orion/src/calls.rs): `list` answers in
+//! an out buffer of at most 60 KiB and `install_file` runs as a long job, both on the board's side.
 
 pub mod calls;
 pub mod install;

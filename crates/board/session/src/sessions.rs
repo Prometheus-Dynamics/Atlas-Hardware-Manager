@@ -9,13 +9,15 @@ use orion::{Address, Identity};
 use std::time::Duration;
 
 use crate::lease::{Clock, Lease};
-use crate::monitor::{CALL_WAIT, Handle, Monitor, Pause};
+use crate::monitor::{CALL_WAIT, CONNECT_TIMEOUT, Handle, Monitor, Pause};
 
 /// The monitors of the nodes this program is watching.
 #[derive(Debug)]
 pub struct Sessions {
     pause: Arc<dyn Pause>,
     call_wait: Duration,
+    /// The bound on one answer of a call (see [`Monitor::start_bounded`]).
+    reply_bound: Duration,
     lease: Lease,
     clock: Clock,
     identity: Option<Held>,
@@ -58,12 +60,21 @@ impl Sessions {
         Self {
             pause,
             call_wait,
+            reply_bound: CONNECT_TIMEOUT,
             lease: Lease::DEFAULT,
             clock: Clock::real(),
             identity: None,
             monitors: Mutex::new(BTreeMap::new()),
             off: Mutex::new(BTreeSet::new()),
         }
+    }
+
+    /// As built, with the bound on one answer of a call chosen by the caller (production keeps
+    /// [`CONNECT_TIMEOUT`]). Sessions started after this use it; a test shortens it.
+    #[must_use]
+    pub fn with_reply_bound(mut self, bound: Duration) -> Self {
+        self.reply_bound = bound;
+        self
     }
 
     /// As built, with the lease the sessions keep for their holds. Sessions started after this
@@ -93,7 +104,7 @@ impl Sessions {
         }
         let mut monitors = lock(&self.monitors);
         let monitor = monitors.entry(key).or_insert_with(|| {
-            Monitor::start_identified(
+            Monitor::start_bounded(
                 address.clone(),
                 None,
                 self.pause.clone(),
@@ -101,6 +112,7 @@ impl Sessions {
                 self.lease,
                 self.clock.clone(),
                 self.client_key(),
+                self.reply_bound,
             )
         });
         Some(monitor.handle())
@@ -116,7 +128,7 @@ impl Sessions {
         }
         let mut monitors = lock(&self.monitors);
         let monitor = monitors.entry(key_text).or_insert_with(|| {
-            Monitor::start_identified(
+            Monitor::start_bounded(
                 address.clone(),
                 Some(key),
                 self.pause.clone(),
@@ -124,6 +136,7 @@ impl Sessions {
                 self.lease,
                 self.clock.clone(),
                 self.client_key(),
+                self.reply_bound,
             )
         });
         Some(monitor.handle())

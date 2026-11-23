@@ -26,6 +26,7 @@ lemnos = "components/lemnos/component.toml"
 lemnosd = "components/lemnosd/component.toml"
 lemnos-ctl = "components/lemnos-ctl/component.toml"
 lemnos-orion = "components/lemnos-orion/component.toml"
+lemnos-orion-slots-files = "../../components/lemnos-orion-slots-files/component.toml"
 lemnos-slot-init = "components/lemnos-slot-init/component.toml"
 orion = "../../components/orion/component.toml"
 zero-3e-slot-board = "components/zero-3e-slot-board/component.toml"
@@ -38,7 +39,7 @@ bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
 [[images]]
 name = "zero-3e-bench"
 board = "../../boards/radxa-zero-3e/board.toml"
-components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "zero-3e-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
+components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "lemnos-orion-slots-files", "orion", "zero-3e-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
 # The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }

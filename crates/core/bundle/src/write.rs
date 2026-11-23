@@ -83,6 +83,7 @@ pub fn write_bundle<W: Write>(
             .collect(),
     );
     manifest.validate()?;
+    manifest.validate_written()?;
     let json = manifest.to_json()?;
     let signature = sign_slot(&json, signing_key);
 

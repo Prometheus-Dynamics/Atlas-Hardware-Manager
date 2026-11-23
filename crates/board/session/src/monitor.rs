@@ -39,16 +39,16 @@ use std::time::{Duration, Instant};
 
 use orion::node::Node;
 use orion::types::NodeName;
-use orion::{Address, ClientError, Identity, Options, Orion, Patience};
+use orion::{Address, ClientError, Identity, Options, Orion, Patience, Reply};
 
 use crate::seed::check_address;
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
 use crate::failure::Failure;
-use crate::lease::{self, Clock, Hold, Lease, Shared as LeaseShared};
+use crate::lease::{self, Clock, Hold, Lease, Renewals, Shared as LeaseShared};
 use crate::long::{
-    Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
+    AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
 
 /// The program name this crate connects as.
@@ -56,7 +56,7 @@ pub const PROGRAM: &str = "atlas";
 /// How long one wait on the session lasts before the thread looks at its calls again.
 const POLL: Duration = Duration::from_millis(100);
 /// How long one connect and its hello may take.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 /// How long a call waits for its answer by default, before the caller is told the node did not
 /// answer. A [`Sessions`](crate::Sessions) may be built with another wait.
 pub const CALL_WAIT: Duration = Duration::from_secs(5);
@@ -142,8 +142,9 @@ impl Pause for RealPause {
 /// there is none. A long operation's start is a job too: it runs once, and then waits in `ops`.
 trait Job: Send {
     /// Runs the call on the live session and answers its caller. `Err` when the session broke
-    /// during the call, with the reason. A long operation adds itself to `ops`.
-    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String>;
+    /// during the call, with the reason. `Ok(true)` when the node answered the request (a bridge
+    /// request counts as renewing the lease only then). A long operation adds itself to `ops`.
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String>;
     /// Answers the caller without running the call: there is no session.
     fn refuse(self: Box<Self>, reason: &str);
     /// Whether this job starts a long operation, which counts against [`MAX_LONG_OPERATIONS`].
@@ -157,12 +158,47 @@ trait Job: Send {
     }
 }
 
+/// The reply an operation's step needs: [`Reply::Alive`] with its ceiling, or the session's own
+/// bound ([`Reply::Timeout`]) when it asks for none.
+fn step_reply(op: &dyn Op) -> Reply {
+    op.reply_ceiling()
+        .map_or(Reply::Timeout, |ceiling| Reply::Alive {
+            ceiling: Some(ceiling),
+        })
+}
+
+/// The bound a step's answers wait under, in Atlas's words: `wanted` as the session set it, with
+/// `own` the session's bound on one answer.
+fn answer_bound(wanted: Reply, own: Duration) -> AnswerBound {
+    match wanted {
+        Reply::Alive {
+            ceiling: Some(ceiling),
+        } => AnswerBound::Alive { ceiling },
+        _ => AnswerBound::Each(own),
+    }
+}
+
+/// Sets the session's reply for the next wait, when it is not that already. Every wait reads the
+/// reply when it runs, so the session sets it around each thing it does: the short bound before a
+/// call, the operation's own before its step. `current` is the reply the connection has now.
+fn set_reply(orion: &Orion, current: &mut Reply, wanted: Reply) {
+    if *current != wanted {
+        orion.set_reply(wanted);
+        *current = wanted;
+    }
+}
+
 /// A long operation running on the session, advanced one turn at a time.
 trait Op {
-    /// Takes one step (or notices a cancel), and says what became of the operation.
-    fn turn(&mut self) -> Turn;
+    /// Takes one step (or notices a cancel) under `bound`, the wait the session set for its
+    /// answers, and says what became of the operation.
+    fn turn(&mut self, bound: AnswerBound) -> Turn;
     /// The session ends under the operation: its caller is told `reason`.
     fn end(self: Box<Self>, reason: &str);
+    /// The reply ceiling the operation needs (see [`SteppedTransfer::reply_ceiling`]).
+    fn reply_ceiling(&self) -> Option<Duration> {
+        None
+    }
 }
 
 /// What one turn of an operation did.
@@ -191,16 +227,16 @@ where
         self.bridge
     }
 
-    fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
+    fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String> {
         let Self { call, reply, .. } = *self;
         if reply.is_closed() {
             // The caller stopped waiting before its turn: the call is not started.
-            return Ok(());
+            return Ok(false);
         }
         match call(orion) {
             Ok(value) => {
                 let _ = reply.send(Ok(value));
-                Ok(())
+                Ok(true)
             }
             Err(error) if error.is_lost() => {
                 let text = error.to_string();
@@ -209,7 +245,7 @@ where
             }
             Err(error) => {
                 let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
-                Ok(())
+                Ok(false)
             }
         }
     }
@@ -232,18 +268,18 @@ where
     T: Send + 'static,
     F: FnOnce(&Orion) -> Result<Box<dyn SteppedTransfer<T>>, orion::Error> + Send + 'static,
 {
-    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<bool, String> {
         let Self {
             start,
             reply,
             cancel,
         } = *self;
         if reply.is_closed() {
-            return Ok(());
+            return Ok(false);
         }
         if cancel.is_cancelled() {
             let _ = reply.send(Ok(Outcome::Cancelled));
-            return Ok(());
+            return Ok(false);
         }
         match start(orion) {
             Ok(transfer) => {
@@ -252,7 +288,7 @@ where
                     reply: Some(reply),
                     cancel,
                 }));
-                Ok(())
+                Ok(true)
             }
             Err(error) if error.is_lost() => {
                 let text = error.to_string();
@@ -261,7 +297,7 @@ where
             }
             Err(error) => {
                 let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
-                Ok(())
+                Ok(true)
             }
         }
     }
@@ -283,7 +319,11 @@ struct Running<T> {
 }
 
 impl<T: Send + 'static> Op for Running<T> {
-    fn turn(&mut self) -> Turn {
+    fn reply_ceiling(&self) -> Option<Duration> {
+        self.transfer.reply_ceiling()
+    }
+
+    fn turn(&mut self, bound: AnswerBound) -> Turn {
         let Some(reply) = self.reply.take() else {
             return Turn::Finished;
         };
@@ -293,6 +333,7 @@ impl<T: Send + 'static> Op for Running<T> {
             let _ = reply.send(Ok(Outcome::Cancelled));
             return Turn::Finished;
         }
+        self.transfer.answer_bound(bound);
         match self.transfer.step(STEP_WAIT) {
             Ok(Step::Progress) => {
                 self.reply = Some(reply);
@@ -468,6 +509,21 @@ impl Handle {
         Hold::take(&self.lease)
     }
 
+    /// The board's lease period as this session knows it: the one its describe reply gave, or the
+    /// default until one has (see [`crate::lease`]). Holders say it when they report a lapse.
+    #[must_use]
+    pub fn lease_period(&self) -> Duration {
+        self.lease.period()
+    }
+
+    /// The renewals this session has made for its holds, as a watch: every attempt counts, the renewed
+    /// and the refused alike, and the last one is kept (see [`Renewals`]). For observers only: product
+    /// code reads nothing from it.
+    #[must_use]
+    pub fn renewals(&self) -> watch::Receiver<Renewals> {
+        self.lease.renewals_watch()
+    }
+
     /// The number of lapses this session has recorded: each time it was silent for longer than
     /// the lease period while holds existed. A holder that waits on the board also waits on this
     /// to learn that its hold may have been dropped (see [`Hold::lapsed`]).
@@ -531,7 +587,10 @@ impl Handle {
             Ok(Err(_)) => Err(SessionError::Gone(
                 "the session ended before it answered".into(),
             )),
-            Err(_) => Err(SessionError::Gone("the node did not answer in time".into())),
+            Err(_) => Err(SessionError::Gone(format!(
+                "the node did not answer in time (the call waited {}, its own wait)",
+                crate::words::duration(self.call_wait)
+            ))),
         }
     }
 }
@@ -601,11 +660,38 @@ impl Monitor {
         clock: Clock,
         secret: [u8; 32],
     ) -> Self {
+        Self::start_bounded(
+            address,
+            pin,
+            pause,
+            call_wait,
+            lease,
+            clock,
+            secret,
+            CONNECT_TIMEOUT,
+        )
+    }
+
+    /// As [`Monitor::start_identified`], with the session's bound on one answer chosen by the
+    /// caller. It is the bound a call that is not a push's step waits for its answer (see
+    /// `turns`), and it bounds connecting too. Production uses [`CONNECT_TIMEOUT`]; a test passes a
+    /// short one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_bounded(
+        address: Address,
+        pin: Option<[u8; 32]>,
+        pause: Arc<dyn Pause>,
+        call_wait: Duration,
+        lease: Lease,
+        clock: Clock,
+        secret: [u8; 32],
+        bound: Duration,
+    ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
-        let shared = Arc::new(LeaseShared::new());
+        let shared = Arc::new(LeaseShared::new(lease.period));
         let serial = Arc::new(AtomicU64::new(0));
         let thread_serial = Arc::clone(&serial);
         let (thread_address, thread_stop) = (address.clone(), stop.clone());
@@ -614,6 +700,7 @@ impl Monitor {
             .name(format!("node-{address}"))
             .spawn(move || {
                 let mut keeper = Keeper {
+                    bound,
                     address: thread_address,
                     sender,
                     calls: received,
@@ -629,10 +716,13 @@ impl Monitor {
                     last_bridge: clock.now(),
                     clock,
                     last_try: None,
+                    renew_backoff: Backoff::default(),
+                    renew_wait: None,
                     lapse_marked: false,
                     node: None,
                     device: None,
                     last_listed: None,
+                    period_read: false,
                     serial: thread_serial,
                 };
                 keeper.run();
@@ -684,6 +774,8 @@ const REPLACED_WORDS: &str = "the node at this address was replaced: it answers 
 
 /// The state the monitor thread keeps across connections.
 struct Keeper {
+    /// The bound on one answer of a call, and on connecting (see [`Monitor::start_bounded`]).
+    bound: Duration,
     address: Address,
     sender: watch::Sender<Presence>,
     calls: mpsc::Receiver<Box<dyn Job>>,
@@ -706,6 +798,12 @@ struct Keeper {
     last_bridge: Duration,
     /// When the session last tried to renew, successfully or not. Throttles a failing renewal.
     last_try: Option<Duration>,
+    /// The backoff for a renewal that did not succeed (see [`Backoff`]): each retry waits its next delay,
+    /// not a full renew period.
+    renew_backoff: Backoff,
+    /// The wait before the next renewal try, set by a renewal that did not succeed; `None` when the last
+    /// renewal did (a full renew period applies).
+    renew_wait: Option<Duration>,
     /// The clock the lease is measured on (see [`Clock`]).
     clock: Clock,
     /// Whether the current silence has been recorded as a lapse already.
@@ -716,6 +814,9 @@ struct Keeper {
     serial: Arc<AtomicU64>,
     /// The device whose bridge renews the lease, once listed (see `bridge_device`).
     device: Option<String>,
+    /// Whether a describe reply has given the board's lease period (see `keep_alive`). Until one has,
+    /// the first renewal of a hold is due at once, so the period is read before a silence can lapse.
+    period_read: bool,
     /// When the node's devices were last listed, when none was found.
     last_listed: Option<Duration>,
 }
@@ -743,7 +844,10 @@ impl Keeper {
                         backoff.reset();
                         self.node = Some(node.clone());
                         self.last_try = None;
+                        self.renew_backoff.reset();
+                        self.renew_wait = None;
                         self.device = None;
+                        self.period_read = false;
                         self.last_listed = None;
                         self.lapse_on_connect(&orion);
                         // Unique across every monitor in the process: a monitor turned off and on
@@ -798,7 +902,7 @@ impl Keeper {
             other => other.clone(),
         };
         let options = Options {
-            timeout: CONNECT_TIMEOUT,
+            timeout: self.bound,
             identity: Some(Identity::from_secret(&self.secret)),
             // One try: the monitor keeps trying itself (its backoff, its stop, and "the node is
             // not connected" said meanwhile). Orion's default since d4010a45 tries until welcomed.
@@ -882,6 +986,11 @@ impl Keeper {
         if !self.lease.in_force {
             return Ok(());
         }
+        // Another board answers at this address: the holds are on the board that was pinned, so the
+        // renewal is not sent to the other one (see `a_replaced_board_gets_no_renewal`).
+        if self.replacement.is_some() {
+            return Ok(());
+        }
         let Some(node) = self.node.as_ref() else {
             return Ok(());
         };
@@ -891,25 +1000,55 @@ impl Keeper {
             return Ok(());
         };
         self.check_lapse();
+        // The bench's lapse check renews once, to read the period, and never again (see `Lease::keep_renewing`).
+        if !self.lease.keep_renewing && self.period_read {
+            return Ok(());
+        }
         let silent = self.since(self.last_bridge);
-        let due = silent >= self.lease.renew
+        // After a renewal that did not succeed, the next try comes on the short backoff, not a full period.
+        let retry_after = self.renew_wait.unwrap_or(self.lease.renew);
+        // Until a describe has given the board's period, the first renewal is due at once: a silence
+        // cannot lapse before the period is known.
+        let due = (!self.period_read || silent >= self.lease.renew)
             && self
                 .last_try
-                .is_none_or(|tried| self.since(tried) >= self.lease.renew);
+                .is_none_or(|tried| self.since(tried) >= retry_after);
         if !due {
             return Ok(());
         }
-        self.last_try = Some(self.clock.now());
+        let sent = self.clock.now();
+        self.last_try = Some(sent);
         let Ok(name) = node_name.parse::<NodeName>() else {
             return Ok(());
         };
         match lease::renew(orion, &name, &device) {
-            Ok(()) => {
-                self.mark_bridge();
+            // Renewed only when the bridge answered it successfully. A refusal or a silence is not renewed,
+            // and is tried again on the backoff. Each attempt is recorded for observers (`Handle::renewals`).
+            Ok(lease::Renewal {
+                renewed: true,
+                period,
+            }) => {
+                self.renew_backoff.reset();
+                self.renew_wait = None;
+                if let Some(period) = period {
+                    self.shared.set_period(period);
+                }
+                self.period_read = true;
+                self.mark_bridge_at(sent);
+                self.shared.record_renewal(sent, true, period);
+                Ok(())
+            }
+            Ok(lease::Renewal { renewed: false, .. }) => {
+                self.renew_wait = Some(self.renew_backoff.next_delay());
+                self.shared.record_renewal(sent, false, None);
                 Ok(())
             }
             Err(error) if error.is_lost() => Err(error.to_string()),
-            Err(_) => Ok(()),
+            Err(_) => {
+                self.renew_wait = Some(self.renew_backoff.next_delay());
+                self.shared.record_renewal(sent, false, None);
+                Ok(())
+            }
         }
     }
 
@@ -943,7 +1082,7 @@ impl Keeper {
         if !self.lease.in_force || self.shared.holds() == 0 {
             return;
         }
-        if self.since(self.last_bridge) > self.lease.period && !self.lapse_marked {
+        if self.since(self.last_bridge) >= self.shared.period() && !self.lapse_marked {
             // Silent for longer than the board's lease: the board may have dropped the holds.
             self.lapse_marked = true;
             self.shared.lapse();
@@ -971,7 +1110,12 @@ impl Keeper {
     }
 
     fn mark_bridge(&mut self) {
-        self.last_bridge = self.clock.now();
+        self.mark_bridge_at(self.clock.now());
+    }
+
+    /// A request that reached the board at `at` (the clock when it was sent) renews the lease as of then.
+    fn mark_bridge_at(&mut self, at: Duration) {
+        self.last_bridge = at;
         self.lapse_marked = false;
     }
 
@@ -981,7 +1125,9 @@ impl Keeper {
     /// session after its own has ended.
     fn serve(&mut self, orion: &Orion) -> Option<String> {
         let mut ops: Vec<Box<dyn Op>> = Vec::new();
-        let ended = self.turns(orion, &mut ops);
+        // A connection starts with the session's own reply bound (see `connect`).
+        let mut reply = Reply::Timeout;
+        let ended = self.turns(orion, &mut reply, &mut ops);
         let reason = ended
             .clone()
             .unwrap_or_else(|| CHANGED_BY_A_PERSON.to_owned());
@@ -993,7 +1139,12 @@ impl Keeper {
 
     /// The session's turns, as described in [`crate::long`]: queued calls, then one step of each
     /// operation. Returns as [`Keeper::serve`] does.
-    fn turns(&mut self, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Option<String> {
+    fn turns(
+        &mut self,
+        orion: &Orion,
+        reply: &mut Reply,
+        ops: &mut Vec<Box<dyn Op>>,
+    ) -> Option<String> {
         while !self.stopped() {
             if let Ok(order) = self.orders.try_recv() {
                 self.apply(order);
@@ -1015,20 +1166,34 @@ impl Keeper {
                     self.parked.push_back(job);
                     continue;
                 }
-                if job.bridge() {
-                    self.mark_bridge();
-                }
-                if let Err(reason) = job.run(orion, ops) {
-                    // The session broke under this call: the rest of the turn is refused.
-                    for rest in batch {
-                        rest.refuse(&reason);
+                // A bridge request renews the lease only once the node has answered it. It counts from
+                // when it was sent: a call that waits on the node must not move the stamp to its end.
+                let bridge = job.bridge();
+                let sent = self.clock.now();
+                // A call waits for its answer under the short bound, whatever a step set before.
+                set_reply(orion, reply, Reply::Timeout);
+                match job.run(orion, ops) {
+                    Ok(answered) => {
+                        if bridge && answered {
+                            self.mark_bridge_at(sent);
+                        }
                     }
-                    return Some(reason);
+                    Err(reason) => {
+                        // The session broke under this call: the rest of the turn is refused.
+                        for rest in batch {
+                            rest.refuse(&reason);
+                        }
+                        return Some(reason);
+                    }
                 }
             }
             let mut index = 0;
             while index < ops.len() {
-                match ops[index].turn() {
+                // A step waits on the node under its own bound (see `step_reply`), and is told which.
+                let wanted = step_reply(ops[index].as_ref());
+                set_reply(orion, reply, wanted);
+                let bound = answer_bound(wanted, self.bound);
+                match ops[index].turn(bound) {
                     Turn::Stepped => index += 1,
                     Turn::Finished => {
                         ops.remove(index);
@@ -1067,5 +1232,59 @@ impl Keeper {
         while let Ok(job) = self.calls.try_recv() {
             job.refuse(reason);
         }
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    /// An operation that needs `ceiling` for its answers, and finishes on its first turn.
+    struct Fake(Option<Duration>);
+
+    impl Op for Fake {
+        fn turn(&mut self, _bound: AnswerBound) -> Turn {
+            Turn::Finished
+        }
+        fn end(self: Box<Self>, _reason: &str) {}
+        fn reply_ceiling(&self) -> Option<Duration> {
+            self.0
+        }
+    }
+
+    const CEILING: Duration = Duration::from_secs(900);
+
+    #[test]
+    fn an_operation_without_a_ceiling_steps_under_the_sessions_bound() {
+        assert_eq!(step_reply(&Fake(None)), Reply::Timeout);
+    }
+
+    #[test]
+    fn two_running_operations_each_step_under_their_own_ceiling() {
+        // Each step sets the reply for itself, so one operation ending cannot reset another's.
+        let alive = Reply::Alive {
+            ceiling: Some(CEILING),
+        };
+        assert_eq!(step_reply(&Fake(Some(CEILING))), alive);
+        assert_eq!(step_reply(&Fake(Some(CEILING))), alive);
+    }
+
+    #[test]
+    fn a_step_takes_its_own_ceiling_and_a_step_without_one_the_short_bound() {
+        let short = Duration::from_secs(30);
+        assert_eq!(
+            step_reply(&Fake(Some(short))),
+            Reply::Alive {
+                ceiling: Some(short)
+            }
+        );
+        // A call, a step without a ceiling, and the next step with one: each takes its own.
+        assert_eq!(step_reply(&Fake(None)), Reply::Timeout);
+        assert_eq!(
+            step_reply(&Fake(Some(CEILING))),
+            Reply::Alive {
+                ceiling: Some(CEILING)
+            }
+        );
     }
 }

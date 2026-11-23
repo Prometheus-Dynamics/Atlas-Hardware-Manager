@@ -129,7 +129,7 @@ fn a_fact_that_appears_republishes_the_session_and_the_node_answers_again() {
         fact_in(&orion, "version.lemnos").map(|_| orion)
     });
     assert_eq!(fact_in(&after, "version.lemnos").as_deref(), Some("1.0.0"));
-    let status = call(&after, names::STATUS, b"").expect("status answers");
+    let status = call(&after, names::SLOTS_INFO, b"").expect("the call answers");
     assert_eq!(status.outcome, Outcome::Succeeded);
 }
 
@@ -173,6 +173,6 @@ fn a_fact_that_goes_away_is_withdrawn_on_the_same_session_and_the_node_keeps_ans
     });
     // Nothing was republished: the same session still has its other facts and answers its calls.
     assert_eq!(fact_in(&orion, "family").as_deref(), Some("simulated"));
-    let status = call(&orion, names::STATUS, b"").expect("status answers");
+    let status = call(&orion, names::SLOTS_INFO, b"").expect("the call answers");
     assert_eq!(status.outcome, Outcome::Succeeded);
 }

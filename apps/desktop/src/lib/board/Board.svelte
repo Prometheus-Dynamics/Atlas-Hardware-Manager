@@ -45,11 +45,21 @@
   );
   const list = $derived(board?.slots?.state === "ok" ? board.slots.list : undefined);
   const runningSlot = $derived(list?.slots.find((slot) => slot.running));
-  const offered = $derived(online ? (board?.actions ?? []) : []);
-  // The two actions the top bar has a place for. Their buttons are always there, as the mockup
-  // draws them, and can be pressed when the board is online and lists them as short actions.
-  const locate = $derived(offered.find((a) => a.name === "locate" && a.direct));
-  const reboot = $derived(offered.find((a) => a.name === "system.reboot.reboot" && a.direct));
+  // What the board offers to run: the methods its devices describe. `undefined` until it is read.
+  const offered = $derived(online && board?.actions ? board.actions : undefined);
+  // The top bar has a place for two controls, always there as the mockup draws them. Each one can be
+  // pressed when the board is online and lists it as a short action, and is off, with its reason in
+  // words, when it does not.
+  // Locate: the board's own locate, when it offers one (Lemnos designs the board side).
+  const locate = $derived(offered?.find((a) => a.name === "locate" && a.direct));
+  // Reboot is the restart a device of the board serves (Lemnos `system.reboot/1`).
+  const reboot = $derived(offered?.find((a) => a.name === "system.reboot.reboot" && a.direct));
+  /** Why a control in the top bar is off, in words; empty while the board is not read. */
+  const missing = $derived.by(() => {
+    if (!offered) return online && board?.actions_error ? "Atlas could not read what this board offers." : "";
+    const names = [locate ? "" : "locate", reboot ? "" : "reboot"].filter(Boolean);
+    return names.length > 0 ? `This board doesn't offer ${names.join(" or ")}.` : "";
+  });
   /** What the last call said, shown for a few seconds. A refusal carries the board's own words. */
   const said = $derived(board?.said && app.now - board.said.at_ms < 8000 ? board.said : undefined);
   /** The slot a refusal is about (a slot call is noted as "remove slot-4"): its words are shown
@@ -244,8 +254,9 @@
       {/if}
     {/snippet}
     {#snippet actions()}
-      <button class="btn" disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
-      <button class="btn" disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
+      {#if missing}<span class="faint" data-not-offered>{missing}</span>{/if}
+      <button class="btn" class:dis={!locate} disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
+      <button class="btn" class:dis={!reboot} disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
     {/snippet}
 
     <section class="panel" style="grid-column:1/-1" data-panel="readings">
@@ -497,6 +508,7 @@
                         {:else if dev.state === "retrying"}<span class="chip warn"><span class="dot warn"></span>retrying</span>
                         {:else if dev.state === "off"}<span class="chip off"><span class="dot off"></span>off</span>
                         {:else}<span class="faint">not reported</span>{/if}
+                        {#if dev.not_answering_for}<span class="chip warn" data-not-answering><span class="dot warn"></span>isn't answering yet, for {dev.not_answering_for}</span>{/if}
                       </div>
                       <!-- What it reads, or why it does not, in full: the line wraps instead of being cut. -->
                       <div class="faint" style="white-space:normal;padding:3px 0" data-reads>
@@ -514,9 +526,8 @@
           </div>
         {:else if tab === "files"}
           <div class="pane pane-files" style="display:flex">
-            <div class="empty-box" data-not-built="files">
-              <div>Files, backup and restore are not in this build.</div>
-              <div class="faint" style="max-width:420px;font-size:11px">Atlas has no library yet that reads a board's data partition through Orion. Nothing here is shown until it does.</div>
+            <div class="empty-box" data-not-offered="files">
+              <div>This board doesn't offer files yet.</div>
             </div>
           </div>
         {:else}

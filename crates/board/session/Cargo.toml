@@ -9,6 +9,10 @@ rust-version.workspace = true
 [dependencies]
 atlas-types = { path = "../../core/types" }
 orion = { workspace = true, features = ["actions", "provider"] }
+lemnos-core = { workspace = true }
+lemnos-contract-system-slots = { workspace = true }
+lemnos-contract-system-reboot = { workspace = true }
+lemnos-contract-system-flash = { workspace = true }
 tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]

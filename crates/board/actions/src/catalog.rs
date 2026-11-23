@@ -1,18 +1,19 @@
-//! The board's action list, as the board describes it.
+//! The actions a board offers, as the board says them.
 //!
-//! The board answers with one JSON document: `{"actions": [...]}`. Each entry has a `name`, and
-//! may give a `label` (a human name), a `description`, `args` (a list of `{"name", "type"}` with
-//! `type` one of `int`, `float`, `bool`, `text`), and `long_running`. A field the board does not
-//! give, or gives empty, is [`Reported::NotReported`]: the app shows that, never a guess. Unknown
-//! keys are ignored, so a board can say more than this build reads.
+//! A board says what it offers in two places, and this list is read from both: the node's resource
+//! list names its devices and the `lemnos.<device>.call` action each one takes, and each device's
+//! description names the contracts it serves and their methods (`atlas_session::lemnos::offers`). An
+//! entry here is one method of one device: its Atlas name (`system.reboot.reboot`, see
+//! `atlas_session::lemnos::name_of`), its parameters with their shapes, whether it is a long job, and
+//! the name the device gives it where it gives one. A field the description does not give is
+//! [`Reported::NotReported`]: the app shows that, never a guess.
 //!
-//! Nothing here names an action. An action Atlas has never heard of is listed and runs from its
-//! entry alone.
+//! There is no action a board is asked for this list: no board publishes one. Nothing here names an
+//! action either. A method Atlas has never heard of is listed and runs from its entry alone.
 
 use std::collections::BTreeSet;
 
-use serde::Deserialize;
-use thiserror::Error;
+use atlas_session::lemnos::{self, Offered};
 
 /// A field of the board's description. [`Reported::NotReported`] is shown as "not reported".
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,71 +92,47 @@ pub struct Catalog {
     actions: Vec<Action>,
 }
 
-/// Why a board's list cannot be read.
-#[derive(Clone, Debug, PartialEq, Eq, Error)]
-pub enum CatalogError {
-    #[error("the board's action list is not the document Atlas reads: {0}")]
-    Malformed(String),
-    #[error("the board lists {0} twice")]
-    Duplicate(String),
-    #[error("the board lists an action with no name")]
-    Nameless,
-}
-
-#[derive(Deserialize)]
-struct Raw {
-    actions: Vec<RawAction>,
-}
-
-#[derive(Deserialize)]
-struct RawAction {
-    name: String,
-    label: Option<String>,
-    description: Option<String>,
-    args: Option<Vec<RawArg>>,
-    long_running: Option<bool>,
-}
-
-#[derive(Deserialize)]
-struct RawArg {
-    name: String,
-    #[serde(rename = "type")]
-    kind: String,
-}
-
 impl Catalog {
-    /// Reads the board's document.
-    ///
-    /// # Errors
-    ///
-    /// If the text is not the document, an entry has no name, or a name is listed twice.
-    pub fn parse(text: &str) -> Result<Self, CatalogError> {
-        let raw: Raw = serde_json::from_str(text)
-            .map_err(|error| CatalogError::Malformed(error.to_string()))?;
+    /// The list of what a board offers: one entry per method its devices describe. A method whose
+    /// contract has no Atlas name (a contract outside `system.`, which the Hardware tab shows as the
+    /// device's own controls) is not an entry. When two devices serve the same contract, the first one's
+    /// methods are the entries, as the first one is the device a call goes to.
+    #[must_use]
+    pub fn from_offers(methods: &[Offered]) -> Self {
         let mut seen = BTreeSet::new();
-        let mut actions = Vec::with_capacity(raw.actions.len());
-        for entry in raw.actions {
-            let name = entry.name.trim().to_owned();
-            if name.is_empty() || name.contains(char::is_whitespace) {
-                return Err(CatalogError::Nameless);
-            }
+        let mut actions = Vec::new();
+        for offered in methods {
+            let Some(name) = lemnos::name_of(&offered.contract, &offered.method) else {
+                continue;
+            };
             if !seen.insert(name.clone()) {
-                return Err(CatalogError::Duplicate(name));
+                continue;
             }
             actions.push(Action {
                 name,
-                label: text_field(entry.label),
-                description: text_field(entry.description),
-                args: match entry.args {
-                    Some(args) => Reported::Known(args.into_iter().map(Arg::from).collect()),
-                    None => Reported::NotReported,
-                },
-                long_running: entry
-                    .long_running
+                label: offered
+                    .label
+                    .clone()
                     .map_or(Reported::NotReported, Reported::Known),
+                description: Reported::NotReported,
+                args: offered
+                    .params
+                    .as_ref()
+                    .map_or(Reported::NotReported, |params| {
+                        Reported::Known(
+                            params
+                                .iter()
+                                .map(|(name, shape)| Arg {
+                                    name: name.clone(),
+                                    kind: kind_of(shape),
+                                })
+                                .collect(),
+                        )
+                    }),
+                long_running: offered.job.map_or(Reported::NotReported, Reported::Known),
             });
         }
-        Ok(Self { actions })
+        Self { actions }
     }
 
     /// Every action, in the board's order.
@@ -171,26 +148,15 @@ impl Catalog {
     }
 }
 
-fn text_field(value: Option<String>) -> Reported<String> {
-    match value {
-        Some(text) if !text.trim().is_empty() => Reported::Known(text),
-        _ => Reported::NotReported,
-    }
-}
-
-impl From<RawArg> for Arg {
-    fn from(raw: RawArg) -> Self {
-        let kind = match raw.kind.as_str() {
-            "int" => ArgKind::Int,
-            "float" => ArgKind::Float,
-            "bool" => ArgKind::Bool,
-            "text" => ArgKind::Text,
-            other => ArgKind::Other(other.to_owned()),
-        };
-        Self {
-            name: raw.name,
-            kind,
-        }
+/// The kind of an argument whose shape the description names: Lemnos's integer, float, bool and text
+/// shapes. Any other shape is kept by name and its word is not checked.
+fn kind_of(shape: &str) -> ArgKind {
+    match shape {
+        "u8" | "u16" | "u32" | "u64" | "i8" | "i16" | "i32" | "i64" => ArgKind::Int,
+        "f32" | "f64" => ArgKind::Float,
+        "bool" => ArgKind::Bool,
+        "text" => ArgKind::Text,
+        other => ArgKind::Other(other.to_owned()),
     }
 }
 
@@ -198,63 +164,90 @@ impl From<RawArg> for Arg {
 mod tests {
     use super::*;
 
+    fn offered(contract: &str, method: &str) -> Offered {
+        Offered {
+            resource: "lemnos.x".into(),
+            contract: contract.into(),
+            method: method.into(),
+            params: None,
+            job: None,
+            label: None,
+        }
+    }
+
     #[test]
     fn a_missing_field_is_not_reported_and_a_given_one_is_known() {
-        let catalog = Catalog::parse(
-            r#"{"actions":[
-                {"name":"self-test","long_running":true},
-                {"name":"locate","label":"Find it","description":"Blinks.","args":[],"long_running":false}
-            ]}"#,
-        )
-        .unwrap();
-        let test = catalog.get("self-test").unwrap();
-        assert_eq!(test.label, Reported::NotReported);
-        assert_eq!(test.description, Reported::NotReported);
-        assert_eq!(test.args, Reported::NotReported);
-        assert_eq!(test.long_running, Reported::Known(true));
-        assert_eq!(test.route(), Route::Job);
+        let catalog = Catalog::from_offers(&[
+            offered("system.slots/1", "list"),
+            Offered {
+                params: Some(Vec::new()),
+                job: Some(false),
+                label: Some("Restart".into()),
+                ..offered("system.reboot/1", "reboot")
+            },
+        ]);
+        let list = catalog.get("system.slots.list").unwrap();
+        assert_eq!(list.label, Reported::NotReported);
+        assert_eq!(list.description, Reported::NotReported);
+        assert_eq!(list.args, Reported::NotReported);
+        assert_eq!(list.long_running, Reported::NotReported);
+        assert_eq!(list.route(), Route::Job, "not reported counts as long");
 
-        let locate = catalog.get("locate").unwrap();
-        assert_eq!(locate.label, Reported::Known("Find it".into()));
-        assert_eq!(locate.args, Reported::Known(Vec::new()));
-        assert_eq!(locate.route(), Route::Direct);
+        let reboot = catalog.get("system.reboot.reboot").unwrap();
+        assert_eq!(reboot.label, Reported::Known("Restart".into()));
+        assert_eq!(reboot.args, Reported::Known(Vec::new()));
+        assert_eq!(reboot.route(), Route::Direct);
     }
 
     #[test]
-    fn an_empty_label_is_not_reported_and_an_unlisted_flag_is_a_job() {
-        let catalog = Catalog::parse(r#"{"actions":[{"name":"x","label":"  "}]}"#).unwrap();
-        let x = catalog.get("x").unwrap();
-        assert_eq!(x.label, Reported::NotReported);
-        assert_eq!(x.route(), Route::Job, "not reported counts as long");
-    }
-
-    #[test]
-    fn argument_types_are_read_and_unknown_ones_are_kept_as_other() {
-        let catalog = Catalog::parse(
-            r#"{"actions":[{"name":"d","args":[
-                {"name":"label","type":"text"},{"name":"steps","type":"int"},{"name":"f","type":"blob"}
-            ]}]}"#,
-        )
-        .unwrap();
-        let args = catalog.get("d").unwrap().args.known().unwrap().clone();
-        assert_eq!(args[0].kind, ArgKind::Text);
-        assert_eq!(args[1].kind, ArgKind::Int);
-        assert_eq!(args[2].kind, ArgKind::Other("blob".into()));
-    }
-
-    #[test]
-    fn a_nameless_or_duplicate_entry_is_refused() {
+    fn argument_shapes_are_read_and_unknown_ones_are_kept_as_other() {
+        let catalog = Catalog::from_offers(&[Offered {
+            params: Some(vec![
+                ("name".into(), "text".into()),
+                ("keep".into(), "u32".into()),
+                ("pin".into(), "bool".into()),
+                ("gain".into(), "f64".into()),
+                ("blob".into(), "bytes".into()),
+            ]),
+            job: Some(true),
+            ..offered("system.slots/1", "install_file")
+        }]);
+        let action = catalog.get("system.slots.install_file").unwrap();
+        let kinds: Vec<ArgKind> = action
+            .args
+            .known()
+            .unwrap()
+            .iter()
+            .map(|arg| arg.kind.clone())
+            .collect();
         assert_eq!(
-            Catalog::parse(r#"{"actions":[{"name":" "}]}"#),
-            Err(CatalogError::Nameless)
+            kinds,
+            [
+                ArgKind::Text,
+                ArgKind::Int,
+                ArgKind::Bool,
+                ArgKind::Float,
+                ArgKind::Other("bytes".into())
+            ]
         );
-        assert_eq!(
-            Catalog::parse(r#"{"actions":[{"name":"a"},{"name":"a"}]}"#),
-            Err(CatalogError::Duplicate("a".into()))
-        );
-        assert!(matches!(
-            Catalog::parse("not json"),
-            Err(CatalogError::Malformed(_))
-        ));
+        assert_eq!(action.route(), Route::Job);
+    }
+
+    #[test]
+    fn a_method_with_no_atlas_name_is_left_out_and_the_first_device_of_a_contract_wins() {
+        let catalog = Catalog::from_offers(&[
+            offered("sim.vane/1", "read"),
+            Offered {
+                job: Some(false),
+                ..offered("system.reboot/1", "reboot")
+            },
+            Offered {
+                resource: "lemnos.other".into(),
+                job: Some(true),
+                ..offered("system.reboot/1", "reboot")
+            },
+        ]);
+        assert_eq!(catalog.actions().len(), 1);
+        assert_eq!(catalog.actions()[0].route(), Route::Direct);
     }
 }

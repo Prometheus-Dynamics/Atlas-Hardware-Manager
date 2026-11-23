@@ -112,10 +112,12 @@ fi
 if [[ $devices -eq 1 ]]; then
   devices_lane+=("scripts/check-devices.sh")
   # The gate's small data checks over devices/ (each about a second).
-  for py in check-lemnos-gadget check-usb-ifname check-lemnos0-address check-console-gate check-orion-link check-board-ids; do
+  for py in check-lemnos-gadget check-usb-ifname check-lemnos0-address check-wired-ethernet check-console-gate check-orion-link check-board-ids; do
     [[ -f scripts/$py.py ]] && devices_lane+=("python3 scripts/$py.py")
   done
 fi
+# The board names at the pin (docs/pin-move-checklist.md, step 15): a whole-tree read, cheap, run for any change.
+devices_lane+=("scripts/check-board-names.sh")
 [[ $config_only -eq 1 ]] && devices_lane+=("scripts/check-config-only.sh")
 if [[ $all_kernels -eq 1 ]]; then
   kernel_lane+=("scripts/check-kernel-fragments.sh")

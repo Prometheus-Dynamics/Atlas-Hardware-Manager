@@ -13,8 +13,8 @@
 
 use std::fmt::Write as _;
 
-// LOCK: a mirror of Lemnos's encoder at e5c0ff0e (I6h). Re-check it against the encoder at the lock
-// move that takes I6h, since this crate does not depend on Lemnos.
+// board: Lemnos bbb3c420 service/orion/src/description.rs:244-262 (device_record): a mirror of its encoder. This crate
+// does not depend on Lemnos; `live` and `refusal` are written as the encoder writes them for a running device.
 /// The first line of every description: the format's version.
 pub const VERSION_LINE: &str = "describe 1";
 
@@ -194,16 +194,26 @@ fn reading_name(reading: Option<Reading>) -> &'static str {
 
 /// The text of a description: its version line, then its records, with no final line break.
 /// `generation` is the device's description generation (`None` before the device has one).
+/// `lease_seconds` is the board's lease period when the lease is on (`None`: the record has no such
+/// word, as the bridge writes it only then).
+// board: Lemnos bbb3c420 service/orion/src/description.rs:244-248 (device_record: generation, then lease_seconds when set)
 #[must_use]
-pub fn render(device: &Device, generation: Option<u64>) -> String {
+pub fn render(device: &Device, generation: Option<u64>, lease_seconds: Option<u64>) -> String {
     let mut out = String::from(VERSION_LINE);
     let generation = generation.map_or_else(|| "unknown".to_owned(), |g| g.to_string());
+    let lease = lease_seconds.map_or_else(String::new, |s| format!(" lease_seconds={s}"));
+    // Live while it runs (state 0), not while retrying or off (the encoder's `live`).
+    let live = if device.state == Some(0) {
+        "true"
+    } else {
+        "false"
+    };
     let address = device
         .address
         .map_or_else(|| "none".to_owned(), |a| format!("{a:#04x}"));
     let _ = write!(
         out,
-        "\ndevice generation={generation} label={} kind={} bus={} address={address} location={} state={} reason={}",
+        "\ndevice generation={generation}{lease} label={} kind={} bus={} address={address} location={} state={} reason={} live={live} refusal=0",
         quote(&device.label),
         quote(&device.kind),
         quote(&device.bus),
@@ -353,7 +363,7 @@ mod tests {
             contracts: Vec::new(),
             items: vec![item("level")],
         };
-        let text = render(&device, None);
+        let text = render(&device, None, None);
         let line = text.lines().last().expect("the item record");
         assert!(
             line.contains(" real_min=-1.5 real_max=none real_step=0.25 "),
@@ -383,10 +393,10 @@ mod tests {
             contracts: Vec::new(),
             items: Vec::new(),
         };
-        let text = render(&device, None);
+        let text = render(&device, None, None);
         assert_eq!(
             text,
-            "describe 1\ndevice generation=unknown label=\"none\" kind=\"\" bus=\"\" address=0x44 location=\"\" state=retrying reason=\"sensor drifting\""
+            "describe 1\ndevice generation=unknown label=\"none\" kind=\"\" bus=\"\" address=0x44 location=\"\" state=retrying reason=\"sensor drifting\" live=false refusal=0"
         );
     }
 }

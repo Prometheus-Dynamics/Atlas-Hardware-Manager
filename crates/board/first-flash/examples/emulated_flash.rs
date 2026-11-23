@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use atlas_files::PushKind;
-use atlas_first_flash::{FLASH_DEVICE, FlasherBoard, OrionBoard, OrionFlasher, Reach};
+use atlas_first_flash::{FlasherBoard, OrionBoard, OrionFlasher, Reach};
 use atlas_flash_flow::{Flasher, ImagePlan, Say, StepError, Stream, Target};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobKind, JobTiming, Jobs};
 use atlas_session::{Handle, Pause, Presence, Sessions};
@@ -163,7 +163,10 @@ async fn main() -> Result<(), String> {
         port: "usb-host-forward".into(),
     };
     let board = OrionBoard::new(handle.clone(), Arc::clone(&kind), jobs.clone());
-    let info = async || match board.call(FLASH_DEVICE, &["info"], false, &|_, _| {}).await {
+    let info = async || match board
+        .call("system.flash.info", &[], false, &|_, _| {})
+        .await
+    {
         Ok(out) => String::from_utf8_lossy(&out).into_owned(),
         Err(error) => format!("info failed: {error:?}"),
     };

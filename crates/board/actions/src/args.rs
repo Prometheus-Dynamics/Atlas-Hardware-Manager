@@ -83,7 +83,7 @@ mod tests {
 
     fn action(args: Reported<Vec<Arg>>) -> Action {
         Action {
-            name: "vendor.dry-run".into(),
+            name: "system.slots.pin".into(),
             label: Reported::NotReported,
             description: Reported::NotReported,
             args,
@@ -99,26 +99,41 @@ mod tests {
     fn typed_words_are_checked_and_a_bad_one_is_named() {
         let typed = action(Reported::Known(vec![
             Arg {
-                name: "label".into(),
+                name: "id".into(),
                 kind: ArgKind::Text,
             },
             Arg {
-                name: "steps".into(),
-                kind: ArgKind::Int,
+                name: "pinned".into(),
+                kind: ArgKind::Bool,
             },
         ]));
-        assert!(check(&typed, &words("run 3")).is_ok());
-        let error = check(&typed, &words("run many")).unwrap_err();
+        assert!(check(&typed, &words("slot-3 true")).is_ok());
+        let error = check(&typed, &words("slot-3 maybe")).unwrap_err();
         assert!(
-            matches!(&error, ActionError::BadArguments(text) if text.contains("steps") && text.contains("many")),
+            matches!(&error, ActionError::BadArguments(text) if text.contains("pinned") && text.contains("maybe")),
             "{error}"
         );
-        let count = check(&typed, &words("run")).unwrap_err();
+        let count = check(&typed, &words("slot-3")).unwrap_err();
         assert!(
             matches!(&count, ActionError::BadArguments(text) if text.contains("takes 2")),
             "{count}"
         );
         assert_eq!(typed.route(), Route::Direct);
+    }
+
+    #[test]
+    fn an_int_word_is_checked_as_a_number() {
+        // The shape of `system.slots/1`'s `set_keep`: one count.
+        let keep = action(Reported::Known(vec![Arg {
+            name: "keep".into(),
+            kind: ArgKind::Int,
+        }]));
+        assert!(check(&keep, &words("3")).is_ok());
+        let error = check(&keep, &words("many")).unwrap_err();
+        assert!(
+            matches!(&error, ActionError::BadArguments(text) if text.contains("keep") && text.contains("many")),
+            "{error}"
+        );
     }
 
     #[test]

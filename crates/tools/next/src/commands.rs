@@ -10,8 +10,8 @@ use atlas_actions::BUSY_CODE;
 use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
-use atlas_jobs::{DeviceHolds, Events, JobTiming};
-use atlas_session::Failure;
+use atlas_jobs::{DeviceHolds, Events};
+use atlas_session::{Failure, FailureKind};
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
 use atlas_types::DeviceKey;
@@ -58,7 +58,7 @@ impl Refusal {
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
         let denied = error.failure().is_some_and(Failure::is_denied);
-        let busy = matches!(&error, SlotError::Board(board) if board.is_busy());
+        let busy = matches!(&error, SlotError::Board(board) if board.is_lemnos_busy());
         Self {
             code: 1,
             words: error.to_string(),
@@ -102,6 +102,10 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
         Verb::Pin => pin(&mut r, &state, &address, &key).await,
         Verb::Repin => repin(&mut r, &state, &address, command.reflashed, &key).await,
         Verb::Enrol => enrol(&mut r, env, &state, &address, &key).await,
+        Verb::Hold(seconds) => {
+            crate::hold::run(&mut r, env, &state, &address, *seconds, &key).await
+        }
+        Verb::Offers(out) => crate::offers::run(&mut r, env, &state, &address, out, &key).await,
         verb => board(&mut r, env, &state, &address, verb, &key).await,
     };
     match outcome {
@@ -110,7 +114,7 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             r.say(refusal.words.clone());
             if !matches!(
                 command.verb,
-                Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol
+                Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol | Verb::Hold(_)
             ) && refusal.denied
             {
                 r.say(format!(
@@ -344,9 +348,12 @@ async fn board<W: Write>(
             .await
             .map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
-        Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
-            Err(Refusal::new(2, "not a board command"))
-        }
+        Verb::Fingerprint
+        | Verb::Pin
+        | Verb::Repin
+        | Verb::Enrol
+        | Verb::Hold(_)
+        | Verb::Offers(_) => Err(Refusal::new(2, "not a board command")),
     }
 }
 
@@ -459,7 +466,7 @@ pub(crate) async fn install<W: Write>(
         jobs.join("jobs.json"),
         Arc::clone(&link.sessions),
         Events::new(256),
-        JobTiming::default(),
+        atlas_files::job_timing(),
         DeviceHolds::new(),
         family.clone(),
         jobs.clone(),
@@ -498,9 +505,9 @@ pub(crate) async fn install<W: Write>(
             }
             Some(Stage::Failed { reason }) => {
                 // The run's typed failure keeps the board's status code: BUSY is read from it.
-                let busy = installs
-                    .failure(job)
-                    .is_some_and(|failure| failure.code() == Some(BUSY_CODE));
+                let busy = installs.failure(job).is_some_and(|failure| {
+                    failure.kind() == FailureKind::Lemnos && failure.code() == Some(BUSY_CODE)
+                });
                 return Err(Refusal {
                     busy,
                     ..Refusal::new(1, reason)

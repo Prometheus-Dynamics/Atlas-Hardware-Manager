@@ -9,10 +9,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use atlas_session::{Step, StepError, SteppedTransfer};
-use orion::Orion;
+use atlas_session::{AnswerBound, Failure, Step, StepError, SteppedTransfer};
 use orion::files::{Files, Pushing, Step as PushStep, Transfer};
+use orion::{ClientError, Orion};
 
+use crate::bounds::{BOARD_COMMIT_CEILING, ceiling_reason};
 use crate::source::{Guard, PushSource, Shared};
 
 /// Starts a push of `source` to `destination` on the session's client, as a stepped transfer.
@@ -51,6 +52,10 @@ fn stepped(
     Ok(Box::new(Stepped {
         pushing: Some(pushing),
         shared,
+        // Told before the first step; until then, the ceiling this push asks for.
+        bound: AnswerBound::Alive {
+            ceiling: BOARD_COMMIT_CEILING,
+        },
     }))
 }
 
@@ -58,9 +63,21 @@ fn stepped(
 struct Stepped {
     pushing: Option<Pushing<Guard>>,
     shared: Arc<Shared>,
+    /// The bound the session set for this step's answers (see `answer_bound`).
+    bound: AnswerBound,
 }
 
 impl SteppedTransfer<Transfer> for Stepped {
+    fn answer_bound(&mut self, bound: AnswerBound) {
+        self.bound = bound;
+    }
+
+    fn reply_ceiling(&self) -> Option<Duration> {
+        // The board's commit (its check of the whole file) is the one answer that takes long; the
+        // session waits for it as long as the board is heard from, up to the ceiling.
+        Some(BOARD_COMMIT_CEILING)
+    }
+
     fn step(&mut self, wait: Duration) -> Result<Step<Transfer>, StepError> {
         let Some(pushing) = self.pushing.as_mut() else {
             return Err(StepError::Failed("the push already ended".into()));
@@ -83,6 +100,20 @@ impl SteppedTransfer<Transfer> for Stepped {
             Ok(PushStep::Done(transfer)) => {
                 self.pushing = None;
                 Ok(Step::Done(transfer))
+            }
+            Err(ClientError::Io(error)) if error.kind() == std::io::ErrorKind::TimedOut => {
+                // A timed-out wait is one answer that took longer than the bound the session set
+                // for this step (see `answer_bound`): under the ceiling, the board still answering
+                // past it. A refusal of the push, not a lost session, so the session is kept and the
+                // words name the bound that ran out.
+                self.pushing = None;
+                let (sent, total) = {
+                    let progress = self.shared.current();
+                    (progress.sent, progress.total)
+                };
+                Err(StepError::Failed(Failure::other(ceiling_reason(
+                    sent, total, self.bound,
+                ))))
             }
             Err(error) => {
                 self.pushing = None;

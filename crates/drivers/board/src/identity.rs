@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 
 use atlas_driver::DriverError;
 use atlas_types::{
-    CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Identity, LemnosState, LinkId,
+    CapabilityKind, CapabilitySet, DeviceKey, DeviceState, FACT_MAX_BYTES, Identity, LEMNOS_FACTS,
+    LemnosState, LinkId,
 };
 use orion::node::Node;
 
@@ -26,18 +27,6 @@ pub const OFFERS: &str = "offers";
 /// The attribute that is `no` when the node runs Lemnos (it publishes Lemnos facts) and its offers
 /// were not reported: the capability set is then [`atlas_types::Offers::NotReported`].
 pub const OFFERS_REPORTED: &str = "offers.reported";
-/// The hello facts a node publishes only when Lemnos runs on it.
-const LEMNOS_FACTS: [&str; 7] = [
-    "family",
-    "serial",
-    "model",
-    "version.slot",
-    "version.product",
-    "version.os",
-    "version.lemnos",
-];
-/// The most bytes any fact's text may carry (the bridge's own limit).
-const MAX_TEXT: usize = 256;
 /// The most bytes a family, product or model name may carry (Lemnos docs/identity.md).
 const MAX_NAME: usize = 64;
 /// The fewest and most lowercase hex digits a serial may have.
@@ -203,10 +192,13 @@ fn accept(_: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Text of at most [`MAX_TEXT`] bytes with no control character, so no newline either.
+/// Text of at most [`FACT_MAX_BYTES`] bytes with no control character, so no newline either.
 fn text(value: &str) -> Result<(), String> {
-    if value.len() > MAX_TEXT {
-        return Err(format!("it is {} bytes, more than {MAX_TEXT}", value.len()));
+    if value.len() > FACT_MAX_BYTES {
+        return Err(format!(
+            "it is {} bytes, more than {FACT_MAX_BYTES}",
+            value.len()
+        ));
     }
     if value.chars().any(char::is_control) {
         return Err("it has a control character, such as a newline".into());
@@ -248,8 +240,8 @@ fn serial_form(value: &str) -> Result<(), String> {
 }
 
 /// Offers: contract ids (`name/version`, such as `system.slots/1`), separated by single spaces.
-// LOCK: waits for Lemnos M8c (not in d6b9361d): `hello.offers` naming every contract the board's devices
-// serve, kept current as devices come and go. Until then the offers fact is what the node publishes.
+// `hello.offers` names every contract the board's devices serve, computed by the bridge from the devices
+// lemnosd lists now (Lemnos bbb3c420 service/orion/src/hello.rs:23 and :1-12), so it follows devices as they come and go.
 fn offers_form(value: &str) -> Result<(), String> {
     text(value)?;
     for contract in value.split(' ') {
@@ -297,8 +289,8 @@ pub fn capabilities(identity: &Identity) -> CapabilitySet {
             .into_iter()
             .flat_map(|contract| contract_kinds(contract).iter().copied()),
     );
-    // LOCK: Lemnos M8c (offers cap 1024): the offers of a board with about 19 or more contracts
-    // are dropped at 256 bytes, so a Lemnos node with no offers is "not reported", not "none".
+    // The offers of a board whose text is over the hello limit (1024 bytes, hello.rs:19) are dropped, so a
+    // Lemnos node with no offers is "not reported", not "none".
     if identity.attributes.get(OFFERS_REPORTED).map(String::as_str) == Some("no") {
         CapabilitySet::offers_not_reported(kinds)
     } else {
@@ -521,7 +513,7 @@ mod tests {
                 fact("family", "test-family"),
                 fact("serial", SERIAL),
                 fact("model", "test\nboard"),
-                fact("version.os", &"9".repeat(257)),
+                fact("version.os", &"9".repeat(FACT_MAX_BYTES + 1)),
             ],
             &LemnosState::Absent,
         );
@@ -732,27 +724,42 @@ mod tests {
         assert_eq!(caps.offers(), atlas_types::Offers::Reported);
     }
 
+    /// Sixty contracts: an offers text over the hello limit (`FACT_MAX_BYTES`), as a board that serves
+    /// more than the bridge's document holds would publish it.
+    fn sixty_contracts() -> String {
+        (0..60)
+            .map(|index| format!("test.device-with-a-long-name-{index:02}/1"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     #[test]
-    fn twenty_contracts_whose_offers_are_dropped_are_not_reported_as_absent() {
-        // The board serves twenty contracts. At the locked revision its offers text is longer than
-        // the hello document carries, so the fact is dropped and does not come at all. The contracts
-        // are not "none": they are not reported.
+    fn twenty_contracts_fit_the_hello_limit_and_their_offers_are_reported() {
+        // Twenty contracts make an offers text of about 680 bytes. The bridge's limit is 1024 bytes at the
+        // pin (`hello.rs:19`), so the fact is published and read: the board's contracts are reported.
         assert!(
-            twenty_contracts().len() > MAX_TEXT,
-            "the offers text is over the cap"
+            twenty_contracts().len() > 256 && twenty_contracts().len() < FACT_MAX_BYTES,
+            "the offers text is over the old 256-byte cap and inside the pin's 1024"
         );
-        let found = id(lemnos_facts(), &LemnosState::Answering);
+        let mut facts = lemnos_facts();
+        facts.push(fact(
+            "offers",
+            &format!("{} system.slots/1", twenty_contracts()),
+        ));
+        let found = id(facts, &LemnosState::Answering);
+        assert!(!found.attributes.contains_key("refused.offers"));
         assert_eq!(
             capabilities(&found).reading(CapabilityKind::Slots),
-            Reading::NotReported
+            Reading::Granted
         );
     }
 
     #[test]
-    fn offers_refused_as_too_long_are_not_reported_either() {
-        // A fact that is present but refused (here: over the cap) is not an answer either.
+    fn offers_over_the_hello_limit_are_refused_and_not_reported_as_absent() {
+        // A fact over the bridge's limit is not published, and a present but refused fact is not an answer.
+        assert!(sixty_contracts().len() > FACT_MAX_BYTES);
         let mut facts = lemnos_facts();
-        facts.push(fact("offers", &twenty_contracts()));
+        facts.push(fact("offers", &sixty_contracts()));
         let found = id(facts, &LemnosState::Answering);
         assert!(found.attributes.contains_key("refused.offers"));
         assert_eq!(

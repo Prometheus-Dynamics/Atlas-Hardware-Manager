@@ -160,6 +160,7 @@ impl Hardware {
     pub async fn snapshot(&self) -> Snapshot {
         let address = self.handle.address().to_string();
         // The connection this read is for: the node as the monitor saw it when it connected.
+        let number = self.handle.session();
         let session = match self.handle.presence() {
             Presence::Found(node) => format!("{}/{}", node.fingerprint, node.time_ms),
             // No session: searching, lost, or another board answering at this address.
@@ -172,7 +173,14 @@ impl Hardware {
         let answer = self
             .handle
             .with_client(move |orion| {
-                read::read(orion, &key, &session, &link, serving.map(|id| (&*cell, id)))
+                read::read(
+                    orion,
+                    &key,
+                    &session,
+                    number,
+                    &link,
+                    serving.map(|id| (&*cell, id)),
+                )
             })
             .await;
         let now = self.origin + self.clock.now();

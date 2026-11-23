@@ -1,9 +1,10 @@
 //! Where a scan looks for Orion nodes. This is the one function a scan calls.
 //!
-//! Until Orion's discovery lands (Orion D12: add and remove events for `_orion._tcp`, and the
-//! local serial ports as `serial:` addresses), the caller supplies the addresses. D12 replaces
-//! this function's body and keeps its place in the driver. Discovery proves nothing: a node
-//! found here is only offered after it answers Identify (see [`crate::Presence`]).
+//! Orion's discovery is in its pinned tree (Orion 2f52e457, crates/comm/discovery: `mdns.rs` browses
+//! `_orion._tcp.local.` and reports the add and remove events as `PeerEvent`). The ticket name "D12" is
+//! not in that tree. Atlas does not read Orion's discovery yet, so the caller supplies the addresses;
+//! this function is where that read goes, and it keeps its place in the driver. Discovery proves
+//! nothing: a node found here is only offered after it answers Identify (see [`crate::Presence`]).
 
 use atlas_types::Link;
 use orion::Address;

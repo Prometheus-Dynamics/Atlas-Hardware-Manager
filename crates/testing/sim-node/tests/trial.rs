@@ -13,7 +13,7 @@ use atlas_sim_node::slots::trial::Config;
 use atlas_sim_node::{DEADLINE, Kind, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::Orion;
-use orion::actions::{ActionCall, Finished, Outcome};
+use orion::actions::{Finished, Outcome};
 use serde_json::Value;
 
 /// A node for one test, in its own directory.
@@ -45,9 +45,11 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
 }
 
 const BUNDLE: &str = "bundle.tar";
+/// The device whose inbox a bundle is pushed into: the one that carries the slots.
+const SLOTS_DEVICE: &str = "slots";
 
 fn push(orion: &Orion, name: &str, bytes: &[u8]) {
-    let destination = format!("{}{name}", names::INCOMING);
+    let destination = format!("{}{name}", names::inbox(SLOTS_DEVICE));
     orion
         .files()
         .push(&destination, &mut Cursor::new(bytes), |_, _| {})
@@ -67,14 +69,7 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
     }
     push(orion, BUNDLE, bundle);
     let args = format!("{BUNDLE} {pin} {keep_old}");
-    orion
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL_FILE,
-            target: atlas_sim_node::node::target(),
-            args: args.as_bytes(),
-            deadline_ms: 0,
-            detached: false,
-        })
+    atlas_sim_node::bridge::run(orion, names::SLOTS_INSTALL_FILE, args.as_bytes(), 0, false)
         .expect("the install starts")
         .finish(DEADLINE)
         .expect("the install ends")
@@ -163,7 +158,7 @@ fn list_has_the_i5f_fields_null_by_default_and_an_outcome_per_slot() {
 }
 
 #[test]
-fn a_list_over_60_kib_is_refused_by_name_with_no_output() {
+fn a_list_over_the_bridge_bound_is_refused_with_its_words_and_no_output() {
     let node = start("list-limit");
     let orion = node.connect("list-limit").expect("a session");
     // Each slot is about 480 bytes of JSON, so 300 of them are well over 60 KiB. They go in
@@ -196,7 +191,7 @@ fn a_list_over_60_kib_is_refused_by_name_with_no_output() {
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert_eq!(
         finished.detail,
-        "-22: system.slots.list: the reply is over 60 KiB; refused by name, nothing partial is sent"
+        "-4098: the reply is larger than 61440 bytes, the most a frame carries"
     );
     assert!(finished.output.is_empty(), "no partial output is sent");
 }

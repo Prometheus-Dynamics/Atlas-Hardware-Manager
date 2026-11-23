@@ -1,14 +1,12 @@
-//! The names the simulated node answers to: the Lemnos slot and reboot surface (I5), the
-//! board's other actions, and its topics. This is the one table to change.
+//! The names the simulated node answers to: the Lemnos slot and reboot surface (I5) and its topics.
+//! This is the one table to change.
 //!
-//! I5 names its methods (`system.slots/1`, `system.reboot/1`). Orion needs one action name
-//! per method, so the sim names each `system.<contract>.<method>` with `-` for `_`. How
-//! Orion carries Lemnos methods to clients is OPEN (see `testing/sim-node/README.md`); a
-//! change there is an edit to the constants below.
+//! I5 names its methods (`system.slots/1`, `system.reboot/1`). The node offers them as a board does,
+//! through each device's `lemnos.<device>.call` (`crate::bridge`); the `system.<contract>.<method>`
+//! names below (with `-` for `_`) are what the tests and the node's own model call each method.
 //!
-//! The board's other actions (`locate`, `self-test`, `set-clock`, `support-bundle`,
-//! `data.*`, `fs.*`, `status`) are not in I5. They stay here as provisional names for the
-//! C-series briefs that name them.
+//! The node offers nothing else: no action of its own on the node target. A board with Lemnos at
+//! a6251ecf publishes none, so a run of any other name is answered by Orion with "not found".
 
 /// One method of a Lemnos contract and the name the node answers to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,32 +91,6 @@ pub const SURFACE: &[Method] = &[
     },
 ];
 
-/// Actions the simulated node registers: the I5 surface, then the board's own.
-pub const ACTIONS: &[&str] = &[
-    SLOTS_LIST,
-    SLOTS_ACCEPT,
-    SLOTS_INSTALL_FILE,
-    SLOTS_SET_DEFAULT,
-    SLOTS_TRIAL,
-    SLOTS_CONFIRM,
-    SLOTS_REMOVE,
-    SLOTS_PIN,
-    SLOTS_SET_KEEP,
-    SLOTS_INFO,
-    REBOOT,
-    STATUS,
-    LOCATE,
-    SELF_TEST,
-    SET_CLOCK,
-    SUPPORT_BUNDLE,
-    DATA_BACKUP,
-    DATA_RESTORE,
-    FS_LIST,
-    FS_READ,
-    FS_WRITE,
-    FS_REMOVE,
-];
-
 /// Topics the simulated node publishes.
 pub const TOPICS: &[&str] = &[READINGS, HARDWARE, LOGS];
 
@@ -161,24 +133,44 @@ pub const HELLO: &[&str] = &[
 // system.slots/1. Arguments are UTF-8 words, separated by spaces, as Lemnos's bridge takes them
 // (`lemnos_wire::text::encode_args`): numbers in decimal, bools as true/false (or on/off, 1/0),
 // strings as one word. A bundle never goes as an argument: `accept <size>` checks there is room,
-// the bundle is pushed as a file (Orion's `Files::push`) into `INCOMING`, and
+// the bundle is pushed as a file (Orion's `Files::push`) into the device's inbox (`inbox`), and
 // `install_file <name> <pin> <keep_old>` installs it as a long job. Direct socket callers
 // (`install` + `write`) are not on the Orion surface.
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:89 (list)
 pub const SLOTS_LIST: &str = "system.slots.list";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:129 (accept)
 pub const SLOTS_ACCEPT: &str = "system.slots.accept";
-pub const SLOTS_INSTALL_FILE: &str = "system.slots.install-file";
-pub const SLOTS_SET_DEFAULT: &str = "system.slots.set-default";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:137 (install_file)
+pub const SLOTS_INSTALL_FILE: &str = "system.slots.install_file";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:106 (set_default)
+pub const SLOTS_SET_DEFAULT: &str = "system.slots.set_default";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:111 (trial)
 pub const SLOTS_TRIAL: &str = "system.slots.trial";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:116 (confirm)
 pub const SLOTS_CONFIRM: &str = "system.slots.confirm";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:119 (remove)
 pub const SLOTS_REMOVE: &str = "system.slots.remove";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:122 (pin)
 pub const SLOTS_PIN: &str = "system.slots.pin";
-pub const SLOTS_SET_KEEP: &str = "system.slots.set-keep";
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:125 (set_keep)
+pub const SLOTS_SET_KEEP: &str = "system.slots.set_keep";
 /// `info` (Lemnos I5k): a JSON text reply with `last_attempt`, whose `boot` is the board's boot id.
+// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:154 (info)
 pub const SLOTS_INFO: &str = "system.slots.info";
 
-/// The directory a pushed bundle lands in, relative to the data partition. The driver owns it:
-/// it is cleared when the node starts, and a file is removed when its install job ends.
-pub const INCOMING: &str = "slots/.incoming/";
+/// What every file destination the bridge takes starts with (`lemnos/<device>/<name>`). The bridge
+/// takes a file only under it, into the inbox of the device the destination names: Lemnos
+/// service/orion/src/files.rs:38, `DESTINATION_PREFIX` (the same at a6251ecf). A file pushed anywhere
+/// else is kept by the node and never reaches the device.
+// board: Lemnos bbb3c420 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
+pub const SINK_PREFIX: &str = "lemnos/";
+
+/// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`. The driver
+/// owns it: it is cleared when the node starts, and a file is removed when its install job ends.
+#[must_use]
+pub fn inbox(device: &str) -> String {
+    format!("{SINK_PREFIX}{device}/")
+}
 
 /// Whether `name` is one of Lemnos's own actions (the slot and reboot surface).
 #[must_use]
@@ -198,25 +190,8 @@ pub fn valid_name(name: &str) -> bool {
 }
 
 // system.reboot/1.
+// board: Lemnos bbb3c420 contracts/system-reboot/src/lib.rs:12 (reboot)
 pub const REBOOT: &str = "system.reboot.reboot";
-
-// The board's own actions, outside I5 (provisional). Their words are the same: spaces between
-// them, and bytes as hex.
-/// The boot and slot state as text.
-pub const STATUS: &str = "status";
-pub const LOCATE: &str = "locate";
-pub const SELF_TEST: &str = "self-test";
-pub const SET_CLOCK: &str = "set-clock";
-/// A small text report of the board's state, returned as output.
-pub const SUPPORT_BUNDLE: &str = "support-bundle";
-// The data partition. `data.backup` answers the partition as hex; `data.restore` takes that hex;
-// `fs.*` take a path as a word.
-pub const DATA_BACKUP: &str = "data.backup";
-pub const DATA_RESTORE: &str = "data.restore";
-pub const FS_LIST: &str = "fs.list";
-pub const FS_READ: &str = "fs.read";
-pub const FS_WRITE: &str = "fs.write";
-pub const FS_REMOVE: &str = "fs.remove";
 
 /// Live readings: temperature (C), input voltage (V), fan speed (rpm).
 pub const READINGS: &str = "readings";
@@ -232,7 +207,7 @@ mod tests {
     #[test]
     fn names_are_unique() {
         let mut seen = std::collections::BTreeSet::new();
-        for name in ACTIONS.iter().chain(TOPICS).chain(HELLO) {
+        for name in TOPICS.iter().chain(HELLO) {
             assert!(seen.insert(*name), "{name} is listed twice");
             assert!(!name.is_empty() && !name.contains(' '));
         }
@@ -246,11 +221,11 @@ mod tests {
     }
 
     #[test]
-    fn every_surface_method_is_registered() {
+    fn every_surface_method_is_a_device_action() {
         for method in SURFACE {
             assert!(
-                ACTIONS.contains(&method.action),
-                "{} is not registered",
+                crate::bridge::request(method.action, b"").is_some(),
+                "{} is not a device method of this node",
                 method.action
             );
         }

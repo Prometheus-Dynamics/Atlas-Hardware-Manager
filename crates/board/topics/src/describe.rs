@@ -17,23 +17,18 @@
 //! whole text.
 
 use std::collections::BTreeMap;
-use std::io::ErrorKind;
 use std::time::Duration;
 
-use orion::actions::{ActionCall, Outcome, Target};
-use orion::types::NodeName;
-use orion::{ClientError, Error as OrionError, Orion};
+use atlas_session::lemnos;
+use orion::{Error as OrionError, Orion};
 
 use crate::description::DescriptionState;
 
-/// The argument of the call: the word alone. The bridge refuses any other argument to `describe`.
-pub const DESCRIBE_ARGS: &[u8] = b"describe";
-/// How long the bridge has to answer one description. Reason: a description is read from lemnosd
-/// in one round trip; a device that does not answer in this time is cancelled, not waited for.
-pub const DESCRIBE_WAIT: Duration = Duration::from_secs(10);
+/// How long the bridge has to answer one description (the session's wait: see `atlas_session::lemnos`).
+pub const DESCRIBE_WAIT: Duration = lemnos::DESCRIBE_WAIT;
 
-// LOCK: Lemnos M8b's paged form (`list_page`: a cursor in, a `next` cursor out) for `describe`: not
-// at e5c0ff0e. The bridge refuses a description over 60 KiB whole, by name; this reader never sees
+// LOCK: Lemnos bbb3c420 (service/orion/src/calls.rs:1133-1137): `describe` is still refused whole. The paged
+// form (`list_page`, a cursor in and a `next` cursor out) exists only for `system.slots`, not for `describe`. The bridge refuses a description over 60 KiB whole, by name; this reader never sees
 // a cut text, so nothing here walks pages yet.
 
 /// What the reader holds of a device's description: its state, and the generation it answers.
@@ -70,50 +65,23 @@ pub(crate) fn is_due(held: Option<&Asked>, topic_generation: Option<u64>) -> boo
     }
 }
 
-/// Asks device `device` (a resource name, `lemnos.<device>`) on `node` for its description.
+/// Asks device `device` (a resource name, `lemnos.<device>`) for its description, through the session's
+/// describe answers (`atlas_session::lemnos::described`): a device the session has already described is
+/// not asked again, and one whose generation moved is asked after [`forget`].
 ///
 /// The outer `Err` is the session. The inner `Err` is the board's refusal, in its own words: a
 /// board that does not answer `describe`, a device that is not running, or a reply the bridge
-/// refused for its size. A reply is never truncated.
+/// could not give.
 ///
 /// # Errors
 ///
 /// [`OrionError`] when the session is gone.
 pub(crate) fn fetch(
     orion: &Orion,
+    session: u64,
     device: &str,
-    node: &NodeName,
-) -> Result<Result<Vec<u8>, String>, OrionError> {
-    // LOCK: Lemnos I6h describe (`lemnos.<device>.call describe`, e5c0ff0e). At our lock (d6b9361d)
-    // the bridge does not answer describe: the call is refused and the device is shown with
-    // "description not available", never with labels or an empty device.
-    let name = format!("{device}.call");
-    let mut run = orion.run(&ActionCall {
-        name: &name,
-        target: Target::Node(node.clone()),
-        args: DESCRIBE_ARGS,
-        deadline_ms: 0,
-        detached: false,
-    })?;
-    match run.finish(DESCRIBE_WAIT) {
-        Ok(finished) => Ok(match finished.outcome {
-            Outcome::Succeeded => Ok(finished.output),
-            _ if finished.detail.trim().is_empty() => {
-                Err("the board did not give the description".to_owned())
-            }
-            _ => Err(finished.detail),
-        }),
-        Err(ClientError::Refused { detail, .. }) => Ok(Err(detail)),
-        Err(ClientError::Io(error)) if error.kind() == ErrorKind::TimedOut => {
-            // Not finished in time: asked to stop, so it is not left running unobserved.
-            let _ = run.cancel();
-            Ok(Err(format!(
-                "the board did not answer describe within {} s",
-                DESCRIBE_WAIT.as_secs()
-            )))
-        }
-        Err(error) => Err(OrionError::Client(error)),
-    }
+) -> Result<lemnos::Answer, OrionError> {
+    lemnos::described(orion, session, device)
 }
 
 #[cfg(test)]

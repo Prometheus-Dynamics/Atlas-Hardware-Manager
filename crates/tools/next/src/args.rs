@@ -15,6 +15,11 @@ pub enum Verb {
     Trial(String),
     Confirm(String),
     Remove(String),
+    /// `hold <address> <seconds>`: the bench's hold check, for this many seconds.
+    Hold(u64),
+    /// `offers <address> --out <file>`: bench only. Records what the board's node offers (facts, resources and
+    /// each device's describe, topics) into one JSON file, for the sim's fixture.
+    Offers(PathBuf),
 }
 
 /// One parsed command.
@@ -103,9 +108,11 @@ pub fn parse(args: &[String]) -> Parsed {
         Some("bench-key") => return parse_bench_key(&args[1..]),
         Some("cycle") => return parse_cycle(&args[1..]),
         Some("usb-boot") => return parse_usb_boot(&args[1..]),
+        Some("hold") => return parse_hold(&args[1..]),
+        Some("offers") => return parse_offers(&args[1..]),
         Some(other) => {
             return Parsed::Usage(format!(
-                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key, cycle and usb-boot"
+                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key, cycle, usb-boot, hold and offers"
             ));
         }
     }
@@ -356,6 +363,101 @@ fn parse_cycle(args: &[String]) -> Parsed {
     })
 }
 
+/// Reads the operands of `offers`: `<address>`, `--out <file>` (required), and optionally `--state`,
+/// `--identity`, `--json`, `--help`.
+fn parse_offers(args: &[String]) -> Parsed {
+    let mut positional: Vec<&str> = Vec::new();
+    let mut out = None;
+    let mut state = None;
+    let mut identity = None;
+    let mut json = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--json" => json = true,
+            "--out" => match rest.next() {
+                Some(file) => out = Some(PathBuf::from(file)),
+                None => return Parsed::Usage("--out needs a file".into()),
+            },
+            "--state" => match rest.next() {
+                Some(dir) => state = Some(PathBuf::from(dir)),
+                None => return Parsed::Usage("--state needs a directory".into()),
+            },
+            "--identity" => match rest.next() {
+                Some(file) => identity = Some(PathBuf::from(file)),
+                None => return Parsed::Usage("--identity needs a file".into()),
+            },
+            flag if flag.starts_with("--") => {
+                return Parsed::Usage(format!("unknown option {flag}"));
+            }
+            _ => positional.push(arg),
+        }
+    }
+    let ([address], Some(out)) = (positional.as_slice(), out) else {
+        return Parsed::Usage(
+            "offers takes an address and --out <file>: offers <address> --out <file.json>".into(),
+        );
+    };
+    Parsed::Run(Command {
+        address: (*address).to_owned(),
+        verb: Verb::Offers(out),
+        json,
+        state,
+        reflashed: false,
+        identity,
+    })
+}
+
+/// Reads the operands of `hold`: `<address>`, `<seconds>`, and optionally `--state`, `--identity`,
+/// `--json`, `--help`.
+fn parse_hold(args: &[String]) -> Parsed {
+    let mut positional: Vec<&str> = Vec::new();
+    let mut state = None;
+    let mut identity = None;
+    let mut json = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--json" => json = true,
+            "--state" => match rest.next() {
+                Some(dir) => state = Some(PathBuf::from(dir)),
+                None => return Parsed::Usage("--state needs a directory".into()),
+            },
+            "--identity" => match rest.next() {
+                Some(file) => identity = Some(PathBuf::from(file)),
+                None => return Parsed::Usage("--identity needs a file".into()),
+            },
+            flag if flag.starts_with("--") => {
+                return Parsed::Usage(format!("unknown option {flag}"));
+            }
+            _ => positional.push(arg),
+        }
+    }
+    let [address, seconds] = positional.as_slice() else {
+        return Parsed::Usage(
+            "hold takes an address and a number of seconds: hold <address> <seconds>".into(),
+        );
+    };
+    let seconds = match seconds.parse::<u64>() {
+        Ok(0) | Err(_) => {
+            return Parsed::Usage(format!(
+                "hold takes whole seconds, at least 1 (got {seconds:?})"
+            ));
+        }
+        Ok(seconds) => seconds,
+    };
+    Parsed::Run(Command {
+        address: (*address).to_owned(),
+        verb: Verb::Hold(seconds),
+        json,
+        state,
+        reflashed: false,
+        identity,
+    })
+}
+
 /// Reads the operands of `bench-key`: one directory, `--json`, `--help`.
 fn parse_bench_key(args: &[String]) -> Parsed {
     let mut positional: Vec<&str> = Vec::new();
@@ -454,6 +556,26 @@ mod tests {
             parse(&words("cycle a --good g --bad b --scorecard s --reflashed")),
             Parsed::Usage(_)
         ));
+    }
+
+    #[test]
+    fn hold_takes_an_address_and_whole_seconds() {
+        assert_eq!(
+            parse(&words("hold orion+tcp://[::1]:9200 90 --json --state /x")),
+            Parsed::Run(Command {
+                address: "orion+tcp://[::1]:9200".into(),
+                verb: Verb::Hold(90),
+                json: true,
+                state: Some(PathBuf::from("/x")),
+                reflashed: false,
+                identity: None,
+            })
+        );
+        assert!(matches!(parse(&words("hold a")), Parsed::Usage(_)));
+        assert!(matches!(parse(&words("hold a 0")), Parsed::Usage(_)));
+        assert!(matches!(parse(&words("hold a soon")), Parsed::Usage(_)));
+        assert!(matches!(parse(&words("hold a 9 extra")), Parsed::Usage(_)));
+        assert!(matches!(parse(&words("hold a 9 --nope")), Parsed::Usage(_)));
     }
 
     #[test]

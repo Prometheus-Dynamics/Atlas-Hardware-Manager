@@ -238,12 +238,13 @@ impl Driver for BoardDriver {
             return Err(unreachable(&candidate.address, &reason));
         }
         let was_expected = self.expects_lemnos(&candidate.address);
+        let number = handle.session();
         let answer = handle
             .with_client(move |orion| {
                 let node = orion.node()?;
                 let expected = was_expected || lemnos::published_by(&node);
                 let lemnos = if expected {
-                    lemnos::probe(orion, &node)?
+                    lemnos::probe(orion, number)?.state
                 } else {
                     LemnosState::Absent
                 };

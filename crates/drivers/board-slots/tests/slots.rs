@@ -239,6 +239,7 @@ async fn a_lapsed_hold_is_no_answer_and_the_run_is_followed_again_when_it_answer
             period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
+            keep_renewing: true,
         }),
         Some(clock.clone()),
     )
@@ -543,7 +544,7 @@ async fn a_list_over_the_size_bound_is_passed_on_by_name_and_not_truncated() {
         Err(SlotError::Board(error)) => {
             let text = error.to_string();
             assert!(
-                text.contains("60 KiB"),
+                text.contains("the reply is larger than 61440 bytes"),
                 "the board's words are passed on: {text}"
             );
         }

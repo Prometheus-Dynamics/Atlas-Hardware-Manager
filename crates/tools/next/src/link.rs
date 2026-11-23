@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_session::{Handle, PROGRAM, Presence, Sessions};
+use atlas_session::{Handle, Lease, PROGRAM, Presence, Sessions};
 use orion::node::Enrollment;
 use orion::node::Node;
 use orion::{Address, Identity, Options, Orion, Patience};
@@ -16,18 +16,6 @@ use crate::pins::{Pin, Pins};
 
 /// How long a probe or an enrolment waits for the node to answer.
 const ANSWER_WAIT: Duration = Duration::from_secs(10);
-
-/// The facts a Lemnos board publishes. A node with any of them and no offers did not report what
-/// it offers.
-const LEMNOS_FACTS: [&str; 7] = [
-    "family",
-    "serial",
-    "model",
-    "version.slot",
-    "version.product",
-    "version.os",
-    "version.lemnos",
-];
 
 /// A session with a board that the pin rule has let through.
 pub struct Link {
@@ -141,6 +129,19 @@ pub async fn pinned(
     address: &Address,
     key: &[u8; 32],
 ) -> Result<Link, Refusal> {
+    pinned_with(env, pins, text, address, key, Lease::DEFAULT).await
+}
+
+/// As [`pinned`], with the lease the session keeps for its holds. Only the bench's `hold` gives another
+/// lease (see `hold`); every other command keeps [`Lease::DEFAULT`].
+pub async fn pinned_with(
+    env: &Env,
+    pins: &Pins,
+    text: &str,
+    address: &Address,
+    key: &[u8; 32],
+    lease: Lease,
+) -> Result<Link, Refusal> {
     let Some(pin) = pins.get(text) else {
         let node = probe(env, address, key)
             .await
@@ -153,7 +154,7 @@ pub async fn pinned(
             ),
         ));
     };
-    let sessions = Arc::new(Sessions::with_identity(env.pause.clone(), *key));
+    let sessions = Arc::new(Sessions::with_identity(env.pause.clone(), *key).with_lease(lease));
     let handle = sessions
         .handle_pinned(address, pin.key)
         .ok_or_else(|| Refusal::new(1, format!("the address {text} is turned off in Atlas")))?;
@@ -219,7 +220,7 @@ pub fn board_info(node: &Node) -> BoardInfo {
             .map(|fact| String::from_utf8_lossy(&fact.value).trim().to_owned())
             .filter(|value| !value.is_empty())
     };
-    let lemnos = LEMNOS_FACTS
+    let lemnos = atlas_types::LEMNOS_FACTS
         .iter()
         .any(|name| node.facts.iter().any(|fact| fact.name == *name));
     let (offered, reported) = match text("offers") {

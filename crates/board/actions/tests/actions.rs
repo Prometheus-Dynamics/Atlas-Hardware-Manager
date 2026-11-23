@@ -18,8 +18,7 @@ use atlas_actions::{
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
 use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
-use atlas_sim_node::actions::DRY_RUN;
-use atlas_sim_node::names::SELF_TEST;
+use atlas_sim_node::names::{REBOOT, SLOTS_INFO, SLOTS_PIN, SLOTS_SET_KEEP};
 use atlas_sim_node::script::Behaviour;
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use atlas_types::DeviceKey;
@@ -29,6 +28,16 @@ use tokio::time;
 
 const FAMILY: &str = "test-family";
 const SERIAL: &str = "0123abcd";
+
+/// The method the long-run tests start detached and follow: `system.slots/1`'s `info`. It takes no
+/// words and changes nothing, so a test can stall it, cancel it and run it again. (Atlas's name for a
+/// method and the sim's are the same text.)
+const FOLLOWED: &str = SLOTS_INFO;
+/// The method the short-call tests run: `system.slots/1`'s `pin`, which the board describes with two
+/// typed arguments (`id:text pinned:bool`).
+const TYPED: &str = SLOTS_PIN;
+/// Words that fit [`TYPED`] on the node's first slot.
+const TYPED_WORDS: &str = "slot-1 true";
 
 /// A pause that does not wait: the failure rule is tested on the session's side. It only yields,
 /// so the monitor thread does not spin while the node is gone.
@@ -204,65 +213,128 @@ fn named<'a>(catalog: &'a Catalog, name: &str) -> &'a Action {
         .unwrap_or_else(|| panic!("the board lists {name}"))
 }
 
+/// The list is what the board says it offers: the methods its devices describe, under the devices
+/// whose resource lists a `call`. It is read with no action of the board's own.
 #[tokio::test]
-async fn the_catalog_gives_what_the_board_gives_and_marks_the_rest_not_reported() {
+async fn the_catalog_is_what_the_devices_describe_and_marks_the_rest_not_reported() {
     let rig = Rig::start("catalog", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
 
-    // The board says self-test is long, but gives no label and no arguments.
-    let self_test = named(&catalog, SELF_TEST);
-    assert_eq!(self_test.label, Reported::NotReported);
-    assert_eq!(self_test.args, Reported::NotReported);
-    assert_eq!(self_test.long_running, Reported::Known(true));
-    assert_eq!(self_test.route(), Route::Job);
+    let names: Vec<&str> = catalog
+        .actions()
+        .iter()
+        .map(|action| action.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "system.reboot.reboot",
+            "system.slots.list",
+            "system.slots.set_default",
+            "system.slots.trial",
+            "system.slots.confirm",
+            "system.slots.remove",
+            "system.slots.pin",
+            "system.slots.set_keep",
+            "system.slots.accept",
+            "system.slots.install_file",
+            "system.slots.info",
+        ],
+        "every method of the restart and slot devices, in the resource list's order, and nothing a board does not publish"
+    );
+    // No list was asked of the node: nothing named `actions.list` was run.
+    assert_eq!(rig.node.runs_started("actions.list"), 0);
 
-    // The board gives everything for locate.
-    let locate = named(&catalog, "locate");
-    assert_eq!(locate.label, Reported::Known("Find it".into()));
-    assert_eq!(locate.args, Reported::Known(Vec::new()));
-    assert_eq!(locate.route(), Route::Direct);
+    // The restart is a short call with no arguments. The device names no action for it, so its label
+    // is not reported: the gap is shown, not filled in.
+    let reboot = named(&catalog, REBOOT);
+    assert_eq!(reboot.label, Reported::NotReported);
+    assert_eq!(reboot.args, Reported::Known(Vec::new()));
+    assert_eq!(reboot.long_running, Reported::Known(false));
+    assert_eq!(reboot.route(), Route::Direct);
 
-    // The dry run has typed arguments and no label: the gap is shown, not filled in.
-    let dry = named(&catalog, DRY_RUN);
-    assert_eq!(dry.label, Reported::NotReported);
-    let args = dry.args.known().expect("the dry run gives its arguments");
-    assert_eq!(args[0].kind, ArgKind::Text);
-    assert_eq!(args[1].kind, ArgKind::Int);
-    assert_eq!(dry.route(), Route::Direct);
+    // Typed arguments come from the method's parameters and their shapes.
+    let pin = named(&catalog, TYPED);
+    let args = pin.args.known().expect("pin gives its arguments");
+    assert_eq!(
+        args.iter()
+            .map(|arg| (arg.name.as_str(), arg.kind.clone()))
+            .collect::<Vec<_>>(),
+        [("id", ArgKind::Text), ("pinned", ArgKind::Bool)]
+    );
+    assert_eq!(pin.route(), Route::Direct);
+
+    // The board says the install is a long job.
+    let install = named(&catalog, "system.slots.install_file");
+    assert_eq!(install.long_running, Reported::Known(true));
+    assert_eq!(install.route(), Route::Job);
 }
 
+/// The list costs one describe per device per session: a second read asks no device again.
 #[tokio::test]
-async fn every_listed_action_runs_on_the_simulated_node() {
-    let rig = Rig::start("every", &lemnos_kind()).await;
-    let catalog = rig.catalog().await;
-    let (jobs, _jobs_dir) = jobs("every", rig.sessions.clone()).await;
+async fn a_second_read_of_the_catalog_asks_no_device_again() {
+    let rig = Rig::start("catalog-cached", &lemnos_kind()).await;
+    let first = rig.catalog().await;
+    let before = rig.node.bridge_calls_started();
+    let second = rig.catalog().await;
+    assert_eq!(first, second);
+    assert_eq!(
+        rig.node.bridge_calls_started(),
+        before,
+        "the descriptions are the session's kept ones"
+    );
+}
 
-    for action in catalog.actions() {
-        let argv = sample_words(action);
-        match action.route() {
-            Route::Direct => {
-                let done = rig
-                    .board
-                    .run(action, &argv)
-                    .await
-                    .unwrap_or_else(|error| panic!("{}: {error}", action.name));
-                if action.name == "locate" {
-                    assert_eq!(done.output, b"blinking");
-                }
-            }
-            Route::Job => {
-                let id = jobs
-                    .submit(device(), &rig.address, action, &argv)
-                    .await
-                    .unwrap_or_else(|error| panic!("{}: {error}", action.name));
-                wait_status(&jobs, id, &action.name, |status| {
-                    matches!(status, JobStatus::Done)
-                })
-                .await;
-            }
-        }
+/// A board whose only off device is off, and whose slots are gone, says the contract is not there: the
+/// off device is an answer ("it offers nothing now"), so the answer is complete.
+#[tokio::test]
+async fn a_board_with_an_off_device_and_no_slots_says_there_is_no_such_contract() {
+    let rig = Rig::start("off-no-slots", &lemnos_kind()).await;
+    assert!(rig.catalog().await.get("system.slots.list").is_some());
+    rig.node.remove_device("slots");
+    let mut catalog = rig.catalog().await;
+    let until_gone = Instant::now() + DEADLINE;
+    while catalog.get("system.slots.list").is_some() {
+        assert!(Instant::now() < until_gone, "the slots stayed listed");
+        time::sleep(Duration::from_millis(20)).await;
+        catalog = rig.catalog().await;
     }
-    assert!(catalog.actions().len() >= 7, "the node lists its actions");
+    let error = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .expect_err("no slots, nothing sent");
+    assert_eq!(error.to_string(), "this board has no system.slots/1");
+    assert_eq!(
+        rig.node.runs_started("system.slots.list"),
+        0,
+        "nothing was sent"
+    );
+}
+
+/// A board with no restart device does not list the restart, and a run of it sends nothing.
+#[tokio::test]
+async fn a_board_without_a_restart_device_does_not_offer_the_restart() {
+    let rig = Rig::start("no-reboot", &lemnos_kind()).await;
+    assert!(rig.catalog().await.get(REBOOT).is_some());
+    rig.node.remove_device("reboot");
+    let mut catalog = rig.catalog().await;
+    let until_gone = Instant::now() + DEADLINE;
+    while catalog.get(REBOOT).is_some() {
+        assert!(Instant::now() < until_gone, "the restart stayed listed");
+        time::sleep(Duration::from_millis(20)).await;
+        catalog = rig.catalog().await;
+    }
+    assert!(
+        catalog.get("system.slots.list").is_some(),
+        "the other devices' methods stay"
+    );
+    let error = rig
+        .board
+        .run(&lemnos_action(REBOOT), &[])
+        .await
+        .expect_err("no device carries the restart");
+    assert_eq!(error.to_string(), "this board has no system.reboot/1");
 }
 
 #[tokio::test]
@@ -270,24 +342,29 @@ async fn an_action_the_code_has_never_heard_of_runs_from_its_description() {
     let rig = Rig::start("described", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
 
-    // Pick by what the board says, not by name: no label, typed arguments.
+    // Pick by what the board says, not by name: no label, and one whole-number argument.
     let described = catalog
         .actions()
         .iter()
         .find(|action| {
             action.label == Reported::NotReported
-                && action.args.known().is_some_and(|args| !args.is_empty())
+                && action
+                    .args
+                    .known()
+                    .is_some_and(|args| args.len() == 1 && args[0].kind == ArgKind::Int)
+                && action.route() == Route::Direct
+                && action.name != "system.slots.accept"
         })
         .expect("the board describes an action from its arguments alone");
+    assert_eq!(described.name, SLOTS_SET_KEEP);
     let argv = sample_words(described);
-    assert_eq!(argv, ["label", "3"], "the words follow the declared types");
+    assert_eq!(argv, ["3"], "the words follow the declared types");
 
-    let done = rig
-        .board
+    rig.board
         .run(described, &argv)
         .await
         .expect("the action runs");
-    assert_eq!(done.output, b"dry run label: 3 steps");
+    assert_eq!(rig.node.model().slots.keep, 3, "the board took the word");
 }
 
 #[tokio::test]
@@ -296,13 +373,13 @@ async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() 
     let catalog = rig.catalog().await;
     let (jobs, _jobs_dir) = jobs("refusal", rig.sessions.clone()).await;
 
-    let reason = "no dry runs while the board is in maintenance";
+    let reason = "no pins while the board is in maintenance";
     rig.node
         .script()
-        .push_action(DRY_RUN, Behaviour::Refuse(reason.into()));
+        .push_action(TYPED, Behaviour::Refuse(reason.into()));
     let direct = rig
         .board
-        .run(named(&catalog, DRY_RUN), &words("label 2"))
+        .run(named(&catalog, TYPED), &words(TYPED_WORDS))
         .await
         .unwrap_err();
     assert_eq!(direct, ActionError::Refused(reason.into()));
@@ -312,12 +389,12 @@ async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() 
         "the words are the board's"
     );
 
-    let refused = "a self-test cannot start while a trial is settling";
+    let refused = "the slots cannot be read while a trial is settling";
     rig.node
         .script()
-        .push_action(SELF_TEST, Behaviour::Refuse(refused.into()));
+        .push_action(FOLLOWED, Behaviour::Refuse(refused.into()));
     let id = jobs
-        .submit(device(), &rig.address, named(&catalog, SELF_TEST), &[])
+        .submit(device(), &rig.address, named(&catalog, FOLLOWED), &[])
         .await
         .expect("the job is queued");
     wait_status(
@@ -334,22 +411,26 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
     let rig = Rig::start("badargs", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let (jobs, _jobs_dir) = jobs("badargs", rig.sessions.clone()).await;
-    let dry = named(&catalog, DRY_RUN);
+    let dry = named(&catalog, TYPED);
 
     // A queued refusal stands in front of the next real send. If a bad call reached the node it
     // would take it, and the next good call would then succeed.
     rig.node
         .script()
-        .push_action(DRY_RUN, Behaviour::Refuse("the first real send".into()));
-    let not_a_count = rig.board.run(dry, &words("label many")).await.unwrap_err();
+        .push_action(TYPED, Behaviour::Refuse("the first real send".into()));
+    let not_a_flag = rig
+        .board
+        .run(dry, &words("slot-1 maybe"))
+        .await
+        .unwrap_err();
     assert!(
-        matches!(&not_a_count, ActionError::BadArguments(text) if text.contains("steps")),
-        "{not_a_count}"
+        matches!(&not_a_flag, ActionError::BadArguments(text) if text.contains("pinned")),
+        "{not_a_flag}"
     );
-    let missing = rig.board.run(dry, &words("label")).await.unwrap_err();
+    let missing = rig.board.run(dry, &words("slot-1")).await.unwrap_err();
     assert!(matches!(missing, ActionError::BadArguments(_)), "{missing}");
     let bad_job = jobs
-        .submit(device(), &rig.address, dry, &words("label many"))
+        .submit(device(), &rig.address, dry, &words("slot-1 maybe"))
         .await
         .unwrap_err();
     assert!(matches!(bad_job, ActionError::BadArguments(_)), "{bad_job}");
@@ -358,7 +439,7 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
         "a refused submit queues nothing"
     );
 
-    let next = rig.board.run(dry, &words("label 2")).await.unwrap_err();
+    let next = rig.board.run(dry, &words(TYPED_WORDS)).await.unwrap_err();
     assert_eq!(next, ActionError::Refused("the first real send".into()));
 }
 
@@ -367,11 +448,11 @@ async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
     let rig = Rig::start("cancel", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let (jobs, _jobs_dir) = jobs("cancel", rig.sessions.clone()).await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
 
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let id = jobs
-        .submit(device(), &rig.address, self_test, &[])
+        .submit(device(), &rig.address, long, &[])
         .await
         .expect("the job is queued");
     until("the run to start and stall on the board", || {
@@ -392,7 +473,7 @@ async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
 
     // The board is free: the same action now runs to its end.
     let again = jobs
-        .submit(device(), &rig.address, self_test, &[])
+        .submit(device(), &rig.address, long, &[])
         .await
         .expect("a second job is queued");
     wait_status(&jobs, again, "the second run to finish", |status| {
@@ -406,13 +487,13 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
     let rig = Rig::start("lost", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
     let (jobs, _jobs_dir) = jobs("lost", rig.sessions.clone()).await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
 
     // Two stalls queued: a second start would take the second one, so the count shows it.
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let id = jobs
-        .submit(device(), &rig.address, self_test, &[])
+        .submit(device(), &rig.address, long, &[])
         .await
         .expect("the job is queued");
     until("the run to start and stall", || {
@@ -459,14 +540,14 @@ async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
     // back, that number may belong to another run on the board, so the cancel is not sent.
     let rig = Rig::start("cancel-guard", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
     // Two stalls: the first run, and the one started on the later session.
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let handle = rig.sessions.handle(&rig.address).expect("the node is on");
     connected(&handle).await;
     let issued = BoardActions::new(handle)
-        .start(self_test, &[])
+        .start(long, &[])
         .await
         .expect("the run starts");
     until("the run to start and stall", || {
@@ -491,7 +572,7 @@ async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
 
     // A run started on this session is cancelled: its own follow reports the cancel.
     let fresh = BoardActions::new(handle.clone())
-        .start(named(&catalog, SELF_TEST), &[])
+        .start(named(&catalog, FOLLOWED), &[])
         .await
         .expect("a run starts on this session");
     until("the second run to stall", || rig.node.stalled_runs() == 2).await;
@@ -515,12 +596,12 @@ async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
     // this run's cancel, so the follow reports the outcome as unknown, never as Cancelled.
     let rig = Rig::start("cancel-confirm", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let self_test = named(&catalog, SELF_TEST);
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let long = named(&catalog, FOLLOWED);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let handle = rig.sessions.handle(&rig.address).expect("the node is on");
     connected(&handle).await;
     let board = BoardActions::new(handle);
-    let issued = board.start(self_test, &[]).await.expect("the run starts");
+    let issued = board.start(long, &[]).await.expect("the run starts");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
     board
         .cancel(&issued)
@@ -553,11 +634,11 @@ async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
 async fn a_same_session_follow_never_returns_an_older_runs_answer() {
     let rig = Rig::start("attach-characterize", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let self_test = named(&catalog, SELF_TEST);
-    rig.node.script().push_action(SELF_TEST, Behaviour::Answer);
+    let long = named(&catalog, FOLLOWED);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Answer);
     let a = rig
         .board
-        .start(self_test, &[])
+        .start(long, &[])
         .await
         .expect("A starts on session 1");
     until("A to run on session 1", || rig.node.calls_received() >= 2).await;
@@ -571,10 +652,10 @@ async fn a_same_session_follow_never_returns_an_older_runs_answer() {
     connected(&handle).await;
     let board = BoardActions::new(handle);
     let catalog2 = board.catalog().await.expect("catalog on session 2");
-    let self_test2 = named(&catalog2, SELF_TEST);
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let long2 = named(&catalog2, FOLLOWED);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let b = board
-        .start(self_test2, &[])
+        .start(long2, &[])
         .await
         .expect("B starts on session 2");
     until("B to stall on session 2", || rig.node.stalled_runs() == 1).await;
@@ -616,7 +697,7 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     connected(&handle).await;
     let board = BoardActions::new(handle.clone());
     let catalog = board.catalog().await.expect("the board lists its actions");
-    let dry = named(&catalog, DRY_RUN);
+    let dry = named(&catalog, TYPED);
 
     // Hold the monitor on a call of its own, so the start queued behind it is not answered in time.
     let (release, held) = mpsc::channel::<()>();
@@ -639,14 +720,14 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
 
     // The start the node does not answer must not be sent again, and must not run later.
     node.script().push_action(
-        DRY_RUN,
+        TYPED,
         Behaviour::Refuse("the abandoned start must not run".into()),
     );
     let began = Instant::now();
-    let unanswered = board.run(dry, &words("label 2")).await.unwrap_err();
+    let unanswered = board.run(dry, &words(TYPED_WORDS)).await.unwrap_err();
     assert!(
         matches!(&unanswered, ActionError::Unknown { name, reason }
-            if name == DRY_RUN && reason.text().contains("did not answer in time")),
+            if name == TYPED && reason.text().contains("did not answer in time")),
         "{unanswered:?}"
     );
     assert!(began.elapsed() < DEADLINE, "the caller is told at once");
@@ -655,7 +736,7 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     let _ = blocker.await;
 
     // The abandoned start was never run: the queued refusal is still the next answer.
-    let next = board.run(dry, &words("label 2")).await.unwrap_err();
+    let next = board.run(dry, &words(TYPED_WORDS)).await.unwrap_err();
     assert_eq!(
         next,
         ActionError::Refused("the abandoned start must not run".into()),
@@ -667,13 +748,13 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
 async fn a_short_action_that_runs_past_its_wait_is_asked_to_stop() {
     let rig = Rig::start("late", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let dry = named(&catalog, DRY_RUN);
+    let dry = named(&catalog, TYPED);
 
     // A stalled run never finishes on its own: the direct call's wait runs out first.
-    rig.node.script().push_action(DRY_RUN, Behaviour::Stall);
-    let late = rig.board.run(dry, &words("label 2")).await.unwrap_err();
+    rig.node.script().push_action(TYPED, Behaviour::Stall);
+    let late = rig.board.run(dry, &words(TYPED_WORDS)).await.unwrap_err();
     assert!(
-        matches!(&late, ActionError::NotFinished { name, .. } if name == DRY_RUN),
+        matches!(&late, ActionError::NotFinished { name, .. } if name == TYPED),
         "{late:?}"
     );
     assert_eq!(
@@ -685,10 +766,18 @@ async fn a_short_action_that_runs_past_its_wait_is_asked_to_stop() {
     // The board is not wedged: the next short call runs to its end.
     let next = rig
         .board
-        .run(dry, &words("label 2"))
+        .run(dry, &words(TYPED_WORDS))
         .await
         .expect("the next short action runs");
-    assert_eq!(next.output, b"dry run label: 2 steps");
+    assert!(next.output.is_empty(), "a pin returns nothing");
+    assert!(
+        rig.node
+            .model()
+            .slots
+            .entries
+            .iter()
+            .any(|slot| slot.pinned)
+    );
 }
 
 #[tokio::test]
@@ -704,7 +793,7 @@ async fn a_start_with_no_connection_sends_nothing() {
     drop(node);
     lost(&handle).await;
     let error = board
-        .run(named(&catalog, DRY_RUN), &words("label 2"))
+        .run(named(&catalog, TYPED), &words(TYPED_WORDS))
         .await
         .unwrap_err();
     assert!(
@@ -714,16 +803,29 @@ async fn a_start_with_no_connection_sends_nothing() {
 }
 
 #[tokio::test]
-async fn a_plain_orion_node_lists_no_actions_and_says_why() {
+async fn a_plain_orion_node_offers_nothing() {
     let plain_dir = scratch("plain");
     let node = start(&plain_dir.join("node"), &Kind::Plain);
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
     let handle = sessions.handle(&address(&node)).expect("the node is on");
     connected(&handle).await;
-    let error = BoardActions::new(handle).catalog().await.unwrap_err();
+    let catalog = BoardActions::new(handle)
+        .catalog()
+        .await
+        .expect("a plain node is a normal node: its list is read, and is empty");
+    assert!(catalog.actions().is_empty(), "{catalog:?}");
+}
+
+/// Every device refuses its description (Lemnos is stopped on the node): the list is not read as
+/// "nothing offered", it says the board did not answer, in the board's words.
+#[tokio::test]
+async fn a_board_whose_devices_do_not_answer_is_not_read_as_offering_nothing() {
+    let rig = Rig::start("catalog-refused", &lemnos_kind()).await;
+    rig.node.refuse_describe(true);
+    let error = rig.board.catalog().await.unwrap_err();
     assert!(
-        matches!(&error, ActionError::Refused(reason) if !reason.text().is_empty()),
-        "a plain node is a normal node with no list: {error:?}"
+        matches!(&error, ActionError::NotAnswering(reason) if reason.contains("does not answer describe")),
+        "{error:?}"
     );
 }
 
@@ -731,12 +833,16 @@ async fn a_plain_orion_node_lists_no_actions_and_says_why() {
 async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     let rig = Rig::start("progress", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let dry = named(&catalog, DRY_RUN);
+    let followed = named(&catalog, FOLLOWED);
 
-    // A hundred steps is two seconds at the node's tick: far longer than one poll.
+    // A hundred ticks is two seconds at the node's tick: far longer than one poll. The test asks the
+    // node to take that long over this one run; no board action is slow by name.
+    rig.node
+        .script()
+        .push_action(FOLLOWED, Behaviour::Slow(100));
     let call = rig
         .board
-        .start(dry, &words("label 100"))
+        .start(followed, &[])
         .await
         .expect("the run starts");
     let mut seen: Vec<Progress> = Vec::new();
@@ -748,7 +854,7 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
         .await
         .expect("the run ends")
         .into_done();
-    assert_eq!(done.output, b"dry run label: 100 steps");
+    assert!(String::from_utf8_lossy(&done.output).contains("last_attempt"));
     assert!(!seen.is_empty(), "the board reported progress");
     assert!(
         seen.windows(2)
@@ -774,6 +880,7 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
                 period: Duration::from_secs(60),
                 renew: Duration::from_secs(3600),
                 in_force: true,
+                keep_renewing: true,
             })
             .with_clock(clock.clone()),
     );
@@ -785,11 +892,11 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
         .await
         .expect("the board lists its actions");
     let (jobs, _jobs_dir) = jobs("lapse", sessions.clone()).await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
 
-    node.script().push_action(SELF_TEST, Behaviour::Stall);
+    node.script().push_action(FOLLOWED, Behaviour::Stall);
     let id = jobs
-        .submit(device(), &address, self_test, &[])
+        .submit(device(), &address, long, &[])
         .await
         .expect("the job is queued");
     until("the run to start and stall", || node.stalled_runs() == 1).await;
@@ -797,7 +904,7 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
     // The session is silent past the lease with the hold on the board: the job learns of the lapse.
     clock.advance(Duration::from_secs(61));
     wait_status(&jobs, id, "the job to report the lapse", |status| {
-        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold"))
+        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold") && error.contains("for more than 60 seconds"))
     })
     .await;
 
@@ -821,13 +928,13 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
 async fn the_run_survives_the_callers_silence() {
     let rig = Rig::start("lease-survives", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
 
     // The run stalls on the board, and the caller asks for nothing more: its lease is not dropped.
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let call = rig
         .board
-        .start(self_test, &[])
+        .start(long, &[])
         .await
         .expect("the run is started");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
@@ -856,7 +963,7 @@ async fn the_run_survives_the_callers_silence() {
 async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_were_released() {
     let rig = Rig::start("lease-note", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let self_test = named(&catalog, SELF_TEST);
+    let long = named(&catalog, FOLLOWED);
 
     // The caller is idle past its lease: nothing of its is in flight, so the board releases its holds.
     rig.node.lease_advance(61);
@@ -866,10 +973,10 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
     .await;
 
     // Its next run's reply begins with the note, and Atlas reads the note as a lapsed hold.
-    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    rig.node.script().push_action(FOLLOWED, Behaviour::Stall);
     let call = rig
         .board
-        .start(self_test, &[])
+        .start(long, &[])
         .await
         .expect("the run is started");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
@@ -889,10 +996,103 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
     match error {
         ActionError::HoldLapsed { reason, .. } => {
             assert!(
-                reason.starts_with(LEASE_ENDED_PREFIX),
-                "the note leads the reply: {reason}"
+                reason.contains(&format!("The board said: {LEASE_ENDED_PREFIX}")),
+                "the plain sentence is followed by the board's note: {reason}"
             );
         }
         other => panic!("the lapse is reported as a lapse, not {other:?}"),
     }
+}
+
+/// A Lemnos method as Atlas names it (`system.<contract>.<method>`), with no declared arguments.
+fn lemnos_action(name: &str) -> Action {
+    Action {
+        name: name.to_owned(),
+        label: Reported::NotReported,
+        description: Reported::NotReported,
+        args: Reported::NotReported,
+        long_running: Reported::Known(false),
+    }
+}
+
+/// The Lemnos call goes to the device that carries the contract, as the bridge takes it: `lemnos.slots`
+/// with `system.slots/1:list`. On the old code the node name `system.slots.list` answered "not found".
+#[tokio::test]
+async fn a_lemnos_method_answers_through_the_device_that_carries_its_contract() {
+    let rig = Rig::start("lemnos-answers", &lemnos_kind()).await;
+    let done = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .unwrap_or_else(|error| panic!("list: {error}"));
+    assert!(String::from_utf8_lossy(&done.output).contains("\"slots\""));
+    // The second call finds the device in the session's cache: its description is not asked again, so
+    // the only new device call is the list itself.
+    let before = rig.node.runs_started("lemnos.slots.call");
+    rig.board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .unwrap_or_else(|error| panic!("list again: {error}"));
+    assert_eq!(
+        rig.node.runs_started("lemnos.slots.call"),
+        before + 1,
+        "no describe for a known device"
+    );
+    assert_eq!(rig.node.runs_started("system.slots.list"), 2);
+}
+
+/// No device on the node can say it carries `system.slots/1`: its describe is refused, so the call is not
+/// sent, and the board's own words say why. ("this board has no system.slots/1" is the answer when the
+/// devices answer their descriptions and none carries the contract; the sim does not model that case.)
+#[tokio::test]
+async fn a_board_without_the_contract_says_so_and_sends_nothing() {
+    let rig = Rig::start("lemnos-no-contract", &lemnos_kind()).await;
+    rig.node.refuse_describe(true);
+    // Every device refused its description: the search did not finish, so it is not yet, and nothing is sent.
+    let error = rig
+        .board
+        .run(&lemnos_action("system.slots.list"), &[])
+        .await
+        .expect_err("no contract, nothing sent");
+    assert!(
+        error
+            .to_string()
+            .starts_with("couldn't finish asking the board what it offers yet, for "),
+        "{error}"
+    );
+    assert!(error.is_not_yet(), "{error:?}");
+    assert_eq!(
+        rig.node.runs_started("system.slots.list"),
+        0,
+        "nothing was sent"
+    );
+    rig.node.refuse_describe(false);
+}
+
+/// A word the bridge cannot take (one with whitespace) is refused before anything is sent, and the
+/// reason names the argument.
+#[tokio::test]
+async fn a_word_with_whitespace_is_refused_before_it_is_sent() {
+    let rig = Rig::start("lemnos-whitespace", &lemnos_kind()).await;
+    let error = rig
+        .board
+        .run(
+            &lemnos_action("system.slots.set_default"),
+            &["slot 2".to_owned(), "false".to_owned()],
+        )
+        .await
+        .expect_err("refused");
+    assert!(matches!(error, ActionError::BadArguments(_)), "{error:?}");
+    assert!(error.to_string().contains("argument 1"), "{error}");
+    let empty = rig
+        .board
+        .run(&lemnos_action("system.slots.set_default"), &[String::new()])
+        .await
+        .expect_err("refused");
+    assert!(empty.to_string().contains("argument 1 is empty"), "{empty}");
+    assert_eq!(
+        rig.node.runs_started("system.slots.set_default"),
+        0,
+        "nothing was sent"
+    );
 }

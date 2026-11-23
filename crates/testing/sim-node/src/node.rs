@@ -7,13 +7,15 @@
 //!   router, the file receiver and the workload tracker. A detached run survives its caller's
 //!   session and can be attached to again; a cancel reaches the run only from the session and
 //!   call that started it (the stub's router does both, as Orion's own does);
-//! - the node logic is an `orion` client on that socket. It publishes the hello facts, registers
-//!   every action in [`names::ACTIONS`], declares the topics, and answers each run;
+//! - the node logic is an `orion` client on that socket. It publishes the hello facts, lists its
+//!   devices with their `lemnos.<device>.{set,call,power}` actions (what a board with Lemnos at
+//!   a6251ecf offers, and nothing else: it registers no action of its own on the node), declares the
+//!   topics, and answers each run;
 //! - a loopback link proxy sits in front of the network port, so a connection can be cut
 //!   mid-transfer or held still. That is the only piece here that is not Orion's.
 //!
-//! A slot install over Orion is `accept <size>`, a file push of the bundle into
-//! [`names::INCOMING`] (the stub's file receiver holds it on the [`Shelf`]), then
+//! A slot install over Orion is `accept <size>`, a file push of the bundle into the device's inbox,
+//! [`names::inbox`] (the stub's file receiver holds it on the [`Shelf`]), then
 //! `install_file <name> <pin> <keep_old>`, a long job. The job's progress is bundle bytes over
 //! verify and unpack. The file is removed when the job ends, however it ends.
 //!
@@ -29,9 +31,7 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use orion::actions::{
-    ActionCall, ActionDecl, Admits, Finished, Outcome, Policy, Registration, Request, Target,
-};
+use orion::actions::{ActionCall, Finished, Outcome, Registration, Request, Target};
 use orion::node::OperatorState;
 use orion::topics::{FieldId, OnSubscribe, Publisher, SampleTime, TopicDecl};
 use orion::types::KeyId;
@@ -69,7 +69,8 @@ pub const DEADLINE: Duration = Duration::from_secs(60);
 /// How many bundle bytes an install verifies and unpacks per tick.
 pub const INSTALL_STEP: u64 = 64 * 1024;
 
-/// The target every simulated action is registered and run against.
+/// The node's own target. The node registers no action on it (a board publishes none), so a run
+/// against it is answered "not found"; the device actions run against their device's resource.
 #[must_use]
 pub fn target() -> Target {
     Target::Node(
@@ -86,10 +87,16 @@ pub fn target() -> Target {
 ///
 /// If the connection breaks. A refused or failed run is an `Ok` with its outcome.
 pub fn call(orion: &Orion, name: &str, args: &[u8]) -> Result<Finished, orion::Error> {
+    // A Lemnos method is named here by its simulated action; it goes to the node as the bridge takes it:
+    // the device's `call` on its resource, with `TAG:METHOD` and the words (see `crate::bridge`).
+    let (name, target, args) = match crate::bridge::request(name, args) {
+        Some((name, target, args)) => (name, target, args),
+        None => (name.to_owned(), target(), args.to_vec()),
+    };
     let mut run = orion.run(&ActionCall {
-        name,
-        target: target(),
-        args,
+        name: &name,
+        target,
+        args: &args,
         deadline_ms: 0,
         detached: false,
     })?;
@@ -194,7 +201,7 @@ impl Hello {
 /// What kind of Orion node this is. A node with Lemnos publishes its hardware facts and offers, and
 /// serves the slot and reboot surface. A plain Orion node has none of that: it is normal (a PC, a
 /// board of someone else's, a controller without our package) and still serves Orion's own things:
-/// files, its own actions and its logs. Its identity is its key fingerprint from the hello document.
+/// files and its logs. It offers no action. Its identity is its key fingerprint from the hello document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Kind {
     /// A node with Lemnos, publishing these facts.
@@ -206,15 +213,6 @@ pub enum Kind {
 impl Default for Kind {
     fn default() -> Self {
         Self::WithLemnos(Hello::default())
-    }
-}
-
-/// Whether a node of this kind registers `name`. A plain node has no Lemnos actions (so its slot and
-/// reboot surface is absent: calls to it are not found), and only its own file actions.
-fn offered(kind: &Kind, name: &str) -> bool {
-    match kind {
-        Kind::WithLemnos(_) => true,
-        Kind::Plain => name.starts_with("fs."),
     }
 }
 
@@ -497,6 +495,13 @@ impl SimNode {
         self.shared.devices.hold(hold);
     }
 
+    /// Takes device `device` (its id, for example `reboot`) off the node for good: its resource is
+    /// withdrawn on the next tick and it is not listed again, as on a board whose file has no such
+    /// device. Its description is then refused.
+    pub fn remove_device(&self, device: &str) {
+        self.shared.devices.remove(device);
+    }
+
     /// Changes a simulated device's description: its state and reason, or its label. Its
     /// description generation moves once, its generation topic says so, and a state moves its
     /// resource. The node applies it on its next tick.
@@ -721,6 +726,8 @@ struct Install {
     call: u64,
     /// The caller that started it: its lease is kept while the install runs.
     caller: String,
+    /// The device whose inbox holds the bundle.
+    device: String,
     name: String,
     size: u64,
     done: u64,
@@ -732,7 +739,6 @@ struct Install {
 struct Node {
     // Kept alive for the session: dropping it closes the connection.
     _orion: Orion,
-    registration: Registration,
     logs: Publisher,
     shared: Shared,
     board: Arc<Board>,
@@ -761,11 +767,12 @@ impl std::fmt::Debug for Node {
     }
 }
 
-/// Who may run a simulated action. With security on, an enrolled operator may run it only when the
-/// board's trust list grants it (`Operator::may`); root on the board may run it. With security off
-/// the check admits every caller, so nothing changes for the default node.
-fn action_policy() -> Policy {
-    Policy::new(Admits::ROOT.and(Admits::OPERATOR))
+/// Where the runs of the node's device actions arrive, and where their progress and end are said: the
+/// requests of a listed device (one registration carries the runs of every action the program
+/// registered). `None` while no device is listed (a plain node, or devices withdrawn by a test): there
+/// is then no action to run, and a run in flight waits for the devices to be listed again.
+fn requests(devices: &mut Option<readings::Devices>) -> Option<&mut Registration> {
+    devices.as_mut().and_then(readings::Devices::requests)
 }
 
 impl Node {
@@ -774,36 +781,6 @@ impl Node {
         clear_incoming(&board);
         let orion = Orion::connect(&Address::Local(socket.to_path_buf()), "sim-node")
             .map_err(|error| error.to_string())?;
-        let mut registration = None;
-        let all = names::ACTIONS.iter().chain(crate::actions::NAMES.iter());
-        for name in all.filter(|name| offered(kind, name)) {
-            let policy = action_policy();
-            let decl = ActionDecl {
-                name,
-                target: target(),
-                description: "simulated board action",
-            };
-            let handle = orion
-                .register_action(&decl, policy)
-                .map_err(|e| e.to_string())?;
-            registration.get_or_insert(handle);
-        }
-        // A node with Lemnos names each device's `.call` the way the bridge does: `lemnos.<device>.call`.
-        if matches!(kind, Kind::WithLemnos(_)) {
-            for device in readings::DEVICES {
-                let name = format!("lemnos.{}.call", device.id);
-                let policy = action_policy();
-                let decl = ActionDecl {
-                    name: &name,
-                    target: target(),
-                    description: "the device's call, as the bridge names it",
-                };
-                let handle = orion
-                    .register_action(&decl, policy)
-                    .map_err(|e| e.to_string())?;
-                registration.get_or_insert(handle);
-            }
-        }
         let logs = orion
             .declare(&TopicDecl {
                 name: names::LOGS,
@@ -828,6 +805,8 @@ impl Node {
             }
             Kind::Plain => None,
         };
+        // A node with Lemnos declares its devices' actions with the devices (`readings::Devices`), as the
+        // bridge does; see `crate::bridge::VERBS`.
         // Only a node with Lemnos has readings, a hardware description and hello facts.
         let mut readings = None;
         let mut hello_topics = Vec::new();
@@ -886,10 +865,8 @@ impl Node {
                 });
             }
         }
-        let registration = registration.ok_or("no actions to register")?;
         Ok(Self {
             _orion: orion,
-            registration,
             readings,
             logs,
             shared,
@@ -908,7 +885,13 @@ impl Node {
     fn run(&mut self) {
         let mut last_tick = Instant::now();
         while !self.shared.stop.load(Ordering::SeqCst) && !self.reopen {
-            match self.registration.wait(Duration::from_millis(5)) {
+            let wait = Duration::from_millis(5);
+            let request = match requests(&mut self.devices) {
+                Some(registration) => registration.wait(wait).map_err(|_| ()),
+                // No device is listed, so nothing can be asked: the session is still served.
+                None => self._orion.pump(wait).map(|_| None).map_err(|_| ()),
+            };
+            match request {
                 Ok(Some(Request::Run {
                     call,
                     name,
@@ -936,7 +919,7 @@ impl Node {
                 Ok(Some(Request::CallerGone { .. })) => {}
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
-                Err(_) => break,
+                Err(()) => break,
             }
             if last_tick.elapsed() >= TICK {
                 last_tick = Instant::now();
@@ -969,9 +952,9 @@ impl Node {
         } else {
             detail.to_owned()
         };
-        let _ = self
-            .registration
-            .finish_with_code(call, outcome, code, output, &detail);
+        if let Some(registration) = requests(&mut self.devices) {
+            let _ = registration.finish_with_code(call, outcome, code, output, &detail);
+        }
     }
 
     fn finish_status(&mut self, call: u64, status: &Status) {
@@ -1002,12 +985,30 @@ impl Node {
         }
     }
 
-    fn start(&mut self, call: u64, name: &str, args: Vec<u8>, caller: &str) {
-        *lock(&self.shared.runs).entry(name.to_string()).or_default() += 1;
+    fn start(&mut self, call: u64, orion_name: &str, args: Vec<u8>, caller: &str) {
+        *lock(&self.shared.runs)
+            .entry(orion_name.to_string())
+            .or_default() += 1;
         if self.shared.leases.take_note(caller) {
             self.noted.insert(call);
         }
-        if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
+        // A device action is the bridge's: its words are checked and routed here. Anything else is a board
+        // action the node registered under its own name.
+        let routed = crate::bridge::route(orion_name, &args);
+        let device_run = routed.is_some();
+        // The device the run names (`lemnos.<device>.<verb>`): the inbox an install reads from.
+        let device = crate::bridge::split(orion_name).map_or("", |(id, _)| id);
+        let (name, args): (String, Vec<u8>) = match &routed {
+            Some(Ok(crate::bridge::Routed::Action { name, args })) => {
+                *lock(&self.shared.runs)
+                    .entry((*name).to_string())
+                    .or_default() += 1;
+                ((*name).to_string(), args.clone())
+            }
+            _ => (orion_name.to_owned(), args),
+        };
+        if (names::is_lemnos(&name) || device_run) && self.shared.lemnos_down.load(Ordering::SeqCst)
+        {
             // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
             self.finish_status(
                 call,
@@ -1015,44 +1016,48 @@ impl Node {
             );
             return;
         }
-        if is_device_call(name) && args.is_empty() {
-            // The bridge's `.call` with no method: refused before anything is read or written.
-            self.finish(call, Outcome::Rejected, &[], "call needs a method");
-            return;
-        }
-        if is_device_call(name) && args == b"describe" {
-            // The session ends with this call unanswered: the node is published again on a new
-            // session, as a node that reconnects is (the old connection is closed by the drop).
-            let dropped = {
-                let mut armed = lock(&self.shared.drop_session_at_describe);
-                if armed.as_deref() == Some(device_id(name)) {
-                    *armed = None;
-                    true
-                } else {
-                    false
-                }
-            };
-            if dropped {
-                self.reopen = true;
+        match routed {
+            Some(Err(reason)) => {
+                self.finish(call, Outcome::Rejected, &[], &reason);
                 return;
             }
-            // `.call describe`: the device's description as `describe 1` text (Lemnos I6h, e5c0ff0e).
-            // It changes nothing, so the session's lease renewal is the same call.
-            let answer = match self.devices.as_ref() {
-                Some(devices) => devices.describe(device_id(name)),
-                None => Err("no such device".to_owned()),
-            };
-            match answer {
-                Ok(text) => self.finish(call, Outcome::Succeeded, text.as_bytes(), ""),
-                Err(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
+            Some(Ok(crate::bridge::Routed::Reply(bytes))) => {
+                self.finish(call, Outcome::Succeeded, &bytes, "");
+                return;
             }
-            return;
+            Some(Ok(crate::bridge::Routed::Describe { device })) => {
+                // The session ends with this call unanswered: the node is published again on a new
+                // session, as a node that reconnects is (the old connection is closed by the drop).
+                let dropped = {
+                    let mut armed = lock(&self.shared.drop_session_at_describe);
+                    if armed.as_deref() == Some(device) {
+                        *armed = None;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if dropped {
+                    self.reopen = true;
+                    return;
+                }
+                // The device's description as `describe 1` text (Lemnos I6h, e5c0ff0e). It changes
+                // nothing, so the session's lease renewal is the same call.
+                let answer = match self.devices.as_ref() {
+                    Some(devices) => {
+                        devices.describe(device, Some(self.shared.leases.period_secs()))
+                    }
+                    None => Err("no such device".to_owned()),
+                };
+                match answer {
+                    Ok(text) => self.finish(call, Outcome::Succeeded, text.as_bytes(), ""),
+                    Err(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
+                }
+                return;
+            }
+            Some(Ok(crate::bridge::Routed::Action { .. })) | None => {}
         }
-        if is_device_call(name) && args.starts_with(b"describe ") {
-            self.finish(call, Outcome::Rejected, &[], "describe takes no arguments");
-            return;
-        }
-        let behaviour = lock(&self.shared.script).take_action(name);
+        let behaviour = lock(&self.shared.script).take_action(&name);
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
@@ -1075,10 +1080,15 @@ impl Node {
             }
             Behaviour::Answer if name == names::SLOTS_ACCEPT => self.accept(call, &args),
             Behaviour::Answer if name == names::SLOTS_INSTALL_FILE => {
-                self.install_start(call, caller, &args);
+                self.install_start(call, caller, device, &args);
             }
-            Behaviour::Answer => {
-                let total = crate::actions::ticks(name, &args).unwrap_or_else(|| ticks_for(name));
+            behaviour @ (Behaviour::Answer | Behaviour::Slow(_)) => {
+                // One tick, or as many as the test asked this run to take (it says how far it is on
+                // each one).
+                let total = match behaviour {
+                    Behaviour::Slow(ticks) => ticks.max(1),
+                    _ => 1,
+                };
                 self.active.push(Run {
                     call,
                     name: name.to_string(),
@@ -1125,9 +1135,10 @@ impl Node {
         }
     }
 
-    /// `system.slots.install-file <name> <pin> <keep_old>`: starts the long job that installs
-    /// the bundle pushed as `INCOMING/<name>`.
-    fn install_start(&mut self, call: u64, caller: &str, args: &[u8]) {
+    /// `system.slots.install_file <name> <pin> <keep_old>` on device `device`: starts the long job that
+    /// installs the bundle pushed into that device's inbox as `<name>`. A name not there is refused
+    /// NOT_FOUND, the way lemnosd refuses a start with no pushed file.
+    fn install_start(&mut self, call: u64, caller: &str, device: &str, args: &[u8]) {
         if self.install.is_some() {
             self.finish_status(call, &Status::new(code::BUSY, "an install is running"));
             return;
@@ -1153,13 +1164,13 @@ impl Node {
         let size = {
             let committed = lock_shelf(&self.board);
             committed
-                .get(&pushed(&name))
+                .get(&pushed(device, &name))
                 .map(|bytes| bytes.len() as u64)
         };
         let Some(size) = size else {
             self.finish_status(
                 call,
-                &Status::new(code::NOT_FOUND, format!("there is no pushed file {name}")),
+                &Status::new(code::NOT_FOUND, "the job could not be started"),
             );
             return;
         };
@@ -1175,6 +1186,7 @@ impl Node {
                 self.install = Some(Install {
                     caller: caller.to_owned(),
                     call,
+                    device: device.to_owned(),
                     name,
                     size,
                     done: 0,
@@ -1198,7 +1210,7 @@ impl Node {
         let Some(install) = self.install.take() else {
             return;
         };
-        let bytes = lock_shelf(&self.board).remove(&pushed(&install.name));
+        let bytes = lock_shelf(&self.board).remove(&pushed(&install.device, &install.name));
         let result = {
             let mut model = lock(&self.shared.model);
             let outcome = match bytes {
@@ -1239,7 +1251,7 @@ impl Node {
             .is_some_and(|install| install.call == call)
         {
             if let Some(install) = self.install.take() {
-                lock_shelf(&self.board).remove(&pushed(&install.name));
+                lock_shelf(&self.board).remove(&pushed(&install.device, &install.name));
             }
             lock(&self.shared.model).slots.cancelled();
             self.finish(
@@ -1364,9 +1376,9 @@ impl Node {
                 .checked_div(install.size)
                 .unwrap_or(100) as u8;
             let message = format!("{}/{} bytes", install.done, install.size);
-            let _ = self
-                .registration
-                .progress(install.call, percent, &message, &[]);
+            if let Some(registration) = requests(&mut self.devices) {
+                let _ = registration.progress(install.call, percent, &message, &[]);
+            }
             finished_install = install.done == install.size;
         }
         if finished_install {
@@ -1384,7 +1396,9 @@ impl Node {
             } else {
                 let percent = (u64::from(run.total - run.left) * 100 / u64::from(run.total)) as u8;
                 let message = format!("{} {}/{}", run.name, run.total - run.left, run.total);
-                let _ = self.registration.progress(run.call, percent, &message, &[]);
+                if let Some(registration) = requests(&mut self.devices) {
+                    let _ = registration.progress(run.call, percent, &message, &[]);
+                }
             }
         }
         for index in done.into_iter().rev() {
@@ -1401,38 +1415,23 @@ impl Node {
     }
 }
 
-/// The path a pushed bundle is kept at on the shelf.
-/// A device's `.call` action: `lemnos.<device>.call`, the bridge's name for it.
+/// Whether `name` is a device action of this node (`lemnos.<device>.<verb>`).
 fn is_device_call(name: &str) -> bool {
-    name.starts_with("lemnos.") && name.ends_with(".call")
+    crate::bridge::split(name).is_some()
 }
 
-/// The device a `.call` action names: `lemnos.<device>.call` is `<device>`.
-fn device_id(name: &str) -> &str {
-    name.strip_prefix("lemnos.")
-        .and_then(|rest| rest.strip_suffix(".call"))
-        .unwrap_or_default()
-}
-
-fn pushed(name: &str) -> String {
-    format!("{}{name}", names::INCOMING)
+/// The path a bundle pushed into device `device`'s inbox is kept at on the shelf.
+fn pushed(device: &str, name: &str) -> String {
+    format!("{}{name}", names::inbox(device))
 }
 
 fn lock_shelf(board: &Board) -> MutexGuard<'_, std::collections::BTreeMap<String, Vec<u8>>> {
     lock(&board.shelf().committed)
 }
 
-/// Removes every pushed file the driver keeps.
+/// Removes every file the bridge keeps in a device inbox (the driver clears them when it starts).
 fn clear_incoming(board: &Board) {
-    lock_shelf(board).retain(|path, _| !path.starts_with(names::INCOMING));
-}
-
-/// How many ticks a timed action takes. Only the long ones show progress.
-fn ticks_for(name: &str) -> u32 {
-    match name {
-        names::SELF_TEST => 4,
-        _ => 1,
-    }
+    lock_shelf(board).retain(|path, _| !path.starts_with(names::SINK_PREFIX));
 }
 
 /// The ending a Lemnos status gives a run, with the status's code (Lemnos M39, calls.rs
@@ -1498,21 +1497,6 @@ fn slot_id(words: &[String]) -> Result<String, Status> {
     }
 }
 
-fn hex_bytes(text: &str) -> Result<Vec<u8>, Status> {
-    let bad = || Status::new(code::INVALID_ARGUMENT, format!("{text:?} is not hex bytes"));
-    if !text.len().is_multiple_of(2) || !text.is_ascii() {
-        return Err(bad());
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).map_err(|_| bad()))
-        .collect()
-}
-
-fn hex_text(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
 fn new_slot(verified: bundle::Verified) -> NewSlot {
     NewSlot {
         id: verified.id,
@@ -1536,16 +1520,15 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
     let nothing = Vec::new();
     let found = words(args);
     match name {
-        // LOCK: Lemnos L1 (the list refusal as part of the L1 rev). Pre-L1 board: no refusal by name.
-        // LOCK: Lemnos M8a 5dcf1a78. A reply over 60 KiB is refused by name, with no partial
-        // output. Today: the Atlas lock (4a2d3b7d) predates M8a, so a real board cannot answer
-        // `list` until the lock moves.
+        // A reply over the bridge's bound is refused, never sent in part: BUFFER_TOO_SMALL with the words
+        // the pinned wire gives (board: Lemnos bbb3c420 engine/wire/src/text.rs:298-308, `too_small`, and
+        // service/orion/src/calls.rs:1073-1080, `refused_reply`).
         names::SLOTS_LIST => {
             let listing = model.slots.list_json();
             if listing.len() > LIST_LIMIT {
                 Err(Status::new(
-                    code::INVALID_ARGUMENT,
-                    "system.slots.list: the reply is over 60 KiB; refused by name, nothing partial is sent",
+                    code::BUFFER_TOO_SMALL,
+                    "the reply is larger than 61440 bytes, the most a frame carries",
                 ))
             } else {
                 Ok(listing.into_bytes())
@@ -1582,67 +1565,6 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
             model.slots.reboot();
             Ok(model.status_text().into_bytes())
         }
-        names::STATUS => Ok(model.status_text().into_bytes()),
-        names::LOCATE => Ok(b"blinking".to_vec()),
-        names::SELF_TEST => Ok(b"passed".to_vec()),
-        names::SET_CLOCK => {
-            if model.clock_settable {
-                model.clock_offset_s = None;
-                Ok(b"clock set".to_vec())
-            } else {
-                Err(Status::new(code::IO, "the clock did not take"))
-            }
-        }
-        names::SUPPORT_BUNDLE => {
-            let mut text = model.status_text();
-            text.push('\n');
-            text.push_str(&model.slots.list_json());
-            text.push('\n');
-            for line in model.logs().iter().rev().take(20).rev() {
-                text.push_str(line);
-                text.push('\n');
-            }
-            Ok(text.into_bytes())
-        }
-        names::DATA_BACKUP => Ok(hex_text(&model.data_backup()).into_bytes()),
-        names::DATA_RESTORE => {
-            let blob = hex_bytes(&word(&found, 0, "a backup")?)?;
-            model.data_restore(&blob).map(|()| nothing)
-        }
-        names::FS_LIST => {
-            let prefix = found.first().cloned().unwrap_or_default();
-            let mut text = String::new();
-            for path in model.data.keys().filter(|path| path.starts_with(&prefix)) {
-                text.push_str(path);
-                text.push('\n');
-            }
-            Ok(text.into_bytes())
-        }
-        names::FS_READ => {
-            let path = word(&found, 0, "a path")?;
-            model
-                .data
-                .get(&path)
-                .map(|bytes| hex_text(bytes).into_bytes())
-                .ok_or_else(|| Status::new(code::NOT_FOUND, format!("there is no file {path}")))
-        }
-        names::FS_WRITE => {
-            let path = word(&found, 0, "a path")?;
-            let body = hex_bytes(found.get(1).map_or("", String::as_str))?;
-            model.data.insert(path, body);
-            Ok(nothing)
-        }
-        names::FS_REMOVE => {
-            let path = word(&found, 0, "a path")?;
-            match model.data.remove(&path) {
-                Some(_) => Ok(nothing),
-                None => Err(Status::new(
-                    code::NOT_FOUND,
-                    format!("there is no file {path}"),
-                )),
-            }
-        }
-        other if crate::actions::handles(other) => crate::actions::apply(other, args),
         other => Err(Status::new(
             code::NOT_FOUND,
             format!("no simulated action {other}"),

@@ -11,8 +11,8 @@ use std::cell::Cell;
 use std::io::Read;
 
 use atlas_bundle::{
-    BLOCK, BootFile, BundleError, RECORD_LEN, SlotMeta, SlotSource, inspect_bundle, root_hash,
-    verify_slot, write_bundle,
+    BLOCK, BootFile, BundleError, RECORD_LEN, SlotManifest, SlotMeta, SlotSource, inspect_bundle,
+    root_hash, verify_slot, write_bundle,
 };
 use atlas_image::{Verity, VerityError, tree_bytes};
 use atlas_release::{PublicKey, public_key_for};
@@ -260,6 +260,58 @@ fn slot_json_is_schema_3_with_the_fields_lemnos_reads() {
     assert_eq!(json["verity"]["hash_offset"], 2 * BLOCK as u64);
     assert!(json["boot"]["files"]["cmdline.txt"].is_string());
     assert!(json.get("layers").is_none(), "no layered slots");
+    assert!(
+        json.get("build").is_none(),
+        "no build key when no mode is given"
+    );
+    assert!(
+        json.get("medium").is_none(),
+        "no medium key when none is given"
+    );
+}
+
+/// `build.mode` and `medium` (Lemnos 7b4fdb25) are written as given, read back by Lemnos's reader, and a value
+/// Lemnos's writer does not take is refused before anything is signed.
+#[test]
+fn build_mode_and_medium_are_written_read_back_and_checked() {
+    let secret = throwaway("build-medium");
+    let given = SlotMeta {
+        build_mode: Some("dev-reuse".into()),
+        medium: Some("emmc".into()),
+        ..meta()
+    };
+    let mut out = Vec::new();
+    write_bundle(&Synthetic::new(2), "slot-a.1", &given, &secret, &mut out).expect("writes");
+    let bytes = &members(&out)[0].1;
+    let json: serde_json::Value = serde_json::from_slice(bytes).expect("json");
+    assert_eq!(json["build"]["mode"], "dev-reuse");
+    assert_eq!(json["medium"], "emmc");
+    let read = SlotManifest::parse(bytes).expect("Lemnos's reader takes it");
+    assert_eq!(
+        read.build.map(|build| build.mode).as_deref(),
+        Some("dev-reuse")
+    );
+    assert_eq!(read.medium.as_deref(), Some("emmc"));
+
+    for (build_mode, medium) in [(Some("fast"), None), (None, Some("floppy"))] {
+        let bad = SlotMeta {
+            build_mode: build_mode.map(Into::into),
+            medium: medium.map(Into::into),
+            ..meta()
+        };
+        let mut out = Vec::new();
+        assert!(
+            matches!(
+                write_bundle(&Synthetic::new(2), "slot-a.1", &bad, &secret, &mut out),
+                Err(BundleError::Malformed(_))
+            ),
+            "{build_mode:?} {medium:?}"
+        );
+        assert!(
+            out.is_empty(),
+            "nothing is written for {build_mode:?} {medium:?}"
+        );
+    }
 }
 
 #[test]

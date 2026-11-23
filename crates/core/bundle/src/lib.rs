@@ -63,7 +63,7 @@ pub use error::BundleError;
 pub use from_image::{ImageSource, bundle_from_image, check_stream_digest};
 pub use inspect::{Inspected, check_board, inspect_bundle};
 pub use manifest::{
-    BootEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
+    BootEntry, BuildEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
     validate_boot_path, validate_id, validate_name,
 };
 pub use seed::{SEED_LEN, Seed, sign_slot_record, slot_message};
