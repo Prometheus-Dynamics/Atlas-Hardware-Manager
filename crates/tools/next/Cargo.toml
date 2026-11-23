@@ -23,7 +23,9 @@ atlas-slots = { path = "../../core/slots" }
 atlas-trial = { path = "../../core/trial" }
 atlas-types = { path = "../../core/types" }
 fatfs = "0.3"
-orion = { workspace = true }
+orion = { workspace = true, features = ["topics", "provider"] }
+orion-msg-topics = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "2f52e457cb0e42a6bd32d683d432d30ffec555a5" }
+orion-wire = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "2f52e457cb0e42a6bd32d683d432d30ffec555a5" }
 serde_json = "1"
 sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "signal"] }

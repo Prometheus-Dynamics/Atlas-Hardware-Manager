@@ -105,6 +105,7 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
         Verb::Hold(seconds) => {
             crate::hold::run(&mut r, env, &state, &address, *seconds, &key).await
         }
+        Verb::Offers(out) => crate::offers::run(&mut r, env, &state, &address, out, &key).await,
         verb => board(&mut r, env, &state, &address, verb, &key).await,
     };
     match outcome {
@@ -347,9 +348,12 @@ async fn board<W: Write>(
             .await
             .map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
-        Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol | Verb::Hold(_) => {
-            Err(Refusal::new(2, "not a board command"))
-        }
+        Verb::Fingerprint
+        | Verb::Pin
+        | Verb::Repin
+        | Verb::Enrol
+        | Verb::Hold(_)
+        | Verb::Offers(_) => Err(Refusal::new(2, "not a board command")),
     }
 }
 

@@ -619,6 +619,8 @@ dependencies = [
  "fatfs",
  "lemnos-slot-store",
  "orion",
+ "orion-msg-topics",
+ "orion-wire",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",

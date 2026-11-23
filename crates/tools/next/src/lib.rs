@@ -21,6 +21,7 @@ mod cycle;
 mod hold;
 pub mod identity;
 mod link;
+mod offers;
 mod pins;
 mod report;
 pub mod usb_boot;
@@ -79,6 +80,9 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               released image): bench.seed, bench.pub, bench.keys in a new directory
 
   hold <address> <seconds>    hold: bench check only. Takes the session's hold on a pinned board through the same hold the app's terminal and jobs use, sends nothing else, and prints each lease renewal and any lapse. Exit 0 when the lease was kept, 1 on a lapse or no renewal.
+
+  offers <address> --out <file.json>
+                              offers: bench only. Records what the board's node offers (facts, resources and each device's describe, topics) into one JSON file, for the sim's fixture. Reads only; exit 0 when the file was written, 1 otherwise.
 
 options:
   --state <dir>      where pins and the trial's saved watches live
