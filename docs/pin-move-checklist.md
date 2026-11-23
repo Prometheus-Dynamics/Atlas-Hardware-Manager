@@ -35,6 +35,12 @@ The move's PR names each step's result.
 
 9. `scripts/check-devices.sh --self-test` and `scripts/check-devices.sh`.
 10. The scoped check (`scripts/check-scoped.sh`), then the full gate (`scripts/gate.sh`) with the UI gate.
+    - The gate runs in a target directory of its own (`CARGO_TARGET_DIR`): `gate.sh` refuses one another worktree built
+      in, because cargo would take that worktree's newer artefacts as fresh for this tree's sources.
+    - Nothing else of yours runs beside the gate: no second gate, build, `check-devices.sh` or Gaia plan. On
+      2026-11-23 a gate failed on two UI tests that timed out while `check-devices.sh` ran beside it, and passed
+      alone. A red gate is explained by its cause before it is run again; the host's load average at its start and
+      end goes in the report.
 11. **Images.** Build each product the move touches with the pinned Gaia, signed. Record the version, slot name
     and the sizes of the image (`.flash`) and of the slot inside it (`.slot`), before and after. The sizes of every
     output are in the build's printed listing and in `<out>/<product>.outputs.txt`; `--out` copies the one OS image only.
