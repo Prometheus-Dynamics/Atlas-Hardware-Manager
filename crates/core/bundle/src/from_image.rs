@@ -13,9 +13,13 @@
 //! - `slot.sig`: the kept record, when there is one;
 //! - `rootfs.erofs`: the slot file, its length and SHA-256 checked as it streams against the
 //!   manifest's `image.size` and `image.sha256`;
-//! - `boot/<path>`: the boot files the manifest names (`boot.files`), each checked as it streams
+//! - `boot/`: the directory entry, as Lemnos writes it;
+//! - `boot/<path>`: the boot files the manifest names (`boot.files`), in its order, each checked as it streams
 //!   against its digest. The image's boot partition also holds `slot.json` and any file beside
 //!   them; the manifest does not name those, and they are not members.
+//!
+//! The framing is Lemnos's own (see `TarOut`), so the bundle made here is byte for byte the one
+//! `lemnos-ctl bundle` made for the image, when the image holds what the build wrote.
 //!
 //! The board checks the signature against the manifest's bytes; nothing here judges it.
 
@@ -26,7 +30,7 @@ use atlas_image::Options;
 
 use crate::BundleError;
 use crate::manifest::SlotManifest;
-use crate::write::{BOOT_DIR, ROOTFS, SLOT_JSON, SLOT_SIG, append_bytes, append_stream};
+use crate::write::{BOOT_DIR, ROOTFS, SLOT_JSON, SLOT_SIG, TarOut};
 
 /// What a bundle made from an image carries.
 #[derive(Clone, Debug)]
@@ -55,37 +59,41 @@ pub fn bundle_from_image<W: Write>(
     let manifest = SlotManifest::parse(json)?;
     let signature = slot.signature();
 
-    let mut tar = tar::Builder::new(out);
-    append_bytes(&mut tar, SLOT_JSON, json)?;
+    let mut tar = TarOut::new(out);
+    tar.bytes(SLOT_JSON, json)?;
     if let Some(signature) = signature {
-        append_bytes(&mut tar, SLOT_SIG, signature)?;
+        tar.bytes(SLOT_SIG, signature)?;
     }
     let mut rootfs = slot.rootfs()?;
-    append_stream(
-        &mut tar,
-        ROOTFS,
-        slot.image_size(),
-        slot.image_sha256(),
-        &mut *rootfs,
+    tar.stream(ROOTFS, slot.image_size(), slot.image_sha256(), &mut *rootfs)
+        .map_err(|error| match error {
+            // The image reader checks the slot file's length at open, not its digest: a file that is not
+            // its manifest's is the image's fault, said as such.
+            BundleError::Changed {
+                expected, actual, ..
+            } => BundleError::ImageDigest { expected, actual },
+            other => other,
+        })?;
+    tar.dir(BOOT_DIR)?;
+    // In the order slot.json lists them, as Lemnos writes them (role order), not sorted by path: Lemnos's
+    // reader keeps that order, where the manifest above keeps a map.
+    let order = lemnos_slot_store::manifest::Manifest::parse(
+        std::str::from_utf8(json)
+            .map_err(|error| BundleError::Malformed(format!("slot.json: {error}")))?,
     )
-    .map_err(|error| match error {
-        // The image reader checks the slot file's length at open, not its digest: a file that is not
-        // its manifest's is the image's fault, said as such.
-        BundleError::Changed {
-            expected, actual, ..
-        } => BundleError::ImageDigest { expected, actual },
-        other => other,
-    })?;
-    for entry in slot.manifest_boot_files() {
+    .map_err(BundleError::Malformed)?
+    .boot_files;
+    let mut kept = slot.manifest_boot_files();
+    for (path, _) in &order {
+        let Some(at) = kept.iter().position(|entry| &entry.path == path) else {
+            continue;
+        };
+        let entry = kept.swap_remove(at);
         let mut reader = slot.boot_file(&entry.path)?;
         let name = format!("{BOOT_DIR}{}", entry.path);
-        append_stream(&mut tar, &name, entry.size, &entry.sha256, &mut *reader)?;
+        tar.stream(&name, entry.size, &entry.sha256, &mut *reader)?;
     }
-    let mut out = tar
-        .into_inner()
-        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
-    out.flush()
-        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
+    tar.finish()?;
     Ok(ImageBundle {
         manifest,
         signed: signature.is_some(),

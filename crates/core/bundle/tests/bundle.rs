@@ -202,6 +202,7 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
+            "boot/",
             "boot/cmdline.txt",
             "boot/kernel8.img",
             "boot/overlays/one.dtbo",
@@ -582,10 +583,15 @@ fn a_bundle_with_an_extra_member_is_refused() {
     {
         let mut builder = tar::Builder::new(&mut out);
         for (name, bytes) in members(&bundle) {
+            // The `boot/` directory entry stays a directory: only the extra file is wrong here.
             let mut header = tar::Header::new_gnu();
             header.set_size(bytes.len() as u64);
             header.set_mode(0o644);
-            header.set_entry_type(tar::EntryType::Regular);
+            header.set_entry_type(if name.ends_with('/') {
+                tar::EntryType::Directory
+            } else {
+                tar::EntryType::Regular
+            });
             builder
                 .append_data(&mut header, &name, &bytes[..])
                 .expect("append");

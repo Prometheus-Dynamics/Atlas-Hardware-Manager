@@ -19,13 +19,14 @@
 //! the tree, and a tree that does not match its root fails the board's verity
 //! check at boot, not the install. See the crate docs.
 //!
-//! Tar order: `slot.json`, `slot.sig`, `rootfs.erofs`, then `boot/...` in
-//! path order. Nothing else. Memory is one 64 KiB buffer and the verity
+//! Tar order: `slot.json`, `slot.sig`, `rootfs.erofs`, the `boot/` directory, then
+//! `boot/...` in path order. Nothing else. The framing is Lemnos's ([`TarOut`]). Memory is one 64 KiB buffer and the verity
 //! hasher's levels, whatever the image's size.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
+use lemnos_slot_store::tar::write as lemnos_tar;
 use sha2::{Digest, Sha256};
 
 use atlas_image::{Verity, VerityError, tree_bytes};
@@ -88,21 +89,18 @@ pub fn write_bundle<W: Write>(
     let signature = sign_slot(&json, signing_key);
 
     // Pass two: the tar.
-    let mut tar = tar::Builder::new(out);
-    append_bytes(&mut tar, SLOT_JSON, &json)?;
-    append_bytes(&mut tar, SLOT_SIG, &signature)?;
+    let mut tar = TarOut::new(out);
+    tar.bytes(SLOT_JSON, &json)?;
+    tar.bytes(SLOT_SIG, &signature)?;
     let mut reader = source.rootfs()?;
-    append_stream(&mut tar, ROOTFS, rootfs.size, &rootfs.sha256, &mut *reader)?;
+    tar.stream(ROOTFS, rootfs.size, &rootfs.sha256, &mut *reader)?;
+    tar.dir(BOOT_DIR)?;
     for (path, file) in &boot {
         let mut reader = source.boot_file(path)?;
         let name = format!("{BOOT_DIR}{path}");
-        append_stream(&mut tar, &name, file.size, &file.sha256, &mut *reader)?;
+        tar.stream(&name, file.size, &file.sha256, &mut *reader)?;
     }
-    let mut out = tar
-        .into_inner()
-        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
-    out.flush()
-        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
+    tar.finish()?;
     Ok(manifest)
 }
 
@@ -194,56 +192,78 @@ fn scan_boot(source: &dyn SlotSource) -> Result<BTreeMap<String, Hashed>, Bundle
     Ok(boot)
 }
 
-/// Appends a small in-memory member.
-pub(crate) fn append_bytes<W: Write>(
-    tar: &mut tar::Builder<W>,
-    name: &str,
-    bytes: &[u8],
-) -> Result<(), BundleError> {
-    let mut header = header(bytes.len() as u64);
-    tar.append_data(&mut header, name, bytes)
-        .map_err(|error| BundleError::Io(format!("writing {name}: {error}")))
+/// A tar framed as Lemnos frames one: each header is `lemnos_slot_store::tar::write`'s, the code
+/// `lemnos-ctl bundle` writes with at the image's Lemnos pin (ustar, owner 0, time 0, mode 0644 for
+/// a file and 0755 for a directory, a GNU long-name member over 99 bytes), with its padding and its
+/// two zero blocks at the end. The same members in the same order are the same bytes as a bundle
+/// `lemnos-ctl` made, so a slot read back out of an image can be held to the build's file whole.
+pub(crate) struct TarOut<W: Write> {
+    out: W,
 }
 
-/// Appends a streamed member of `size` bytes. Fails if the stream's length or
-/// digest is not what pass one measured.
-pub(crate) fn append_stream<W: Write>(
-    tar: &mut tar::Builder<W>,
-    name: &str,
-    size: u64,
-    sha256: &str,
-    reader: &mut dyn Read,
-) -> Result<(), BundleError> {
-    let mut hashing = Hashing {
-        inner: reader.take(size),
-        sha: Sha256::new(),
-        count: 0,
-    };
-    let mut header = header(size);
-    tar.append_data(&mut header, name, &mut hashing)
-        .map_err(|error| BundleError::Io(format!("writing {name}: {error}")))?;
-    let actual = to_hex(&hashing.sha.finalize());
-    if hashing.count != size || actual != sha256 {
-        return Err(BundleError::Changed {
-            member: name.to_string(),
-            expected: format!("{size} bytes, sha256 {sha256}"),
-            actual: format!("{} bytes, sha256 {actual}", hashing.count),
-        });
+impl<W: Write> TarOut<W> {
+    pub(crate) fn new(out: W) -> Self {
+        Self { out }
     }
-    Ok(())
-}
 
-/// A regular file's header with the reproducible fields: mode 0644, owner 0,
-/// mtime 0.
-fn header(size: u64) -> tar::Header {
-    let mut header = tar::Header::new_gnu();
-    header.set_size(size);
-    header.set_mode(0o644);
-    header.set_uid(0);
-    header.set_gid(0);
-    header.set_mtime(0);
-    header.set_entry_type(tar::EntryType::Regular);
-    header
+    fn put(&mut self, name: &str, bytes: &[u8]) -> Result<(), BundleError> {
+        self.out
+            .write_all(bytes)
+            .map_err(|error| BundleError::Io(format!("writing {name}: {error}")))
+    }
+
+    fn pad(&mut self, name: &str, size: u64) -> Result<(), BundleError> {
+        self.put(name, &vec![0u8; lemnos_tar::padding(size)])
+    }
+
+    /// A small in-memory member.
+    pub(crate) fn bytes(&mut self, name: &str, bytes: &[u8]) -> Result<(), BundleError> {
+        self.put(name, &lemnos_tar::header(name, b'0', bytes.len() as u64))?;
+        self.put(name, bytes)?;
+        self.pad(name, bytes.len() as u64)
+    }
+
+    /// A directory entry (`boot/`), where Lemnos writes one.
+    pub(crate) fn dir(&mut self, name: &str) -> Result<(), BundleError> {
+        self.put(name, &lemnos_tar::header(name, b'5', 0))
+    }
+
+    /// A streamed member of `size` bytes. Fails if the stream's length or digest is not what was
+    /// measured before; the tar is then broken and must be discarded.
+    pub(crate) fn stream(
+        &mut self,
+        name: &str,
+        size: u64,
+        sha256: &str,
+        reader: &mut dyn Read,
+    ) -> Result<(), BundleError> {
+        self.put(name, &lemnos_tar::header(name, b'0', size))?;
+        let mut hashing = Hashing {
+            inner: reader.take(size),
+            sha: Sha256::new(),
+            count: 0,
+        };
+        std::io::copy(&mut hashing, &mut self.out)
+            .map_err(|error| BundleError::Io(format!("writing {name}: {error}")))?;
+        let actual = to_hex(&hashing.sha.finalize());
+        if hashing.count != size || actual != sha256 {
+            return Err(BundleError::Changed {
+                member: name.to_string(),
+                expected: format!("{size} bytes, sha256 {sha256}"),
+                actual: format!("{} bytes, sha256 {actual}", hashing.count),
+            });
+        }
+        self.pad(name, size)
+    }
+
+    /// The end of the archive, flushed; gives the writer back.
+    pub(crate) fn finish(mut self) -> Result<W, BundleError> {
+        self.put("the end of the slot's file", &lemnos_tar::END)?;
+        self.out
+            .flush()
+            .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
+        Ok(self.out)
+    }
 }
 
 /// Counts and hashes what a member's stream gives, up to the member's size.
@@ -279,4 +299,55 @@ pub(crate) fn read_chunk(
 
 pub(crate) fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The writer's bytes are Lemnos's: the same members through `TarOut` and through Lemnos's own
+    /// `archive` are one file, a long boot path (a GNU long-name member) and a member that is not a
+    /// whole block included.
+    #[test]
+    fn the_same_members_are_the_same_bytes_as_lemnos_writes() {
+        let long = format!("boot/overlays/{}.dtbo", "x".repeat(120));
+        let rootfs = vec![7u8; 5000];
+        let files: [(&str, &[u8]); 5] = [
+            (SLOT_JSON, b"{\"id\":\"slot-a\"}"),
+            (ROOTFS, &rootfs),
+            (BOOT_DIR, b""),
+            ("boot/cmdline.txt", b"root=/dev/dm-0\n"),
+            (&long, b"overlay"),
+        ];
+        let mut tar = TarOut::new(Vec::new());
+        tar.bytes(files[0].0, files[0].1).expect("slot.json");
+        tar.stream(
+            ROOTFS,
+            5000,
+            &to_hex(&Sha256::digest(&rootfs)),
+            &mut &rootfs[..],
+        )
+        .expect("rootfs");
+        tar.dir(BOOT_DIR).expect("boot/");
+        for (name, bytes) in &files[3..] {
+            tar.stream(
+                name,
+                bytes.len() as u64,
+                &to_hex(&Sha256::digest(bytes)),
+                &mut &bytes[..],
+            )
+            .expect("a boot file");
+        }
+        assert_eq!(tar.finish().expect("the end"), lemnos_tar::archive(&files));
+    }
+
+    /// A stream shorter than its header said is refused, by name.
+    #[test]
+    fn a_short_stream_is_refused() {
+        let mut tar = TarOut::new(Vec::new());
+        let error = tar
+            .stream(ROOTFS, 10, "00", &mut &[1u8, 2, 3][..])
+            .expect_err("three bytes are not ten");
+        assert!(matches!(error, BundleError::Changed { ref member, .. } if member == ROOTFS));
+    }
 }

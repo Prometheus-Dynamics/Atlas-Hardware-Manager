@@ -212,6 +212,7 @@ fn a_signed_slot_s_bundle_is_its_kept_manifest_and_signature_and_verifies_with_n
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
+            "boot/",
             "boot/Image",
             "boot/board.dtb",
             "boot/cmdline.txt",
@@ -274,7 +275,10 @@ fn an_unsigned_slot_gives_an_unsigned_bundle_never_one_signed_on_the_computer() 
     assert!(!made.signed);
     let all = members(&bundle);
     let names: Vec<&str> = all.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["slot.json", "rootfs.erofs", "boot/cmdline.txt"]);
+    assert_eq!(
+        names,
+        ["slot.json", "rootfs.erofs", "boot/", "boot/cmdline.txt"]
+    );
     assert_eq!(all[0].1, image_file_bytes(&dir, "beta.json").expect("json"));
 }
 
@@ -358,8 +362,9 @@ fn a_real_product_image_gives_the_slot_its_build_made() {
         sha256_hex(&out)
     );
     if let Some(bundle) = std::env::var_os("ATLAS_REAL_BUNDLE") {
-        // The two tars need not be the same bytes (member order and padding are the writer's);
-        // what a board reads is the members: each name with its bytes.
+        // What a board reads is the members, each name with its bytes: compared first, so a
+        // difference is named. Then the whole file: the framing is Lemnos's, so the slot read out
+        // of the image is the build's own file byte for byte.
         let built = std::fs::read(bundle).expect("the build's slot file");
         let members = |tar: &[u8]| -> std::collections::BTreeMap<String, (u64, String)> {
             tar::Archive::new(tar)
@@ -380,11 +385,16 @@ fn a_real_product_image_gives_the_slot_its_build_made() {
         };
         let (mine, theirs) = (members(&out), members(&built));
         assert_eq!(mine, theirs, "every member, by name, length and SHA-256");
+        assert_eq!(
+            (out.len(), sha256_hex(&out)),
+            (built.len(), sha256_hex(&built)),
+            "the whole file, length and SHA-256"
+        );
         println!(
-            "equal to the build's own slot file, member for member: {} members ({} and {} bytes of tar)",
+            "equal to the build's own slot file, member for member ({} members) and whole ({} bytes, sha256 {})",
             mine.len(),
             out.len(),
-            built.len()
+            sha256_hex(&out)
         );
     }
 }

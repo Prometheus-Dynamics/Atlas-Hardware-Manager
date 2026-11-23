@@ -137,6 +137,10 @@ pub fn bundle_files(
     let mut archive = tar::Archive::new(Cursor::new(bundle));
     for entry in archive.entries().map_err(|error| error.to_string())? {
         let mut entry = entry.map_err(|error| error.to_string())?;
+        // The `boot/` directory entry is a directory, not a boot file (as Lemnos reads it).
+        if entry.header().entry_type().is_dir() {
+            continue;
+        }
         let name = entry
             .path()
             .map_err(|error| error.to_string())?
