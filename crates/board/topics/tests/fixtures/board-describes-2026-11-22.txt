@@ -1,0 +1,274 @@
+# Every device description one real board (raze-base dev.1376, Lemnos bbb3c420) answered on 2026-11-22,
+# as `atlas-next offers` recorded them. One section per device: a line `=== <resource>`, then its describe text.
+=== lemnos.cam0-fe
+describe 1
+device generation=1 lease_seconds=60 label="cam0-fe" kind="camera" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="camera.isp/1" kind="camera" hash=0x5a7921cba5b34a20 methods=14
+contract index=1 tag="isp.pisp/1" kind="camera" hash=0x613d73681c661b8b methods=5
+method contract=0 id=1 name="info" params="" returns="{max_outputs: u8, max_width: u32, max_height: u32, config_layouts: u8, statistics_layout: u32, statistics_bytes: u32, input_lend: bool}" out_buffer=false job=false
+method contract=0 id=2 name="config_layout" params="index:u8" returns="{layout: u32, bytes: u32}" out_buffer=false job=false
+method contract=0 id=3 name="set_input" params="input:{width: u32, height: u32, bit_depth: u8, bayer: u8}" returns="()" out_buffer=false job=false
+method contract=0 id=4 name="set_output" params="output:u8 image:{width: u32, height: u32, fourcc: u32, pad_bytes: u32}" returns="{stride: u32, size: u32}" out_buffer=false job=false
+method contract=0 id=5 name="clear_output" params="output:u8" returns="()" out_buffer=false job=false
+method contract=0 id=6 name="config_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=7 name="statistics_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=8 name="input_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=9 name="output_stream" params="output:u8" returns="str" out_buffer=true job=false
+method contract=0 id=10 name="start" params="" returns="()" out_buffer=false job=false
+method contract=0 id=11 name="stop" params="" returns="()" out_buffer=false job=false
+method contract=0 id=12 name="counters" params="" returns="{jobs: u64, dropped: u64, errors: u64, lent: u64, last_lent_inode: u64}" out_buffer=false job=false
+method contract=0 id=13 name="input_layout" params="" returns="{stride: u32, size: u32}?" out_buffer=false job=false
+method contract=0 id=14 name="output_layout" params="output:u8" returns="{stride: u32, size: u32}?" out_buffer=false job=false
+method contract=1 id=1 name="info" params="" returns="{hw_version: u32, queue_depth: u32, front_end_config_bytes: u32, back_end_config_bytes: u32, statistics_bytes: u32, stalled: u64}" out_buffer=false job=false
+method contract=1 id=2 name="set_front_end_compression" params="output:u8 compressed:bool" returns="()" out_buffer=false job=false
+method contract=1 id=3 name="enable_temporal_denoise" params="compressed:bool" returns="()" out_buffer=false job=false
+method contract=1 id=4 name="reset_temporal_denoise" params="" returns="()" out_buffer=false job=false
+method contract=1 id=5 name="set_line_event" params="line:u32" returns="()" out_buffer=false job=false
+item kind=action name="start" unit="" unit_state=dimensionless exponent=0 contract=0 method=10 field=none reading=number group=none
+item kind=action name="stop" unit="" unit_state=dimensionless exponent=0 contract=0 method=11 field=none reading=number group=none
+=== lemnos.cam0-isp
+describe 1
+device generation=1 lease_seconds=60 label="cam0-isp" kind="camera" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="camera.isp/1" kind="camera" hash=0x5a7921cba5b34a20 methods=14
+contract index=1 tag="isp.pisp/1" kind="camera" hash=0x613d73681c661b8b methods=5
+method contract=0 id=1 name="info" params="" returns="{max_outputs: u8, max_width: u32, max_height: u32, config_layouts: u8, statistics_layout: u32, statistics_bytes: u32, input_lend: bool}" out_buffer=false job=false
+method contract=0 id=2 name="config_layout" params="index:u8" returns="{layout: u32, bytes: u32}" out_buffer=false job=false
+method contract=0 id=3 name="set_input" params="input:{width: u32, height: u32, bit_depth: u8, bayer: u8}" returns="()" out_buffer=false job=false
+method contract=0 id=4 name="set_output" params="output:u8 image:{width: u32, height: u32, fourcc: u32, pad_bytes: u32}" returns="{stride: u32, size: u32}" out_buffer=false job=false
+method contract=0 id=5 name="clear_output" params="output:u8" returns="()" out_buffer=false job=false
+method contract=0 id=6 name="config_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=7 name="statistics_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=8 name="input_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=9 name="output_stream" params="output:u8" returns="str" out_buffer=true job=false
+method contract=0 id=10 name="start" params="" returns="()" out_buffer=false job=false
+method contract=0 id=11 name="stop" params="" returns="()" out_buffer=false job=false
+method contract=0 id=12 name="counters" params="" returns="{jobs: u64, dropped: u64, errors: u64, lent: u64, last_lent_inode: u64}" out_buffer=false job=false
+method contract=0 id=13 name="input_layout" params="" returns="{stride: u32, size: u32}?" out_buffer=false job=false
+method contract=0 id=14 name="output_layout" params="output:u8" returns="{stride: u32, size: u32}?" out_buffer=false job=false
+method contract=1 id=1 name="info" params="" returns="{hw_version: u32, queue_depth: u32, front_end_config_bytes: u32, back_end_config_bytes: u32, statistics_bytes: u32, stalled: u64}" out_buffer=false job=false
+method contract=1 id=2 name="set_front_end_compression" params="output:u8 compressed:bool" returns="()" out_buffer=false job=false
+method contract=1 id=3 name="enable_temporal_denoise" params="compressed:bool" returns="()" out_buffer=false job=false
+method contract=1 id=4 name="reset_temporal_denoise" params="" returns="()" out_buffer=false job=false
+method contract=1 id=5 name="set_line_event" params="line:u32" returns="()" out_buffer=false job=false
+item kind=action name="start" unit="" unit_state=dimensionless exponent=0 contract=0 method=10 field=none reading=number group=none
+item kind=action name="stop" unit="" unit_state=dimensionless exponent=0 contract=0 method=11 field=none reading=number group=none
+=== lemnos.cam0-power
+describe 1
+device generation=1 lease_seconds=60 label="cam0-power" kind="power" bus="" address=none location="line gpio:pinctrl-rp1:34" state=running reason="" live=true refusal=0
+contract index=0 tag="power-switch/1" kind="power" hash=0x690283d9620e96aa methods=3
+method contract=0 id=1 name="set" params="on:bool" returns="()" out_buffer=false job=false
+method contract=0 id=2 name="is_on" params="" returns="bool" out_buffer=false job=false
+method contract=0 id=3 name="fault" params="" returns="bool?" out_buffer=false job=false
+item kind=value name="power.on" unit="" unit_state=dimensionless exponent=0 contract=0 method=2 field=none reading=switch group=none
+=== lemnos.cam0-receiver
+describe 1
+device generation=1 lease_seconds=60 label="cam0-receiver" kind="camera" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="camera.receiver/1" kind="camera" hash=0x95aaa7c9d0ce1d60 methods=14
+method contract=0 id=1 name="limits" params="" returns="{max_lanes: u8, max_link_rate_mbps: u32, max_width: u32, max_height: u32}" out_buffer=false job=false
+method contract=0 id=2 name="configure" params="link:{lanes: u8, virtual_channel: u8, data_type: u8, bit_depth: u8, continuous_clock: bool, width: u32, height: u32, pixel_rate_hz: u64, link_rate_mbps: u32} packing:u8" returns="{width: u32, height: u32, bit_depth: u8, packing: u8, stride: u32, size: u32}" out_buffer=false job=false
+method contract=0 id=3 name="link" params="" returns="{lanes: u8, virtual_channel: u8, data_type: u8, bit_depth: u8, continuous_clock: bool, width: u32, height: u32, pixel_rate_hz: u64, link_rate_mbps: u32}?" out_buffer=false job=false
+method contract=0 id=4 name="frame_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=5 name="start" params="" returns="()" out_buffer=false job=false
+method contract=0 id=6 name="stop" params="" returns="()" out_buffer=false job=false
+method contract=0 id=7 name="counters" params="" returns="{frames: u64, dropped: u64, errors: u64}" out_buffer=false job=false
+method contract=0 id=8 name="feeds" params="" returns="str" out_buffer=true job=false
+method contract=0 id=9 name="embedded_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=10 name="source" params="" returns="str" out_buffer=true job=false
+method contract=0 id=11 name="layout" params="" returns="{width: u32, height: u32, bit_depth: u8, packing: u8, stride: u32, size: u32}?" out_buffer=false job=false
+method contract=0 id=12 name="frame_starts" params="" returns="{count: u64, latest_ns: u64}?" out_buffer=false job=false
+method contract=0 id=13 name="inputs" params="" returns="bytes" out_buffer=true job=false
+method contract=0 id=14 name="input" params="" returns="u32" out_buffer=false job=false
+item kind=action name="start" unit="" unit_state=dimensionless exponent=0 contract=0 method=5 field=none reading=number group=none
+item kind=action name="stop" unit="" unit_state=dimensionless exponent=0 contract=0 method=6 field=none reading=number group=none
+=== lemnos.cam0-sensor
+describe 1
+device generation=1 lease_seconds=60 label="cam0-sensor" kind="camera" bus="i2c-10" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="camera.sensor/1" kind="camera" hash=0x4d6f4b4bddf78636 methods=18
+method contract=0 id=1 name="info" params="" returns="{modes: u16, array_width: u32, array_height: u32, test_patterns: u16, embedded_data: u8}" out_buffer=false job=false
+method contract=0 id=2 name="mode" params="index:u16" returns="{link: {lanes: u8, virtual_channel: u8, data_type: u8, bit_depth: u8, continuous_clock: bool, width: u32, height: u32, pixel_rate_hz: u64, link_rate_mbps: u32}, bayer: u8, max_fps_milli: u32, line_time_ps: u32, line_length: u32, frame_length_min: u32, frame_length_max: u32, exposure_min: u32, exposure_margin: u32, exposure_fraction_bits: u8, analogue_gain: {min: u32, max: u32, unity: u32, step: u32, law: {law: u8, param: u32}}, digital_gain: {min: u32, max: u32, unity: u32, step: u32, law: {law: u8, param: u32}}, crop: {x: u32, y: u32, width: u32, height: u32}, binning_x: u8, binning_y: u8, black_level: u16, drop_frames: u8, exposure_delay: u8, gain_delay: u8, frame_length_delay: u8, readout_ps: u64, frame_offset_ps: u64}" out_buffer=false job=false
+method contract=0 id=3 name="select_mode" params="index:u16" returns="()" out_buffer=false job=false
+method contract=0 id=4 name="selected" params="" returns="u16?" out_buffer=false job=false
+method contract=0 id=5 name="start" params="" returns="()" out_buffer=false job=false
+method contract=0 id=6 name="stop" params="" returns="()" out_buffer=false job=false
+method contract=0 id=7 name="set_controls" params="controls:{exposure: u32?, analogue_gain: u32?, digital_gain: u32?, frame_length: u32?}" returns="()" out_buffer=false job=false
+method contract=0 id=8 name="post_values" params="values:{identity: u64, controls: {exposure: u32?, analogue_gain: u32?, digital_gain: u32?, frame_length: u32?}}" returns="()" out_buffer=false job=false
+method contract=0 id=9 name="applied" params="" returns="{identity: u64, controls: {exposure: u32?, analogue_gain: u32?, digital_gain: u32?, frame_length: u32?}}?" out_buffer=false job=false
+method contract=0 id=10 name="set_flips" params="horizontal:bool vertical:bool" returns="u8" out_buffer=false job=false
+method contract=0 id=11 name="set_test_pattern" params="code:u16" returns="()" out_buffer=false job=false
+method contract=0 id=12 name="identity" params="" returns="str" out_buffer=true job=false
+method contract=0 id=13 name="post_values_at" params="values:{identity: u64, controls: {exposure: u32?, analogue_gain: u32?, digital_gain: u32?, frame_length: u32?}}" returns="{exposure: u64?, analogue_gain: u64?, digital_gain: u64?, frame_length: u64?, latest: u64}" out_buffer=false job=false
+method contract=0 id=14 name="applied_landing" params="" returns="{values: {identity: u64, controls: {exposure: u32?, analogue_gain: u32?, digital_gain: u32?, frame_length: u32?}}, landing: {exposure: u64?, analogue_gain: u64?, digital_gain: u64?, frame_length: u64?, latest: u64}}?" out_buffer=false job=false
+method contract=0 id=15 name="in_force" params="" returns="{exposure_lines: u32?, analogue_gain: u32?, frame_length: u32?, clamped: u8}" out_buffer=false job=false
+method contract=0 id=16 name="set_exposure" params="lines:u32" returns="{exposure: u64?, analogue_gain: u64?, digital_gain: u64?, frame_length: u64?, latest: u64}" out_buffer=false job=false
+method contract=0 id=17 name="set_analogue_gain" params="code:u32" returns="{exposure: u64?, analogue_gain: u64?, digital_gain: u64?, frame_length: u64?, latest: u64}" out_buffer=false job=false
+method contract=0 id=18 name="set_frame_length" params="lines:u32" returns="{exposure: u64?, analogue_gain: u64?, digital_gain: u64?, frame_length: u64?, latest: u64}" out_buffer=false job=false
+item kind=action name="start" unit="" unit_state=dimensionless exponent=0 contract=0 method=5 field=none reading=number group=none
+item kind=action name="stop" unit="" unit_state=dimensionless exponent=0 contract=0 method=6 field=none reading=number group=none
+item kind=value name="exposure" unit="line" unit_state=known exponent=0 min=1 max=52315 step=1 contract=0 method=15 field="exposure_lines" reading=number group=none
+item kind=control name="set_exposure" unit="line" unit_state=known exponent=0 min=1 max=52315 step=1 contract=0 method=16 field=none reading=range group=none
+item kind=value name="frame_length" unit="line" unit_state=known exponent=0 min=422 max=52340 step=1 contract=0 method=15 field="frame_length" reading=number group=none
+item kind=control name="set_frame_length" unit="line" unit_state=known exponent=0 min=422 max=52340 step=1 contract=0 method=18 field=none reading=range group=none
+item kind=value name="analogue_gain" unit="" unit_state=dimensionless exponent=0 min=16 max=255 step=1 contract=0 method=15 field="analogue_gain" reading=number group=none
+item kind=control name="set_analogue_gain" unit="" unit_state=dimensionless exponent=0 min=16 max=255 step=1 contract=0 method=17 field=none reading=range group=none
+=== lemnos.cpu-thermal
+describe 1
+device generation=1 lease_seconds=60 label="cpu-thermal" kind="sensor" bus="" address=none location="/sys/class/thermal/thermal_zone0" state=running reason="" live=true refusal=0
+contract index=0 tag="temperature/1" kind="sensor" hash=0xc77f0ded2da1235c methods=1
+method contract=0 id=1 name="read" params="" returns="f32" out_buffer=false job=false
+item kind=value name="temperature" unit="°C" unit_state=known exponent=0 contract=0 method=1 field=none reading=number group=none
+=== lemnos.gadget
+describe 1
+device generation=1 lease_seconds=60 label="gadget" kind="bus" bus="" address=none location="function udc:1000480000.usb" state=running reason="" live=true refusal=0
+contract index=0 tag="usb.function/1" kind="bus" hash=0x16930250d8e9aeaf methods=12
+method contract=0 id=1 name="info" params="" returns="{endpoints: u8, max_transfer: u32, max_pending: u16, max_events: u16, control_timeout_ms: u32}" out_buffer=false job=false
+method contract=0 id=2 name="endpoint" params="index:u8" returns="{address: u8, attributes: u8, max_packet: u16}" out_buffer=false job=false
+method contract=0 id=3 name="data_stream" params="" returns="str" out_buffer=true job=false
+method contract=0 id=4 name="state" params="" returns="{up: bool, configured: bool, suspended: bool, request_pending: bool}" out_buffer=false job=false
+method contract=0 id=5 name="control_in" params="data:bytes" returns="u32" out_buffer=false job=false
+method contract=0 id=6 name="control_out" params="" returns="bytes" out_buffer=true job=false
+method contract=0 id=7 name="control_stall" params="" returns="()" out_buffer=false job=false
+method contract=0 id=8 name="set_halt" params="endpoint:u8 halted:bool" returns="()" out_buffer=false job=false
+method contract=0 id=9 name="cancel" params="endpoint:u8" returns="u32" out_buffer=false job=false
+method contract=0 id=10 name="counters" params="" returns="{jobs: u64, errors: u64, events_dropped: u64, requests_unanswered: u64}" out_buffer=false job=false
+method contract=0 id=11 name="ifname" params="" returns="str" out_buffer=true job=false
+method contract=0 id=12 name="pair_lent" params="" returns="bool" out_buffer=false job=false
+item kind=value name="ifname" unit="" unit_state=unknown exponent=0 contract=0 method=11 field=none reading=text group=none
+item kind=value name="pair_lent" unit="" unit_state=unknown exponent=0 contract=0 method=12 field=none reading=switch group=none
+=== lemnos.identity
+describe 1
+device generation=1 lease_seconds=60 label="identity" kind="system" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="system.identity/1" kind="system" hash=0xbdb6627ca69d645f methods=5
+method contract=0 id=1 name="serial" params="" returns="str" out_buffer=true job=false
+method contract=0 id=2 name="family" params="" returns="str" out_buffer=true job=false
+method contract=0 id=3 name="model" params="" returns="str" out_buffer=true job=false
+method contract=0 id=4 name="facts" params="" returns="str" out_buffer=true job=false
+method contract=0 id=5 name="machine_id" params="" returns="str" out_buffer=true job=false
+item kind=value name="serial" unit="" unit_state=dimensionless exponent=0 contract=0 method=1 field=none reading=text group=none
+item kind=value name="family" unit="" unit_state=dimensionless exponent=0 contract=0 method=2 field=none reading=text group=none
+item kind=value name="model" unit="" unit_state=dimensionless exponent=0 contract=0 method=3 field=none reading=text group=none
+item kind=value name="facts" unit="" unit_state=dimensionless exponent=0 contract=0 method=4 field=none reading=text group=none
+item kind=value name="machine_id" unit="" unit_state=dimensionless exponent=0 contract=0 method=5 field=none reading=text group=none
+=== lemnos.imu
+describe 1
+device generation=1 lease_seconds=60 label="imu" kind="sensor" bus="pio-i2c:sda=8,scl=7,hz=400000" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="accelerometer/1" kind="sensor" hash=0xfa7617318969b33f methods=3
+contract index=1 tag="gyroscope/1" kind="sensor" hash=0x6af97be3acc54eb3 methods=3
+method contract=0 id=1 name="read" params="" returns="{x: f32, y: f32, z: f32}" out_buffer=false job=false
+method contract=0 id=2 name="read_batch" params="" returns="bytes" out_buffer=true job=false
+method contract=0 id=3 name="read_batch_stamped" params="" returns="bytes" out_buffer=true job=false
+method contract=1 id=1 name="read" params="" returns="{x: f32, y: f32, z: f32}" out_buffer=false job=false
+method contract=1 id=2 name="read_batch" params="" returns="bytes" out_buffer=true job=false
+method contract=1 id=3 name="read_batch_stamped" params="" returns="bytes" out_buffer=true job=false
+item kind=value name="acceleration.x" unit="m/s²" unit_state=known exponent=0 real_min=-58.839900970458984 real_max=58.839900970458984 real_step=0.0017956512747332454 contract=0 method=1 field="x" reading=three_axes group="acceleration"
+item kind=value name="acceleration.y" unit="m/s²" unit_state=known exponent=0 real_min=-58.839900970458984 real_max=58.839900970458984 real_step=0.0017956512747332454 contract=0 method=1 field="y" reading=three_axes group="acceleration"
+item kind=value name="acceleration.z" unit="m/s²" unit_state=known exponent=0 real_min=-58.839900970458984 real_max=58.839900970458984 real_step=0.0017956512747332454 contract=0 method=1 field="z" reading=three_axes group="acceleration"
+item kind=value name="angular_rate.x" unit="rad/s" unit_state=known exponent=0 real_min=-34.906585693359375 real_max=34.906585693359375 real_step=0.001065264455974102 contract=1 method=1 field="x" reading=three_axes group="angular_rate"
+item kind=value name="angular_rate.y" unit="rad/s" unit_state=known exponent=0 real_min=-34.906585693359375 real_max=34.906585693359375 real_step=0.001065264455974102 contract=1 method=1 field="y" reading=three_axes group="angular_rate"
+item kind=value name="angular_rate.z" unit="rad/s" unit_state=known exponent=0 real_min=-34.906585693359375 real_max=34.906585693359375 real_step=0.001065264455974102 contract=1 method=1 field="z" reading=three_axes group="angular_rate"
+=== lemnos.magnetometer
+describe 1
+device generation=1 lease_seconds=60 label="magnetometer" kind="sensor" bus="i2c-1" address=0x10 location="" state=running reason="" live=true refusal=0
+contract index=0 tag="magnetometer/1" kind="sensor" hash=0x73b25422f7a40397 methods=1
+contract index=1 tag="self-test/1" kind="other" hash=0x6aff59ade5c0bef1 methods=3
+method contract=0 id=1 name="read" params="" returns="{x: f32, y: f32, z: f32}" out_buffer=false job=false
+method contract=1 id=1 name="tests" params="" returns="bytes" out_buffer=true job=false
+method contract=1 id=2 name="run" params="name:str confirmed:bool" returns="bytes" out_buffer=false job=true
+method contract=1 id=3 name="last" params="" returns="bytes" out_buffer=true job=false
+item kind=value name="magnetic_field.x" unit="T" unit_state=known exponent=0 real_min=-0.0013 real_max=0.0013 contract=0 method=1 field="x" reading=three_axes group="magnetic_field"
+item kind=value name="magnetic_field.y" unit="T" unit_state=known exponent=0 real_min=-0.0013 real_max=0.0013 contract=0 method=1 field="y" reading=three_axes group="magnetic_field"
+item kind=value name="magnetic_field.z" unit="T" unit_state=known exponent=0 real_min=-0.0025 real_max=0.0025 contract=0 method=1 field="z" reading=three_axes group="magnetic_field"
+item kind=action name="self_test" unit="" unit_state=dimensionless exponent=0 contract=1 method=2 field=none reading=number group=none
+=== lemnos.orientation
+describe 1
+device generation=2 lease_seconds=60 label="orientation" kind="sensor" bus="" address=none location="accel imu, gyro imu, mag magnetometer" state=running reason="magnetometer ignored: field magnitude implausible" live=true refusal=0
+contract index=0 tag="orientation/1" kind="sensor" hash=0x46613173c6345352 methods=1
+method contract=0 id=1 name="read" params="" returns="{x: f32, y: f32, z: f32}" out_buffer=false job=false
+item kind=value name="roll" unit="rad" unit_state=known exponent=0 real_min=-3.141592653589793 real_max=3.141592653589793 contract=0 method=1 field="x" reading=three_axes group="attitude"
+item kind=value name="pitch" unit="rad" unit_state=known exponent=0 real_min=-1.5707963267948966 real_max=1.5707963267948966 contract=0 method=1 field="y" reading=three_axes group="attitude"
+item kind=value name="yaw" unit="rad" unit_state=known exponent=0 real_min=-3.141592653589793 real_max=3.141592653589793 contract=0 method=1 field="z" reading=three_axes group="attitude"
+=== lemnos.power
+describe 1
+device generation=1 lease_seconds=60 label="power" kind="power" bus="i2c-1" address=0x40 location="" state=running reason="" live=true refusal=0
+contract index=0 tag="power-monitor/1" kind="power" hash=0x0790b8ea27f1ec99 methods=1
+contract index=1 tag="self-test/1" kind="other" hash=0x6aff59ade5c0bef1 methods=3
+method contract=0 id=1 name="read" params="" returns="{bus_v: f32, shunt_v: f32, current_a: f32, power_w: f32}" out_buffer=false job=false
+method contract=1 id=1 name="tests" params="" returns="bytes" out_buffer=true job=false
+method contract=1 id=2 name="run" params="name:str confirmed:bool" returns="bytes" out_buffer=false job=true
+method contract=1 id=3 name="last" params="" returns="bytes" out_buffer=true job=false
+item kind=value name="bus_voltage" unit="V" unit_state=known exponent=0 real_min=0.0 real_max=102.39687500000001 real_step=0.003125 contract=0 method=1 field="bus_v" reading=number group=none
+item kind=value name="shunt_voltage" unit="V" unit_state=known exponent=0 real_min=-0.04095875 real_max=0.04095875 real_step=1.25e-6 contract=0 method=1 field="shunt_v" reading=number group=none
+item kind=value name="current" unit="A" unit_state=known exponent=0 real_min=-1.9999338450000002 real_max=1.9999338450000002 real_step=6.1035e-5 contract=0 method=1 field="current_a" reading=number group=none
+item kind=value name="power" unit="W" unit_state=known exponent=0 real_min=0.0 real_max=0.7999857450000001 real_step=1.2207e-5 contract=0 method=1 field="power_w" reading=number group=none
+item kind=action name="self_test" unit="" unit_state=dimensionless exponent=0 contract=1 method=2 field=none reading=number group=none
+=== lemnos.reboot
+describe 1
+device generation=1 lease_seconds=60 label="reboot" kind="system" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="system.reboot/1" kind="system" hash=0xface08cdca5b68c0 methods=2
+method contract=0 id=1 name="reboot" params="" returns="()" out_buffer=false job=false
+method contract=0 id=2 name="reboot_to" params="target:str" returns="()" out_buffer=false job=false
+=== lemnos.ring
+describe 1
+device generation=1 lease_seconds=60 label="ring" kind="light" bus="pio-out:gpio=13" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="pixels/1" kind="light" hash=0xb320c90394119c89 methods=3
+method contract=0 id=1 name="pixel_count" params="" returns="u16" out_buffer=false job=false
+method contract=0 id=2 name="set" params="offset:u16 pixels:bytes" returns="()" out_buffer=false job=false
+method contract=0 id=3 name="show" params="" returns="()" out_buffer=false job=false
+item kind=value name="pixels" unit="" unit_state=dimensionless exponent=0 contract=0 method=1 field=none reading=number group=none
+=== lemnos.security
+describe 1
+device generation=1 lease_seconds=60 label="security" kind="system" bus="" address=none location="slots slots" state=running reason="" live=true refusal=0
+contract index=0 tag="system.security/1" kind="system" hash=0xe060a86af2d91c75 methods=4
+method contract=0 id=1 name="state" params="" returns="str" out_buffer=true job=false
+method contract=0 id=2 name="precheck" params="on:bool" returns="str" out_buffer=true job=false
+method contract=0 id=3 name="set" params="on:bool authorization:bytes" returns="str" out_buffer=true job=false
+method contract=0 id=4 name="request_off" params="" returns="str" out_buffer=true job=false
+=== lemnos.slots
+describe 1
+device generation=1 lease_seconds=60 label="slots" kind="system" bus="" address=none location="" state=running reason="" live=true refusal=0
+contract index=0 tag="system.slots/1" kind="system" hash=0xab19a1e7d0b755c6 methods=14
+contract index=1 tag="system.security-precondition/1" kind="system" hash=0x436bdf18d866e921 methods=2
+method contract=0 id=1 name="list" params="" returns="str" out_buffer=true job=false
+method contract=0 id=2 name="install" params="size:u64 pin:bool keep_old:bool" returns="str" out_buffer=false job=true
+method contract=0 id=3 name="write" params="offset:u64 bytes:bytes" returns="()" out_buffer=false job=false
+method contract=0 id=4 name="set_default" params="id:str force:bool" returns="()" out_buffer=false job=false
+method contract=0 id=5 name="trial" params="id:str keep_default:bool keep_old:bool force:bool" returns="()" out_buffer=false job=false
+method contract=0 id=6 name="confirm" params="" returns="()" out_buffer=false job=false
+method contract=0 id=7 name="remove" params="id:str" returns="()" out_buffer=false job=false
+method contract=0 id=8 name="pin" params="id:str pinned:bool" returns="()" out_buffer=false job=false
+method contract=0 id=9 name="set_keep" params="keep:u32" returns="()" out_buffer=false job=false
+method contract=0 id=10 name="accept" params="size:u64" returns="()" out_buffer=false job=false
+method contract=0 id=11 name="install_file" params="name:str pin:bool keep_old:bool" returns="str" out_buffer=false job=true
+method contract=0 id=12 name="boots" params="" returns="str" out_buffer=true job=false
+method contract=0 id=13 name="list_page" params="after:str" returns="str" out_buffer=true job=false
+method contract=0 id=14 name="info" params="" returns="str" out_buffer=true job=false
+method contract=1 id=1 name="precondition" params="on:bool" returns="str" out_buffer=true job=false
+method contract=1 id=2 name="apply" params="on:bool" returns="()" out_buffer=false job=false
+=== lemnos.usb-a-power
+describe 1
+device generation=1 lease_seconds=60 label="usb-a-power" kind="power" bus="" address=none location="line gpio:pinctrl-rp1:20" state=running reason="" live=true refusal=0
+contract index=0 tag="power-switch/1" kind="power" hash=0x690283d9620e96aa methods=3
+method contract=0 id=1 name="set" params="on:bool" returns="()" out_buffer=false job=false
+method contract=0 id=2 name="is_on" params="" returns="bool" out_buffer=false job=false
+method contract=0 id=3 name="fault" params="" returns="bool?" out_buffer=false job=false
+item kind=value name="power.on" unit="" unit_state=dimensionless exponent=0 contract=0 method=2 field=none reading=switch group=none
+=== lemnos.usb-c-power
+describe 1
+device generation=1 lease_seconds=60 label="usb-c-power" kind="power" bus="" address=none location="line gpio:pinctrl-rp1:16" state=running reason="" live=true refusal=0
+contract index=0 tag="power-switch/1" kind="power" hash=0x690283d9620e96aa methods=3
+method contract=0 id=1 name="set" params="on:bool" returns="()" out_buffer=false job=false
+method contract=0 id=2 name="is_on" params="" returns="bool" out_buffer=false job=false
+method contract=0 id=3 name="fault" params="" returns="bool?" out_buffer=false job=false
+item kind=value name="power.on" unit="" unit_state=dimensionless exponent=0 contract=0 method=2 field=none reading=switch group=none
+=== lemnos.watchdog
+describe 1
+device generation=1 lease_seconds=60 label="watchdog" kind="other" bus="" address=none location="watchdog watchdog:/soc@107c000000/watchdog@7d200000" state=running reason="" live=true refusal=0
+contract index=0 tag="self-test/1" kind="other" hash=0x6aff59ade5c0bef1 methods=3
+method contract=0 id=1 name="tests" params="" returns="bytes" out_buffer=true job=false
+method contract=0 id=2 name="run" params="name:str confirmed:bool" returns="bytes" out_buffer=false job=true
+method contract=0 id=3 name="last" params="" returns="bytes" out_buffer=true job=false
+item kind=value name="identity" unit="" unit_state=dimensionless exponent=0 contract=0 method=0 field=none reading=number group=none
+item kind=value name="timeout" unit="s" unit_state=known exponent=0 contract=0 method=0 field=none reading=number group=none
+item kind=value name="timeleft" unit="s" unit_state=known exponent=0 contract=0 method=0 field=none reading=number group=none
+item kind=value name="bootstatus" unit="" unit_state=dimensionless exponent=0 contract=0 method=0 field=none reading=number group=none
+item kind=value name="state" unit="" unit_state=dimensionless exponent=0 contract=0 method=0 field=none reading=number group=none
+item kind=action name="self_test" unit="" unit_state=dimensionless exponent=0 contract=0 method=2 field=none reading=number group=none

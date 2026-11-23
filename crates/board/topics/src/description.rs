@@ -432,6 +432,10 @@ fn link(mut description: Description) -> Result<Description, Refusal> {
             });
         }
         match (item.contract, item.method) {
+            // Method 0 is no method: a value the driver publishes itself (method ids start at 1;
+            // a real board's watchdog: `contract=0 method=0`). The wire requires only a job method
+            // to be among the methods (board: Lemnos bbb3c420 docs/wire.md:619).
+            (Some(_), Some(0)) => {}
             (Some(contract), Some(method)) => {
                 if !seen.contains(&(contract, method)) {
                     return Err(Refusal {
@@ -802,15 +806,23 @@ fn hex_u8(text: &str) -> Option<u8> {
     hex_u64(text).and_then(|value| u8::try_from(value).ok())
 }
 
-/// A real value: an optional minus, digits, and optionally a point and more digits. Not NaN and
-/// not infinite: a description never says so, and a figure that is not finite is refused.
+/// A real value in the form the board writes it, Rust's shortest round-trip form (`{:?}`; board:
+/// Lemnos bbb3c420 service/orion/src/description.rs:226): an optional minus, digits, optionally a
+/// point and more digits, and optionally `e`, an optional minus and digits (`1.25e-6`, `1e17`). Not
+/// NaN and not infinite: a description never says so, and a figure that is not finite is refused.
 fn real(text: &str) -> Option<f64> {
     let digits = text.strip_prefix('-').unwrap_or(text);
-    let well_formed = match digits.split_once('.') {
-        Some((whole, fraction)) => is_digits(whole) && is_digits(fraction),
-        None => is_digits(digits),
+    let (mantissa, exponent) = match digits.split_once('e') {
+        Some((mantissa, exponent)) => (mantissa, Some(exponent)),
+        None => (digits, None),
     };
-    if !well_formed {
+    let mantissa_ok = match mantissa.split_once('.') {
+        Some((whole, fraction)) => is_digits(whole) && is_digits(fraction),
+        None => is_digits(mantissa),
+    };
+    let exponent_ok =
+        exponent.is_none_or(|exponent| is_digits(exponent.strip_prefix('-').unwrap_or(exponent)));
+    if !mantissa_ok || !exponent_ok {
         return None;
     }
     text.parse::<f64>().ok().filter(|value| value.is_finite())
@@ -982,7 +994,14 @@ mod tests {
         assert_eq!(real("-1.5"), Some(-1.5));
         assert_eq!(real("2"), Some(2.0));
         assert_eq!(real("0.25"), Some(0.25));
-        for bad in ["NaN", "inf", "-inf", "1e5", "2.", ".5", "+1", "--1"] {
+        // The exponent forms `{:?}` writes for small and large figures (a real board's power
+        // monitor: `real_step=1.25e-6`).
+        assert_eq!(real("1.25e-6"), Some(1.25e-6));
+        assert_eq!(real("1e17"), Some(1e17));
+        assert_eq!(real("-1e-7"), Some(-1e-7));
+        for bad in [
+            "NaN", "inf", "-inf", "2.", ".5", "+1", "--1", "1e", "1e+5", "e5", "1.e5", "1e5.0",
+        ] {
             assert_eq!(real(bad), None, "{bad}");
         }
     }
