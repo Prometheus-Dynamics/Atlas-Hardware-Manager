@@ -6,6 +6,8 @@ export type BoardReading = {
   text: string | null;
   unit: string | null;
   kind: string | null;
+  /** The described item: `value`, `control` or `action`; null when the board did not describe it. */
+  item: "value" | "control" | "action" | null;
   low: number | null;
   high: number | null;
   warn_low: number | null;

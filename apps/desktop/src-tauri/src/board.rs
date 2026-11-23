@@ -266,6 +266,9 @@ fn hardware_json(snapshot: &Snapshot, history: &mut History, live: bool) -> Valu
                         "text": text,
                         "unit": reported(&reading.unit),
                         "kind": reading.reading.get().map(|kind| format!("{kind:?}").to_lowercase()),
+                        // What the item is: a value it reads, a control it can be set by, or an
+                        // action it runs (the board's description; null when not described).
+                        "item": reading.item_kind.get().map(|kind| format!("{kind:?}").to_lowercase()),
                         "low": reading.range.get().map(|range| range.min),
                         "high": reading.range.get().map(|range| range.max),
                         "warn_low": reading.warn_low.get(),
@@ -571,6 +574,16 @@ async fn read(core: Core, first: Target) {
 
 /// Notes what a call said and wakes the board's reader, so the page shows it at once.
 fn say(core: &Core, id: &str, what: &str, result: &Result<String, String>) {
+    let (ok, words) = match result {
+        Ok(words) => (true, words.trim()),
+        Err(words) => (false, words.trim()),
+    };
+    let line = match (ok, words.is_empty()) {
+        (true, true) => format!("{what}: done"),
+        (false, true) => format!("{what}: failed"),
+        (_, false) => format!("{what}: {words}"),
+    };
+    note(core, id, ok, line);
     if let Some(entry) = lock(&core.boards().open).get_mut(id) {
         entry.said = Some(Said {
             what: what.to_owned(),
@@ -581,6 +594,14 @@ fn say(core: &Core, id: &str, what: &str, result: &Result<String, String>) {
             at_ms: now_ms(),
         });
         entry.dirty.notify_one();
+    }
+}
+
+/// Keeps a line in the board's history, so it shows in Recent events and on the page after the
+/// moment has passed.
+fn note(core: &Core, id: &str, ok: bool, line: String) {
+    if let Some(key) = DeviceKey::parse(id) {
+        core.change_inventory(|inventory, now| inventory.note_action(&key, ok, line, now));
     }
 }
 
@@ -630,6 +651,9 @@ fn follow_trial(core: &Core, id: &str, slots: BoardSlots, handle: Handle) {
         if let Some(ended) = follower.follow(&slots, &handle, key).await {
             core.log()
                 .breadcrumb(&format!("trial on {id} ended: {:?}", ended.state));
+            if let Some((ok, line)) = ended.state.ended_line() {
+                note(&core, &id, ok, line);
+            }
             if let Some(entry) = lock(&core.boards().open).get(&id) {
                 entry.dirty.notify_one();
             }

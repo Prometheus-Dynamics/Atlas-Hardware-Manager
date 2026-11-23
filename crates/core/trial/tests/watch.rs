@@ -148,6 +148,13 @@ fn several_power_cycles_before_the_outcome_are_followed_without_a_fault() {
     assert_eq!(decided.reason, "healthy for 30 s since the daemon started");
     assert_eq!(decided.time, "T+42s");
     assert!(watch.finished());
+    assert_eq!(
+        watch.state().ended_line(),
+        Some((
+            true,
+            "the trial of slot-2 held, confirmed by the board (auto). The board's reason: healthy for 30 s since the daemon started".to_owned()
+        ))
+    );
 }
 
 #[test]
@@ -177,6 +184,39 @@ fn a_fallen_back_trial_says_the_boards_reason_and_which_version_runs_now() {
     );
     assert_eq!(decided.running, Running::Other("slot-1".into()));
     assert!(watch.finished());
+    assert_eq!(
+        watch.state().ended_line(),
+        Some((
+            false,
+            "the trial of slot-2 did not hold: the board went back to its previous slot. The board's reason: the trial slot did not reach a running daemon in 3 boots".to_owned()
+        ))
+    );
+}
+
+/// A trial the board confirmed without a reason (as a real board does) gets no empty reason tail,
+/// and a trial still going has no ended line.
+#[test]
+fn an_ended_line_never_quotes_an_empty_reason() {
+    let mut watch = Watch::begin(BOARD, "slot-2", 1);
+    assert_eq!(watch.state().ended_line(), None);
+    watch.seen(Seen::Away);
+    back(
+        &mut watch,
+        "slot-2",
+        Read::List(list(
+            "slot-2",
+            NO_TRIAL,
+            &resolved("confirmed", "auto", ""),
+            None,
+        )),
+    );
+    assert_eq!(
+        watch.state().ended_line(),
+        Some((
+            true,
+            "the trial of slot-2 held, confirmed by the board (auto).".to_owned()
+        ))
+    );
 }
 
 #[test]

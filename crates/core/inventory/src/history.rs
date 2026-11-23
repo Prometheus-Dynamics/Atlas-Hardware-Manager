@@ -25,6 +25,10 @@ pub enum HistoryKind {
     Label,
     /// Another key for this board was folded into it, or unfolded again.
     Folded,
+    /// Something the user asked of the board finished, and how.
+    Action,
+    /// Something the user asked of the board did not happen.
+    ActionFailed,
 }
 
 /// One line of a device's history.

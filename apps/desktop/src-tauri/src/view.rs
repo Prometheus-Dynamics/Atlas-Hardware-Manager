@@ -104,8 +104,10 @@ fn shown(capabilities: &CapabilitySet, record: &DeviceRecord) -> Vec<CapabilityK
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ActivityLine {
     pub at_ms: u64,
-    /// `info` or `warn`.
+    /// `info`, `warn`, or `err` for something asked that did not happen.
     pub level: &'static str,
+    /// What happened, so a page can pick its own lines (such as the results of what was asked).
+    pub kind: HistoryKind,
     /// The device's key as text.
     pub device: String,
     pub name: String,
@@ -143,8 +145,10 @@ impl InventoryView {
                     at_ms: entry.at_ms,
                     level: match entry.kind {
                         HistoryKind::Absent => "warn",
+                        HistoryKind::ActionFailed => "err",
                         _ => "info",
                     },
+                    kind: entry.kind,
                     device: device.clone(),
                     name: name.clone(),
                     message: entry.message.clone(),

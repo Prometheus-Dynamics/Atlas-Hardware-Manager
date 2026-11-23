@@ -261,7 +261,6 @@ svg.i.sm { width: 12px; height: 12px; }
 .tile .val small { font-size: 11px; color: var(--fg-muted); font-weight: 400; }
 .tile .foot { color: var(--fg-faint); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile svg.spark { display: block; width: 100%; height: 34px; margin-top: auto; }
-.tile.empty .val { color: var(--fg-disabled); }
 
 /* Steppers, switches, tabs, segmented controls. */
 .step { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; padding: 6px 0; min-width: 0; position: relative; }
@@ -309,6 +308,7 @@ svg.i.sm { width: 12px; height: 12px; }
 .lines .lv-info { color: var(--fg-muted); }
 .lines .lv-warn { color: var(--warn-fg); }
 .lines .lv-err { color: var(--err-fg); }
+.lines .lv-ok { color: var(--ok-fg); }
 .term { background: var(--glass-strong); flex: 1; min-height: 0; padding: 8px 10px; overflow: hidden; font-family: var(--font-code); font-size: 11px; line-height: 16px; white-space: pre; }
 .term .p { color: var(--ok-fg); }
 .term .cur { display: inline-block; width: 7px; height: 12px; background: var(--fg-muted); vertical-align: -2px; }

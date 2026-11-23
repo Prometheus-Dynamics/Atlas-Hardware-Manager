@@ -352,3 +352,34 @@ fn unknown_devices_have_no_health() {
     let inventory = Inventory::new();
     assert_eq!(inventory.health(&key(), T0), None);
 }
+
+/// What the user asked of a board, and how it ended, stays in the board's history; a failure is
+/// told apart from a success.
+#[test]
+fn an_asked_action_s_outcome_stays_in_the_history() {
+    let mut inventory = Inventory::new();
+    inventory.observe(
+        identity("usbnet:0", "172.31.250.2", DeviceState::Running, "1.0.0"),
+        LinkKind::UsbNetwork,
+        caps(),
+        T0,
+    );
+    assert!(inventory.note_action(&key(), true, "Reboot: the board restarted".into(), T0 + 1));
+    assert!(inventory.note_action(&key(), false, "Trial: refused".into(), T0 + 2));
+    let history = &inventory.get(&key()).unwrap().history;
+    let last: Vec<_> = history
+        .iter()
+        .rev()
+        .take(2)
+        .map(|e| (e.kind, e.message.as_str()))
+        .collect();
+    assert_eq!(
+        last,
+        [
+            (HistoryKind::ActionFailed, "Trial: refused"),
+            (HistoryKind::Action, "Reboot: the board restarted"),
+        ]
+    );
+    let unknown = DeviceKey::from_static("sample-soc", "0000ffff");
+    assert!(!inventory.note_action(&unknown, true, "nothing".into(), T0 + 3));
+}

@@ -50,7 +50,7 @@ test("log lines the board writes arrive, newest first", async ({ app, bridge }) 
   await expect(lines.nth(1)).toContainText("frame loop started");
 });
 
-test("Locate is off with its reason on the page, and Reboot runs at once and says what the board said", async ({ app, bridge }) => {
+test("Locate is off with its reason on the page, and Reboot runs at once and keeps what the board said", async ({ app, bridge }) => {
   await openBoard(app);
   const top = app.locator("header.top");
   // No board offers a locate: the control is there, off, and the page says why in words.
@@ -69,8 +69,24 @@ test("Locate is off with its reason on the page, and Reboot runs at once and say
   await expect(reboot).toBeEnabled();
   const before = (await bridge.call("sim.node", { runs: "lemnos.reboot.call" })) as number;
   await reboot.click();
-  await expect(top.locator('[data-said="ok"]')).toContainText("system.reboot.reboot");
+  // The result is a line in the log pane, kept in the board's history: no chip in the top bar.
+  const result = app.locator('[data-panel="dock"] .lines [data-result="ok"]').first();
+  await expect(result).toContainText("system.reboot.reboot: ");
+  await expect(result.locator(".lv-ok")).toHaveText("ok");
   expect(await bridge.call("sim.node", { runs: "lemnos.reboot.call" })).toBe(before + 1);
+  await expect(top.locator("[data-said]")).toHaveCount(0);
+  // It stays: newer log lines from the board do not push it out, and the page shows it after the
+  // moment has passed (the old chip went after 8 s).
+  await bridge.call("sim.node", { log: "camera: frame loop started" });
+  await expect(app.locator('[data-panel="dock"] .lines .ln').nth(1)).toContainText("frame loop started");
+  await app.waitForTimeout(9000);
+  await expect(result).toContainText("system.reboot.reboot: ");
+  // And it is one of Recent events, under the board's name.
+  const snapshot = (await bridge.call("snapshot")) as { topics: { inventory: { activity: { device: string; kind: string; message: string }[] } } };
+  expect(snapshot.topics.inventory.activity.filter((line) => line.device === BOARD.id && line.kind === "action").map((line) => line.message)).toEqual([
+    expect.stringMatching(/^system\.reboot\.reboot: /),
+  ]);
+  await expectNoOverflow(app);
 });
 
 test("a board with no restart device shows Reboot off, with its reason", async ({ app, bridge }) => {
@@ -87,7 +103,7 @@ test("a board with no restart device shows Reboot off, with its reason", async (
   await expectNoOverflow(app);
 });
 
-test("a refusal is on the page in the board's own words, in full: an action's in the log pane, a slot's in its row", async ({ app, bridge }) => {
+test("a refusal is on the page in the board's own words, in full: in the log pane, and a slot's in its row too", async ({ app, bridge }) => {
   await openBoard(app);
   await expect(app.locator("[data-slot]")).toHaveCount(4);
   const whole = (el: Element) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight;
@@ -96,12 +112,12 @@ test("a refusal is on the page in the board's own words, in full: an action's in
   const words = "a slot install is running, and the board does not restart until that install has ended, so nothing is lost on the way";
   await bridge.call("sim.node", { refuse: ["system.reboot.reboot", words] });
   await app.locator("header.top").getByRole("button", { name: "Reboot" }).click();
-  const chip = app.locator('header.top [data-said="refused"]');
-  await expect(chip).toContainText("reboot");
-  await expect(chip).not.toHaveAttribute("title");
-  const line = app.locator('[data-panel="dock"] .lines [data-refused]');
-  await expect(line).toContainText(`reboot refused: `);
+  const line = app.locator('[data-panel="dock"] .lines [data-result="refused"]').first();
+  await expect(line).toContainText(`system.reboot.reboot: `);
   await expect(line).toContainText(words);
+  await expect(line.locator(".lv-err")).toHaveText("err");
+  await expect(line).not.toHaveAttribute("title");
+  await expect(app.locator("header.top [data-said]")).toHaveCount(0);
   expect(await line.locator("span").last().evaluate(whole)).toBe(true);
   await expectNoOverflow(app);
 
@@ -114,7 +130,9 @@ test("a refusal is on the page in the board's own words, in full: an action's in
   await expect(refused).not.toHaveAttribute("title");
   expect(await refused.evaluate(whole)).toBe(true);
   await expect(slot(app, "slot-3").locator("[data-refused]")).toHaveCount(0);
-  await expect(app.locator('[data-panel="dock"] .lines [data-refused]')).toHaveCount(0);
+  // The log pane keeps it too, newest first, above the reboot's.
+  await expect(app.locator('[data-panel="dock"] .lines [data-result="refused"]').first()).toContainText("default slot-1: ");
+  await expect(app.locator('[data-panel="dock"] .lines [data-result]')).toHaveCount(2);
 });
 
 test("slots: what each row offers, pin and unpin, and set default", async ({ app }) => {
@@ -169,7 +187,7 @@ test("the keep count is set on the board", async ({ app }) => {
   const keep = app.getByLabel("Keep last");
   await expect(keep).toHaveValue("3");
   await keep.selectOption("5");
-  await expect(app.locator('header.top [data-said="ok"]')).toContainText("keep last 5");
+  await expect(app.locator('[data-panel="dock"] .lines [data-result="ok"]').first()).toContainText("keep last 5: done");
   await expect(keep).toHaveValue("5");
 });
 
@@ -275,8 +293,9 @@ test("a board that stops answering shows as offline, and reads again when it is 
   const places = [await buttons.nth(0).boundingBox(), await buttons.nth(1).boundingBox(), await app.getByRole("button", { name: "Install…" }).boundingBox()];
   await bridge.call("sim.set_online", { id: BOARD.id, online: false });
   await expect(app.locator("header.top .chip.off")).toHaveText("Offline");
-  // The tiles stay, with no data in them, and the panel says why.
-  await expect(app.locator('[data-panel="readings"] [data-tiles="offline"] .tile .val')).toHaveText(Array(5).fill("— no data"));
+  // No nameless tiles: one sentence in their place says why nothing is read.
+  await expect(app.locator('[data-panel="readings"] [data-tiles="offline"] .empty-box')).toContainText("is offline. Nothing is read until it answers again.");
+  await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(0);
   await expect(app.locator('[data-panel="readings"] .ph')).toContainText("offline · nothing is read until it answers again");
   await expect(app.locator('[data-panel="slots"] .empty-box')).toContainText("is offline");
   // Locate, Reboot and Install… stay where they were, and cannot be pressed.

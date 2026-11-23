@@ -157,6 +157,23 @@ impl Inventory {
         true
     }
 
+    /// Keeps the outcome of something the user asked of a device in its history, so the
+    /// result stays readable after the page that asked has moved on. Returns `false` when the
+    /// device is unknown.
+    pub fn note_action(&mut self, key: &DeviceKey, ok: bool, message: String, now_ms: u64) -> bool {
+        let key = self.resolve(key);
+        let Some(record) = self.devices.get_mut(&key) else {
+            return false;
+        };
+        let kind = if ok {
+            HistoryKind::Action
+        } else {
+            HistoryKind::ActionFailed
+        };
+        record.push_history(now_ms, kind, message);
+        true
+    }
+
     /// Puts a device in a robot (`Some`) or takes it out (`None`). A robot
     /// that does not exist yet is created. Returns `false` when the device is
     /// unknown.

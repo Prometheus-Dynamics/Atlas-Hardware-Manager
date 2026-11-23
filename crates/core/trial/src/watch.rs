@@ -200,6 +200,51 @@ impl TrialState {
         };
         matches!(signature, Reported::Known(BoardOutcome::Refused))
     }
+
+    /// One line for a finished trial, for the board's history: whether it held, and the board's
+    /// own reason when it gave one. `None` while the trial is still going. The board's time is
+    /// left out: the history carries the moment it was seen.
+    #[must_use]
+    pub fn ended_line(&self) -> Option<(bool, String)> {
+        let reason = |reason: &str| match reason.trim() {
+            "" => String::new(),
+            reason => format!(" The board's reason: {reason}"),
+        };
+        Some(match self {
+            Self::Held(decided) => (
+                true,
+                format!(
+                    "the trial of {} held, confirmed by the board ({}).{}",
+                    decided.slot,
+                    decided.by,
+                    reason(&decided.reason)
+                ),
+            ),
+            Self::DidNotHold(decided) => (
+                false,
+                format!(
+                    "the trial of {} did not hold: the board went back to its previous slot.{}",
+                    decided.slot,
+                    reason(&decided.reason)
+                ),
+            ),
+            Self::Disagree { slot, .. } => (
+                false,
+                format!("the trial of {slot}: the board's record and the slot it runs disagree"),
+            ),
+            Self::Replaced { .. } => (
+                false,
+                "the trial was not followed to its end: another board answers at this address"
+                    .to_owned(),
+            ),
+            Self::Stopped { slot } => (true, format!("stopped following the trial of {slot}")),
+            Self::Restarting { .. }
+            | Self::NotBackYet { .. }
+            | Self::Settling(_)
+            | Self::NoRecord { .. }
+            | Self::Unreadable { .. } => return None,
+        })
+    }
 }
 
 /// One board's trial, followed.

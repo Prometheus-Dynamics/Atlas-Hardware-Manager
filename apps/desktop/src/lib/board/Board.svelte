@@ -10,7 +10,7 @@
   import { app, breadcrumb, inventory, scan, topic } from "../stores/app.svelte";
   import { clock, size } from "../ui/format";
   import { kindOf, nameOf, reachedBy, stateOf } from "../devices/state";
-  import type { BoardReading, BoardView, Slot } from "./types";
+  import type { BoardDevice, BoardReading, BoardView, Slot } from "./types";
 
   let { id }: { id: string } = $props();
 
@@ -60,10 +60,17 @@
     const names = [locate ? "" : "locate", reboot ? "" : "reboot"].filter(Boolean);
     return names.length > 0 ? `This board doesn't offer ${names.join(" or ")}.` : "";
   });
-  /** What the last call said, shown for a few seconds. A refusal carries the board's own words. */
-  const said = $derived(board?.said && app.now - board.said.at_ms < 8000 ? board.said : undefined);
+  /** What the last call said, until the next one. A refusal carries the board's own words. */
+  const said = $derived(board?.said);
+  /** What was asked of this board and how it ended, newest first: kept in its history, so a
+   *  result stays on the page (and in Recent events) after the moment it was said. */
+  const results = $derived(
+    inventory()
+      .activity.filter((line) => line.device === id && (line.kind === "action" || line.kind === "action-failed"))
+      .slice(0, 3),
+  );
   /** The slot a refusal is about (a slot call is noted as "remove slot-4"): its words are shown
-   *  in that slot's row. Any other refusal is the first line of the board's log pane. */
+   *  in that slot's row too. Every result is also a lasting line of the log pane. */
   const refusedSlot = $derived(said && !said.ok ? (list?.slots.find((slot) => said.what.endsWith(` ${slot.id}`))?.id ?? "") : "");
   /** The board is online and its first read has not arrived: its panels show bars, not "none". */
   const reading = $derived(online && (board === undefined || (board.reach === "orion" && (board.hardware?.length ?? 0) === 0 && !board.slots)));
@@ -106,6 +113,16 @@
     return parts.join(" · ");
   }
   const over = (r: BoardReading) => r.number !== null && ((r.warn_high !== null && r.number > r.warn_high) || (r.warn_low !== null && r.number < r.warn_low));
+  /** What a device reads, for the Hardware tab: its values, and its controls' values. An action
+   * has no value, and a control that reports none is a setting, not a reading: neither is listed.
+   * A value the board describes and has not published yet reads "—". */
+  function reads(dev: BoardDevice): string {
+    const shown = dev.readings.filter((r) => r.item !== "action" && !(r.item === "control" && r.number === null && r.text === null));
+    if (shown.length === 0) return "reads nothing";
+    return shown
+      .map((r) => `${r.name.replaceAll("_", " ")} ${r.number !== null ? number(r.number) : (r.text ?? "—")}${r.unit && (r.number !== null || r.text !== null) ? ` ${r.unit}` : ""}`)
+      .join(" · ");
+  }
   const updated = $derived(board ? Math.max(0, Math.round((app.now - board.read_ms) / 1000)) : 0);
 
   // ----- slots -----------------------------------------------------------------------------
@@ -247,11 +264,6 @@
       {#each reach as word (word)}
         {#if online}<span class="chip neu">{word}</span>{:else}<span class="faint ell">last {word}</span>{/if}
       {/each}
-      {#if said}
-        <span class="chip {said.ok ? 'ok' : 'err'} ell" style="flex:0 1 auto" data-said={said.ok ? "ok" : "refused"}>
-          {said.what}{said.words ? `: ${said.words}` : said.ok ? ": done" : ""}
-        </span>
-      {/if}
     {/snippet}
     {#snippet actions()}
       {#if missing}<span class="faint" data-not-offered>{missing}</span>{/if}
@@ -282,24 +294,18 @@
               <Spark values={tile.reading.history} series={stale ? "offline" : i + 1} />
             </div>
           {/each}
-          {#each { length: 5 - tiles.length } as _, i (i)}
-            <div class="tile empty"><div class="lbl">·</div><div class="val">·</div><div class="foot">not reported</div><Spark values={[]} /></div>
-          {/each}
+          <!-- Only what the board reports: a board with fewer readings has fewer tiles, never a
+               nameless one. -->
         </div>
-      {:else if !online || reading}
-        <!-- Offline: the tiles stay, with no data in them. Not read yet: bars. (states.html, Reading tile.) -->
-        <div class="pb flush tiles" data-tiles={online ? "loading" : "offline"}>
-          {#each { length: 5 } as _, i (i)}
-            {#if online}
-              {@render loadingTile()}
-            {:else}
-              <div class="tile"><div class="lbl">·</div><div class="val" style="color:var(--fg-faint)">— <small>no data</small></div><div class="foot">offline</div><Spark values={[]} series="offline" /></div>
-            {/if}
-          {/each}
+      {:else if online && reading}
+        <!-- Not read yet: bars. (states.html, Reading tile.) -->
+        <div class="pb flush tiles" data-tiles="loading">
+          {#each { length: 5 } as _, i (i)}{@render loadingTile()}{/each}
         </div>
       {:else}
-        <!-- Nothing to read: the sentence stands where the tiles would, in a box of exactly their height. -->
-        <div class="pb flush" style="position:relative" data-tiles="none">
+        <!-- Nothing to show, offline or with no readings: one sentence where the tiles would be, in a
+             box of exactly their height. -->
+        <div class="pb flush" style="position:relative" data-tiles={online ? "none" : "offline"}>
           <div class="tiles" style="visibility:hidden">{@render loadingTile()}</div>
           <div class="empty-box" style="position:absolute;inset:0;margin:8px 10px;padding:8px">
             <div>{unread || "This board reports no readings."}</div>
@@ -477,13 +483,13 @@
           <div class="pane pane-logs" style="display:flex">
             {#if reading}
               <div class="pb" style="flex:1" data-logs="loading"><Skel rows={4} row="" style="height:17px;display:flex;align-items:center" /></div>
-            {:else if (logs.length > 0 || (said && !said.ok && !refusedSlot)) && online}
+            {:else if results.length > 0 || (logs.length > 0 && online)}
               <div class="pb lines" style="flex:1">
-                {#if said && !said.ok && !refusedSlot}
-                  <!-- A refusal that is about no slot, in the board's own words and in full. -->
-                  <div class="ln" style="white-space:normal;overflow:visible" data-refused><span class="t">now</span><span class="lv-err">err</span><span style="overflow:visible">{said.what} refused: {said.words}</span></div>
-                {/if}
-                {#each logs as line, i (i)}
+                {#each results as line (`${line.at_ms} ${line.message}`)}
+                  <!-- What was asked of the board and how it ended, in full; it stays until newer results push it out. -->
+                  <div class="ln" style="white-space:normal;overflow:visible" data-result={line.kind === "action" ? "ok" : "refused"}><span class="t">{clock(line.at_ms)}</span><span class="lv-{line.level === "err" ? "err" : "ok"}">{line.level === "err" ? "err" : "ok"}</span><span style="overflow:visible">{line.message}</span></div>
+                {/each}
+                {#each online ? logs : [] as line, i (i)}
                   <div class="ln {i >= 10 ? 'more-s' : ''}"><span class="t">{line.time}</span><span class="lv-{line.level}">{line.level}</span><span>{line.text}</span></div>
                 {/each}
               </div>
@@ -512,9 +518,7 @@
                       </div>
                       <!-- What it reads, or why it does not, in full: the line wraps instead of being cut. -->
                       <div class="faint" style="white-space:normal;padding:3px 0" data-reads>
-                        {dev.state === "running" || dev.state === null
-                          ? dev.readings.map((r) => `${r.name.replaceAll("_", " ")} ${r.number !== null ? number(r.number) : (r.text ?? "·")}${r.unit ? ` ${r.unit}` : ""}`).join(" · ")
-                          : (dev.reason ?? "")}
+                        {dev.state === "running" || dev.state === null ? reads(dev) : (dev.reason ?? "")}
                       </div>
                     </div>
                   {/each}

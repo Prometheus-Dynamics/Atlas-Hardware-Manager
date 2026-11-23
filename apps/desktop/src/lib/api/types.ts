@@ -62,7 +62,9 @@ export type Device = {
 
 export type Robot = { name: string; team: string | null; notes: string | null };
 
-export type ActivityLine = { at_ms: number; level: "info" | "warn" | "err"; device: string; name: string; message: string };
+export type HistoryKind = "found" | "returned" | "absent" | "link-changed" | "changed" | "robot" | "power-cycle" | "label" | "folded" | "action" | "action-failed";
+
+export type ActivityLine = { at_ms: number; level: "info" | "warn" | "err"; kind: HistoryKind; device: string; name: string; message: string };
 
 export type Inventory = { devices: Device[]; robots: Robot[]; activity: ActivityLine[] };
 
