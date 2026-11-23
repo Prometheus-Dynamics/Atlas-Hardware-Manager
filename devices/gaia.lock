@@ -1,6 +1,11 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to a42c7ae9 (move 13, 2026-11-23, the coordinator's rev): Gaia next row 40 on row 39 (08e71181, the pinned
+# toolchain, unchanged): the board QEMU profile's USB relay and stock host re-attach after a gadget goes and comes back,
+# the relay log (boot-N.usb-relay.log) names why each pair ended, the runner cleans up its QEMUs on TERM, usbip-vudc
+# warns once per outage. Nothing in it changes a product build beyond row 39 (the coordinator's words); the Rust binary
+# hashes recorded at 08e71181 stand. Before: 08e71181.
 # Moved to 08e71181 (move 13, 2026-11-22, the coordinator's rev): Gaia next where a Rust build's toolchain is a pinned
 # source ([sources.toolchain] rust 1.99.0 + targets, rustc/cargo/std by digest from static.rust-lang.org laid out as
 # one sysroot in the store), never the host's rustup; a Rust build without one is refused. Every builder = "rust"
@@ -45,4 +50,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "08e71181244945e02a1295e6b2c640374d3f69f8"
+commit = "a42c7ae9ceab134cc7f054d7ba86aa97a81bb70e"
