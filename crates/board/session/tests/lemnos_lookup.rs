@@ -144,9 +144,17 @@ fn the_not_yet_sentence_counts_up_on_each_lookup() {
     );
     std::thread::sleep(Duration::from_millis(1100));
     let later = lemnos::resource_cached(&orion, 15, lemnos::SLOTS).expect("the session answers");
-    assert!(
-        matches!(&later, Lookup::NotYet(text) if text.ends_with(", for 1.1 s")),
-        "{later:?}"
-    );
+    // The sentence counts the time since the first lookup. A loaded machine sleeps longer than it
+    // was asked to, so the time is read and held to "at least what was slept", not to one exact text
+    // (it read "1.2 s" under load, 2026-11-23).
+    let Lookup::NotYet(text) = &later else {
+        panic!("{later:?}");
+    };
+    let seconds: f64 = text
+        .rsplit_once(", for ")
+        .and_then(|(_, time)| time.strip_suffix(" s"))
+        .and_then(|number| number.parse().ok())
+        .unwrap_or_else(|| panic!("the time is in seconds: {text}"));
+    assert!((1.1..30.0).contains(&seconds), "{text}");
     node.refuse_describe(false);
 }
