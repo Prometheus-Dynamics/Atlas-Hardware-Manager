@@ -195,7 +195,7 @@ fn scan_boot(source: &dyn SlotSource) -> Result<BTreeMap<String, Hashed>, Bundle
 }
 
 /// Appends a small in-memory member.
-fn append_bytes<W: Write>(
+pub(crate) fn append_bytes<W: Write>(
     tar: &mut tar::Builder<W>,
     name: &str,
     bytes: &[u8],
@@ -207,7 +207,7 @@ fn append_bytes<W: Write>(
 
 /// Appends a streamed member of `size` bytes. Fails if the stream's length or
 /// digest is not what pass one measured.
-fn append_stream<W: Write>(
+pub(crate) fn append_stream<W: Write>(
     tar: &mut tar::Builder<W>,
     name: &str,
     size: u64,

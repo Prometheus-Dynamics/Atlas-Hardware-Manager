@@ -2,7 +2,9 @@
 """Makes data.ext4, the fixture the reader tests read: the real form's data
 partition in Lemnos's layout (slots/<id>.erofs, slots/<id>.json, slots/<id>.boot,
 slots/bootfiles/<sha256>), for two slots: alpha (the test subject) and beta (a
-decoy the reader must not mix in).
+decoy the reader must not mix in). alpha was installed from a signed bundle, so
+it also keeps slots/alpha.sig, the bundle's slot.sig record (Lemnos docs/slots.md
+"The kept signature"); beta is unsigned and keeps none.
 
 Run from this directory: python3 make-fixtures.py. It needs e2fsprogs'
 mke2fs and no root: `mke2fs -d` copies a directory in without mounting it.
@@ -21,6 +23,9 @@ import tempfile
 
 BLOCK = 4096
 SALT = bytes([0x5A]) * 32  # 32 bytes: the manifest carries 64 hex digits
+# The throwaway Ed25519 seed alpha's slot.sig is made with. A test key, in the open on purpose: the bundle
+# tests check the kept record verifies under its public key. Never a board's or a build's key.
+SIGNING_SEED = bytes([0x11]) * 32
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -56,6 +61,28 @@ def write(path, data):
         handle.write(data)
 
 
+def slot_sig(manifest_bytes):
+    """Lemnos's slot.sig over the manifest's exact bytes (lemnos_slot_store::signing): the 108-byte record
+    LMNSSIG1 | algorithm 1 | 3 zero bytes | key id (SHA-256 of the public key) | Ed25519 signature over
+    "lemnos-slot-bundle\\0" | u32 LE 1 | u32 LE length | the bytes. Signed with openssl (Ed25519 needs no
+    module beyond the standard library this way)."""
+    message = (b"lemnos-slot-bundle\0" + (1).to_bytes(4, "little")
+               + len(manifest_bytes).to_bytes(4, "little") + manifest_bytes)
+    der = bytes.fromhex("302e020100300506032b657004220420") + SIGNING_SEED
+    with tempfile.TemporaryDirectory() as tmp:
+        key, msg = os.path.join(tmp, "key.der"), os.path.join(tmp, "msg")
+        write(key, der)
+        write(msg, message)
+        signature = subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-keyform", "DER", "-inkey", key,
+                                    "-in", msg], check=True, capture_output=True).stdout
+        public = subprocess.run(["openssl", "pkey", "-inform", "DER", "-in", key, "-pubout", "-outform", "DER"],
+                                check=True, capture_output=True).stdout[-32:]
+    assert len(signature) == 64 and len(public) == 32
+    record = b"LMNSSIG1" + bytes([1, 0, 0, 0]) + hashlib.sha256(public).digest() + signature
+    assert len(record) == 108
+    return record
+
+
 def tree_bytes(data_blocks):
     """The tree's size: none for one data block, else every level down to one block."""
     if data_blocks <= 1:
@@ -68,7 +95,7 @@ def tree_bytes(data_blocks):
             return blocks * BLOCK
 
 
-def make_slot(stage, slot_id, erofs, data_blocks, boot_files):
+def make_slot(stage, slot_id, erofs, data_blocks, boot_files, signed=False):
     """erofs is the data (data_blocks blocks) then its tree. boot_files:
     {path: bytes}. Writes the slot's four data-side pieces."""
     slots = os.path.join(stage, "slots")
@@ -93,6 +120,8 @@ def make_slot(stage, slot_id, erofs, data_blocks, boot_files):
     write(os.path.join(slots, f"{slot_id}.erofs"), erofs)
     write(os.path.join(slots, f"{slot_id}.json"), manifest_bytes)
     write(os.path.join(slots, f"{slot_id}.boot"), lines.encode())
+    if signed:
+        write(os.path.join(slots, f"{slot_id}.sig"), slot_sig(manifest_bytes))
     for data in everything.values():
         write(os.path.join(slots, "bootfiles", sha256(data)), data)
     return root
@@ -112,7 +141,7 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         stage = os.path.join(tmp, "data")
-        alpha_root = make_slot(stage, "alpha", alpha_erofs, 4, alpha_boot)
+        alpha_root = make_slot(stage, "alpha", alpha_erofs, 4, alpha_boot, signed=True)
         make_slot(stage, "beta", beta_erofs, 1, beta_boot)
         out = os.path.join(HERE, "data.ext4")
         if os.path.exists(out):

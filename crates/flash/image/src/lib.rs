@@ -12,6 +12,10 @@
 //!   `image.sha256`, and the boot files by sha256);
 //! - `slots/<id>.boot`: the boot list, `<sha256>  <path>` per file, including
 //!   `slot.json`;
+//! - `slots/<id>.sig`, when the slot was installed from a signed bundle: the
+//!   bundle's `slot.sig`, the 108-byte record Lemnos keeps unchanged (Lemnos
+//!   docs/slots.md "The kept signature"). With the manifest's bytes it rebuilds
+//!   the bundle's signed part; an unsigned slot has none;
 //! - `slots/bootfiles/<sha256>`: the boot files, kept by content.
 //!
 //! The reader gives back the slot's file, its manifest, its verity values and its
@@ -94,6 +98,8 @@ use crate::scratch::Scratch;
 
 /// The largest manifest read.
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+/// The kept signature is a 108-byte record; anything past this is not one. The board judges the record.
+const MAX_SIGNATURE_BYTES: u64 = 4 * 1024;
 /// The largest boot list read.
 const MAX_BOOT_LIST_BYTES: u64 = 1 << 20;
 /// Read size when a boot file is hashed.
@@ -112,6 +118,8 @@ pub struct Names {
     pub manifest_file: String,
     /// The boot list. Default `slots/{id}.boot`.
     pub boot_list: String,
+    /// The kept signature, when there is one. Default `slots/{id}.sig`.
+    pub signature: String,
     /// The directory of boot files kept by content. Default `slots/bootfiles`.
     pub boot_store: String,
 }
@@ -123,6 +131,7 @@ impl Default for Names {
             slot_file: "slots/{id}.erofs".into(),
             manifest_file: "slots/{id}.json".into(),
             boot_list: "slots/{id}.boot".into(),
+            signature: "slots/{id}.sig".into(),
             boot_store: "slots/bootfiles".into(),
         }
     }
@@ -180,6 +189,7 @@ struct BootFile {
 #[derive(Clone, Debug)]
 struct SlotData {
     manifest_json: String,
+    signature: Option<Vec<u8>>,
     manifest: Manifest,
     slot_file: String,
     boot: BTreeMap<String, BootFile>,
@@ -270,6 +280,13 @@ fn read_slot(
     let manifest_json = ext::read_text(fs, &manifest_path, MAX_MANIFEST_BYTES)?;
     let manifest = manifest::parse_manifest(&manifest_json, id)?;
 
+    let signature_path = data_path(&names.signature, id)?;
+    let signature = if ext::is_file(fs, &signature_path)? {
+        Some(ext::read_bytes(fs, &signature_path, MAX_SIGNATURE_BYTES)?)
+    } else {
+        None
+    };
+
     let slot_file = data_path(&names.slot_file, id)?;
     let erofs_len = ext::len(fs, &slot_file)?;
     if erofs_len != manifest.image.size {
@@ -315,6 +332,7 @@ fn read_slot(
     }
     Ok(SlotData {
         manifest_json,
+        signature,
         manifest,
         slot_file,
         boot,
@@ -413,6 +431,22 @@ impl Slot<'_> {
     /// The manifest exactly as the image holds it (`slots/<id>.json`).
     pub fn manifest_json(&self) -> &str {
         &self.data.manifest_json
+    }
+
+    /// The kept signature (`slots/<id>.sig`) exactly as the image holds it, or `None` for an
+    /// unsigned slot. Not checked here: the board checks it against the manifest's bytes.
+    pub fn signature(&self) -> Option<&[u8]> {
+        self.data.signature.as_deref()
+    }
+
+    /// The boot files the manifest names (`boot.files`), by path under `boot/`, sorted by path:
+    /// the boot list without what the manifest does not cover (`slot.json`, and any file the
+    /// boot partition holds beside them).
+    pub fn manifest_boot_files(&self) -> Vec<BootEntry> {
+        self.boot_files()
+            .into_iter()
+            .filter(|entry| self.data.manifest.boot.files.contains_key(&entry.path))
+            .collect()
     }
 
     /// The slot file, from its first byte. Each call reads it again from the

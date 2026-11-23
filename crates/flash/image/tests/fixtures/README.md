@@ -9,6 +9,9 @@ Lemnos's layout, for two slots:
   `verity.root_hash`, `verity.salt`, `verity.data_blocks`, `verity.hash_offset`,
   `boot.files`).
 - `slots/alpha.boot`: the boot list, `sha256sum -c` form, including `slot.json`.
+- `slots/alpha.sig`: the kept signature, Lemnos's 108-byte `slot.sig` record over
+  `alpha.json`'s exact bytes, made with the throwaway test seed `SIGNING_SEED` in the
+  script (32 bytes of 0x11; a test key, never a board's). beta is unsigned and has none.
 - `slots/beta.*`: a second slot of one data block and no tree (4096 bytes), so a read of
   one slot is checked not to mix in the other.
 - `slots/bootfiles/<sha256>`: the boot files by content: `Image`, `board.dtb`,

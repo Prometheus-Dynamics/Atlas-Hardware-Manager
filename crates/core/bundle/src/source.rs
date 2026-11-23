@@ -8,7 +8,8 @@
 //! the boot files twice (once to hash them into `slot.json`, once to write
 //! them into the tar), so a source must give the same bytes both times.
 //!
-//! The real source is [`crate::ImageSource`], over `atlas-image`'s slot.
+//! Tests and the simulated node give it doubles; a bundle from a real image is rebuilt by
+//! [`crate::bundle_from_image`] without this seam.
 
 use std::io::Read;
 

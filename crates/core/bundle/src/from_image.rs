@@ -1,135 +1,93 @@
-//! The bundle made from a first-flash image: [`ImageSource`] is `atlas-image`'s
-//! slot seen as a [`SlotSource`], and [`bundle_from_image`] is the one call
-//! that opens the image, takes a slot and writes its bundle.
+//! The bundle of one slot of a first-flash image, rebuilt from what the image keeps.
 //!
-//! What the image gives: the slot file (`rootfs`), its boot files, and the four
-//! verity values of its manifest (`verity.root_hash`, `verity.salt`,
-//! `verity.data_blocks`, `verity.hash_offset`), which `atlas-image` checked when
-//! it read the slot. The image's `slot.json` is not a boot file of the bundle:
-//! the bundle writes its own, from those values and the file it measures.
+//! A slot installed on the image's data partition keeps the bundle's `slot.json` as
+//! `slots/<id>.json`, byte for byte, and, when that bundle was signed, its `slot.sig` record as
+//! `slots/<id>.sig`, unchanged (Lemnos docs/slots.md, "The kept signature"). A tar of those two
+//! first, then `rootfs.erofs` and `boot/`, each copied unchanged, verifies as the bundle did. That is
+//! the bundle made here: nothing is signed or written on the computer, so no key is needed, and an
+//! unsigned slot gives an unsigned bundle.
+//!
+//! What is copied, in Lemnos's member order:
+//!
+//! - `slot.json`: the image's manifest, exactly as the image holds it;
+//! - `slot.sig`: the kept record, when there is one;
+//! - `rootfs.erofs`: the slot file, its length and SHA-256 checked as it streams against the
+//!   manifest's `image.size` and `image.sha256`;
+//! - `boot/<path>`: the boot files the manifest names (`boot.files`), each checked as it streams
+//!   against its digest. The image's boot partition also holds `slot.json` and any file beside
+//!   them; the manifest does not name those, and they are not members.
+//!
+//! The board checks the signature against the manifest's bytes; nothing here judges it.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
-use atlas_image::{Options, Slot};
-use sha2::{Digest, Sha256};
+use atlas_image::Options;
 
 use crate::BundleError;
-use crate::manifest::{SlotManifest, SlotMeta};
-use crate::source::{BootFile, SlotSource};
-use crate::write::{CHUNK, SLOT_JSON, read_chunk, to_hex, write_bundle};
-use atlas_image::Verity;
+use crate::manifest::SlotManifest;
+use crate::write::{BOOT_DIR, ROOTFS, SLOT_JSON, SLOT_SIG, append_bytes, append_stream};
 
-/// One slot of a first-flash image as a bundle source.
-pub struct ImageSource<'a> {
-    slot: Slot<'a>,
+/// What a bundle made from an image carries.
+#[derive(Clone, Debug)]
+pub struct ImageBundle {
+    /// The image's manifest, as read (the bytes are the bundle's `slot.json`).
+    pub manifest: SlotManifest,
+    /// Whether the image kept a signature, so the bundle has a `slot.sig`.
+    pub signed: bool,
 }
 
-impl std::fmt::Debug for ImageSource<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ImageSource")
-            .field("slot", &self.slot)
-            .finish()
-    }
-}
-
-impl<'a> ImageSource<'a> {
-    pub fn new(slot: Slot<'a>) -> Self {
-        Self { slot }
-    }
-
-    /// The slot id the image holds.
-    pub fn id(&self) -> &str {
-        self.slot.id()
-    }
-
-    /// Streams the slot file and checks its length and SHA-256 against the
-    /// image manifest's `image.size` and `image.sha256`. The image reader
-    /// checks the length at open but not the digest, so this reads the file.
-    pub fn check_image_digest(&self) -> Result<(), BundleError> {
-        let mut reader = self.slot.rootfs()?;
-        check_stream_digest(
-            &mut *reader,
-            self.slot.image_size(),
-            self.slot.image_sha256(),
-        )
-    }
-}
-
-impl SlotSource for ImageSource<'_> {
-    fn verity(&self) -> Result<Verity, BundleError> {
-        Ok(self.slot.verity().clone())
-    }
-
-    fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError> {
-        Ok(self.slot.rootfs()?)
-    }
-
-    fn boot_files(&self) -> Result<Vec<BootFile>, BundleError> {
-        Ok(self
-            .slot
-            .boot_files()
-            .into_iter()
-            .filter(|entry| entry.path != SLOT_JSON)
-            .map(|entry| BootFile {
-                path: entry.path,
-                size: entry.size,
-            })
-            .collect())
-    }
-
-    fn boot_file(&self, path: &str) -> Result<Box<dyn Read + '_>, BundleError> {
-        Ok(self.slot.boot_file(path)?)
-    }
-}
-
-/// Makes the bundle of slot `slot_id` of the first-flash image at `image`
-/// (`.img.xz` or `.img`), signed with `signing_key`, written to `out`.
+/// Writes the bundle of slot `slot_id` of the first-flash image at `image` (`.img.xz` or `.img`) to
+/// `out`, from the image's own manifest and kept signature (see the module docs).
 ///
-/// The image is read with its scratch directory under `scratch_parent`; the
-/// scratch is removed before this returns, on success or failure. Order: open
-/// the image, take the slot (by id: the reader has no listing of slots), check
-/// the slot file's digest against its manifest, then write the bundle: its
-/// verity root is recomputed from the data and the manifest's salt, and must
-/// match. A bundle is made from a first-flash image in this one call.
+/// The image is read with its scratch directory under `scratch_parent`; the scratch is removed
+/// before this returns, on success or failure. On failure `out` holds a partial tar that must be
+/// discarded.
 pub fn bundle_from_image<W: Write>(
     image: &Path,
     scratch_parent: &Path,
     slot_id: &str,
-    meta: &SlotMeta,
-    signing_key: &[u8; 32],
     out: W,
-) -> Result<SlotManifest, BundleError> {
+) -> Result<ImageBundle, BundleError> {
     let image = atlas_image::open(image, scratch_parent, &[slot_id], &Options::default())?;
-    let source = ImageSource::new(image.slot(slot_id)?);
-    source.check_image_digest()?;
-    write_bundle(&source, slot_id, meta, signing_key, out)
-}
+    let slot = image.slot(slot_id)?;
+    let json = slot.manifest_json().as_bytes();
+    let manifest = SlotManifest::parse(json)?;
+    let signature = slot.signature();
 
-/// Streams `reader` and checks it is `size` bytes with SHA-256 `sha256`
-/// (lowercase hex). The error names both.
-pub fn check_stream_digest(
-    reader: &mut dyn Read,
-    size: u64,
-    sha256: &str,
-) -> Result<(), BundleError> {
-    let mut sha = Sha256::new();
-    let mut count = 0u64;
-    let mut buf = vec![0u8; CHUNK];
-    loop {
-        let read = read_chunk(reader, &mut buf, "the slot file")?;
-        if read == 0 {
-            break;
-        }
-        sha.update(&buf[..read]);
-        count += read as u64;
+    let mut tar = tar::Builder::new(out);
+    append_bytes(&mut tar, SLOT_JSON, json)?;
+    if let Some(signature) = signature {
+        append_bytes(&mut tar, SLOT_SIG, signature)?;
     }
-    let actual = to_hex(&sha.finalize());
-    if count != size || actual != sha256 {
-        return Err(BundleError::ImageDigest {
-            expected: format!("{size} bytes, sha256 {sha256}"),
-            actual: format!("{count} bytes, sha256 {actual}"),
-        });
+    let mut rootfs = slot.rootfs()?;
+    append_stream(
+        &mut tar,
+        ROOTFS,
+        slot.image_size(),
+        slot.image_sha256(),
+        &mut *rootfs,
+    )
+    .map_err(|error| match error {
+        // The image reader checks the slot file's length at open, not its digest: a file that is not
+        // its manifest's is the image's fault, said as such.
+        BundleError::Changed {
+            expected, actual, ..
+        } => BundleError::ImageDigest { expected, actual },
+        other => other,
+    })?;
+    for entry in slot.manifest_boot_files() {
+        let mut reader = slot.boot_file(&entry.path)?;
+        let name = format!("{BOOT_DIR}{}", entry.path);
+        append_stream(&mut tar, &name, entry.size, &entry.sha256, &mut *reader)?;
     }
-    Ok(())
+    let mut out = tar
+        .into_inner()
+        .map_err(|error| BundleError::Io(format!("writing the bundle: {error}")))?;
+    out.flush()
+        .map_err(|error| BundleError::Io(format!("writing the bundle: {error}")))?;
+    Ok(ImageBundle {
+        manifest,
+        signed: signature.is_some(),
+    })
 }

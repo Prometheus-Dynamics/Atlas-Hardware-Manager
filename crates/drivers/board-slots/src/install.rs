@@ -2,9 +2,10 @@
 //!
 //! Stages, in order, and what each does on a board:
 //!
-//! 1. **Preparing**: the bundle is made on the computer ([`Source::Image`] through
-//!    `atlas_bundle::bundle_from_image`, streamed to a file in the scratch directory), or taken as
-//!    given ([`Source::Bundle`]). Nothing is sent.
+//! 1. **Preparing**: the bundle is rebuilt on the computer from the image's kept manifest and
+//!    signature ([`Source::Image`] through `atlas_bundle::bundle_from_image`, streamed to a file in
+//!    the scratch directory; nothing is signed here), or taken as given ([`Source::Bundle`]).
+//!    Nothing is sent.
 //! 2. **Board check**: the bundle's `board` must be this board's id. A mismatch ends the install
 //!    here, before any byte or call reaches the board.
 //! 3. **accept `<size>`**: the board checks there is room. Repeatable: it changes nothing, so a
@@ -87,19 +88,11 @@ const PUSH_FILE_TAG: &str = "slot";
 pub enum Source {
     /// A bundle already made, taken as it is. Not deleted when the install ends.
     Bundle(PathBuf),
-    /// A first-flash image (`.img.xz`) and the slot in it: the bundle is made here, streamed, into
-    /// the scratch directory, and deleted when the install ends.
-    Image {
-        image: PathBuf,
-        slot: String,
-        product: String,
-        version: String,
-        variant: Option<String>,
-        kernel: Option<String>,
-        display_name: Option<String>,
-        /// The 32-byte key that signs the bundle's `slot.sig`.
-        signing_key: [u8; 32],
-    },
+    /// A first-flash image (`.img.xz`) and the slot in it: the bundle is rebuilt here from the
+    /// image's own manifest and kept signature (`atlas_bundle::bundle_from_image`), streamed into the
+    /// scratch directory, and deleted when the install ends. Nothing is signed on the computer: a
+    /// slot the image keeps unsigned is installed unsigned, and the board's security decides.
+    Image { image: PathBuf, slot: String },
 }
 
 /// What one install is asked to do.
@@ -126,19 +119,10 @@ struct Spec {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum SavedSource {
-    Bundle {
-        path: PathBuf,
-    },
-    Image {
-        image: PathBuf,
-        slot: String,
-        product: String,
-        version: String,
-        variant: Option<String>,
-        kernel: Option<String>,
-        display_name: Option<String>,
-        signing_key: String,
-    },
+    Bundle { path: PathBuf },
+    // Jobs saved before 13-client also carry product, version, variant, kernel, display_name and a
+    // signing key: serde ignores them, and the key is never read again.
+    Image { image: PathBuf, slot: String },
 }
 
 /// One install's state, kept in memory per nonce.
@@ -437,8 +421,8 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
-                    // LOCK: Lemnos bbb3c420 drivers/slot-store/src/signing.rs:502-507: a signed bundle needs slot.key (the key id); the
-                    // bundle written here is only as signed as `atlas_bundle::bundle_from_image` makes it.
+                    // LOCK: Lemnos bbb3c420 docs/slots.md:169-178: the image keeps the bundle's slot.json and slot.sig byte for
+                    // byte, and a tar of the two first, then rootfs.erofs and boot/, verifies as the bundle did.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));
                     let scratch = self.scratch.clone();
@@ -1039,52 +1023,14 @@ fn bundle_identity(path: &Path) -> Result<BundleIdentity, String> {
 
 /// Makes the bundle from the image, streamed, into `partial`.
 fn make_bundle(source: &SavedSource, scratch: &Path, partial: &Path) -> Result<(), String> {
-    let SavedSource::Image {
-        image,
-        slot,
-        product,
-        version,
-        variant,
-        kernel,
-        display_name,
-        signing_key,
-    } = source
-    else {
+    let SavedSource::Image { image, slot } = source else {
         return Err("not an image".into());
-    };
-    let key = decode_key(signing_key).ok_or("the signing key is not 32 bytes of hex")?;
-    let meta = atlas_bundle::SlotMeta {
-        product: product.clone(),
-        version: version.clone(),
-        variant: variant.clone(),
-        board: String::new(),
-        kernel: kernel.clone(),
-        display_name: display_name.clone(),
-        // A bundle Atlas makes from an image records neither: it is made on the PC from a built image, and its
-        // board's medium is checked by the board itself.
-        build_mode: None,
-        medium: None,
     };
     let out =
         File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;
-    atlas_bundle::bundle_from_image(image, scratch, slot, &meta, &key, out)
-        .map(|_| ())
+    atlas_bundle::bundle_from_image(image, scratch, slot, out)
+        .map(drop)
         .map_err(|error| format!("the bundle cannot be made from the image: {error}"))
-}
-
-fn decode_key(hex: &str) -> Option<[u8; 32]> {
-    if hex.len() != 64 || !hex.is_ascii() {
-        return None;
-    }
-    let mut key = [0_u8; 32];
-    for (byte, pair) in key.iter_mut().zip(hex.as_bytes().chunks(2)) {
-        *byte = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
-    }
-    Some(key)
-}
-
-fn encode_key(key: &[u8; 32]) -> String {
-    key.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// The install jobs of one program: submitted, staged, and cancelled.
@@ -1152,25 +1098,7 @@ impl SlotInstalls {
         let nonce = next_nonce();
         let source = match request.source {
             Source::Bundle(path) => SavedSource::Bundle { path },
-            Source::Image {
-                image,
-                slot,
-                product,
-                version,
-                variant,
-                kernel,
-                display_name,
-                signing_key,
-            } => SavedSource::Image {
-                image,
-                slot,
-                product,
-                version,
-                variant,
-                kernel,
-                display_name,
-                signing_key: encode_key(&signing_key),
-            },
+            Source::Image { image, slot } => SavedSource::Image { image, slot },
         };
         let node_key = self
             .kind

@@ -22,14 +22,16 @@
 //! The main entry points:
 //!
 //! - [`bundle_from_image`]: open a first-flash image (through `atlas-image`),
-//!   take a slot by id, write its bundle, in one call.
-//! - [`write_bundle`]: make a bundle from any [`SlotSource`].
+//!   take a slot by id, and rebuild its bundle from the image's own manifest and
+//!   kept signature, in one call. Nothing is signed on the computer.
+//! - [`write_bundle`]: make and sign a bundle from any [`SlotSource`] (tests and
+//!   the simulated node only).
 //! - [`inspect_bundle`]: read a bundle back with the board's checks; then
 //!   [`check_board`] before anything is pushed.
 //! - [`verify_slot`]: check a signature over `slot.json` on its own.
 //!
-//! The source is a seam, [`SlotSource`]. Its real implementation is
-//! [`ImageSource`], over `atlas-image`'s slot. Tests use a double.
+//! [`write_bundle`]'s source is a seam, [`SlotSource`]; tests and the simulated
+//! node give it doubles.
 //!
 //! What is checked, and what is not:
 //!
@@ -60,7 +62,7 @@ mod verity;
 mod write;
 
 pub use error::BundleError;
-pub use from_image::{ImageSource, bundle_from_image, check_stream_digest};
+pub use from_image::{ImageBundle, bundle_from_image};
 pub use inspect::{Inspected, check_board, inspect_bundle};
 pub use manifest::{
     BootEntry, BuildEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,

@@ -91,6 +91,17 @@ pub(crate) fn list_files(
 
 /// A small text file of the image (a verity table), read whole. A file larger
 /// than `max` is refused, not read.
+/// A regular file's bytes, refused when it is longer than `max`.
+pub(crate) fn read_bytes(fs: &Ext4, path: &str, max: u64) -> Result<Vec<u8>, ImageError> {
+    let size = len(fs, path)?;
+    if size > max {
+        return Err(ImageError::Limit(format!(
+            "{path} is {size} bytes, more than the {max} allowed"
+        )));
+    }
+    fs.read(&to_path(path)?).map_err(fs_error)
+}
+
 pub(crate) fn read_text(fs: &Ext4, path: &str, max: u64) -> Result<String, ImageError> {
     let size = len(fs, path)?;
     if size > max {

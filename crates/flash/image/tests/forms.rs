@@ -200,10 +200,10 @@ fn an_image_without_a_data_partition_is_refused() {
 fn a_boot_file_that_is_not_its_name_is_refused() {
     let dir = TestDir::new("tampered");
     let scratch = TestDir::new("tampered-scratch");
-    // The Image blob's blocks in the fixture (debugfs: blocks 71 to 110, 1 KiB
+    // The Image blob's blocks in the fixture (debugfs: blocks 72 to 111, 1 KiB
     // each). The pattern repeats, so a search would find other copies; the offset
     // is checked against the expected bytes before one is flipped.
-    let blob_at = 71 * 1024;
+    let blob_at = 72 * 1024;
     assert_eq!(
         &DATA_FIXTURE[blob_at..blob_at + 64],
         &pattern(40_000, 3)[..64],
@@ -249,4 +249,47 @@ fn the_boot_file_caps_refuse_a_big_file_and_a_big_total() {
     let error = open(&path, scratch.path(), &["alpha"], &total).unwrap_err();
     assert!(matches!(error, ImageError::Limit(_)), "{error}");
     assert!(scratch.entries().is_empty());
+}
+
+/// A slot installed from a signed bundle keeps its slot.sig as `slots/<id>.sig`: the reader gives it back
+/// byte for byte (the 108-byte record; the board judges it). An unsigned slot has none.
+#[test]
+fn the_kept_signature_is_given_back_as_the_image_holds_it_and_an_unsigned_slot_has_none() {
+    let dir = TestDir::new("kept-sig");
+    let scratch = TestDir::new("kept-sig-scratch");
+    let path = dir.write("first-flash.img", &image_disk());
+    let image = open(
+        &path,
+        scratch.path(),
+        &["alpha", "beta"],
+        &Options::default(),
+    )
+    .expect("open");
+    let alpha = image.slot("alpha").expect("alpha");
+    let signature = alpha.signature().expect("alpha keeps one");
+    assert_eq!(signature.len(), 108);
+    assert_eq!(&signature[..8], b"LMNSSIG1");
+    assert_eq!(image.slot("beta").expect("beta").signature(), None);
+    // The manifest's boot files: the boot list without slot.json.
+    let paths: Vec<String> = alpha
+        .manifest_boot_files()
+        .into_iter()
+        .map(|entry| entry.path)
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            "Image",
+            "board.dtb",
+            "cmdline.txt",
+            "initramfs.cpio.gz",
+            "overlays/one.dtbo"
+        ]
+    );
+    assert!(
+        alpha
+            .boot_files()
+            .iter()
+            .any(|entry| entry.path == "slot.json")
+    );
 }

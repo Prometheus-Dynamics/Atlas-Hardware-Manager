@@ -6,9 +6,10 @@
 //! test-private). The fixture's slot `alpha` has four data blocks and one tree
 //! block; its manifest's root hash was made with the salt below.
 //!
-//! The image gives the four verity values from its manifest, so the bundle is
-//! made from it in one call (`bundle_from_image`), and the bundle's parts are
-//! checked against the slot's parts member by member.
+//! The bundle is rebuilt in one call (`bundle_from_image`) from what the image
+//! keeps: its manifest and, for alpha, the kept signature (made with the
+//! fixture's throwaway seed). Nothing is signed here; the parts are checked
+//! against the image's member by member.
 
 use std::fs;
 use std::io::Read;
@@ -16,15 +17,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use atlas_bundle::{
-    BLOCK, BundleError, RECORD_LEN, SlotMeta, bundle_from_image, check_stream_digest,
-    inspect_bundle, verify_slot,
+    BLOCK, BundleError, RECORD_LEN, bundle_from_image, inspect_bundle, verify_slot,
 };
-use atlas_release::{PublicKey, public_key_for};
+use atlas_release::public_key_for;
 use sha2::{Digest, Sha256};
 
 const DATA_FIXTURE: &[u8] = include_bytes!("../../../flash/image/tests/fixtures/data.ext4");
-/// The salt the fixture's verity roots were made with (its make-fixtures.py): 32 bytes.
-const SALT: [u8; 32] = [0x5A; 32];
 
 fn pattern(n: usize, seed: u64) -> Vec<u8> {
     (0..n as u64)
@@ -55,26 +53,6 @@ fn alpha_boot() -> Vec<(&'static str, Vec<u8>)> {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn throwaway(label: &str) -> [u8; 32] {
-    let mut hasher = Sha256::new();
-    hasher.update(std::process::id().to_le_bytes());
-    hasher.update(label.as_bytes());
-    hasher.finalize().into()
-}
-
-fn keys_of(secret: &[u8; 32]) -> Vec<PublicKey> {
-    vec![public_key_for(secret)]
-}
-
-fn meta() -> SlotMeta {
-    SlotMeta {
-        product: "example".into(),
-        version: "2026.1.0".into(),
-        board: "example-board".into(),
-        ..SlotMeta::default()
-    }
 }
 
 /// A test directory under the target's tmp dir, removed on drop.
@@ -183,29 +161,48 @@ fn members(bundle: &[u8]) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
-#[test]
-fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member() {
-    let dir = TestDir::new("parts");
-    let image_path = image_file(&dir);
+/// The fixture's throwaway signing seed (make-fixtures.py `SIGNING_SEED`): alpha's kept slot.sig is
+/// made with it.
+const FIXTURE_SEED: [u8; 32] = [0x11; 32];
+
+fn make(dir: &TestDir, slot: &str) -> Result<(atlas_bundle::ImageBundle, Vec<u8>), BundleError> {
+    let image_path = image_file(dir);
     let scratch = dir.path().join("scratch");
     fs::create_dir_all(&scratch).expect("scratch parent");
-    let secret = throwaway("parts");
     let mut bundle = Vec::new();
-    let manifest = bundle_from_image(
-        &image_path,
-        &scratch,
-        "alpha",
-        &meta(),
-        &secret,
-        &mut bundle,
-    )
-    .expect("one call makes the bundle");
+    let made = bundle_from_image(&image_path, &scratch, slot, &mut bundle)?;
+    assert!(
+        fs::read_dir(&scratch).expect("scratch").next().is_none(),
+        "nothing is left of the scratch spool"
+    );
+    Ok((made, bundle))
+}
 
-    // The verity values are the image manifest's, and the root is the data's.
-    assert_eq!(manifest.verity.root_hash, slot_root());
-    assert_eq!(manifest.verity.salt.as_deref(), Some(hex(&SALT).as_str()));
-    assert_eq!(manifest.verity.data_blocks, 4);
-    assert_eq!(manifest.verity.hash_offset, 4 * BLOCK as u64);
+/// The image's own bytes for a file on its data partition.
+fn image_file_bytes(dir: &TestDir, path: &str) -> Option<Vec<u8>> {
+    let image = atlas_image::open(
+        &image_file(dir),
+        dir.path(),
+        &["alpha", "beta"],
+        &atlas_image::Options::default(),
+    )
+    .expect("open");
+    let (id, kind) = path.rsplit_once('.').expect("id.kind");
+    let slot = image.slot(id).expect("slot");
+    match kind {
+        "json" => Some(slot.manifest_json().as_bytes().to_vec()),
+        "sig" => slot.signature().map(<[u8]>::to_vec),
+        _ => panic!("{path}"),
+    }
+}
+
+#[test]
+fn a_signed_slot_s_bundle_is_its_kept_manifest_and_signature_and_verifies_with_no_key_on_the_computer()
+ {
+    let dir = TestDir::new("signed");
+    let (made, bundle) = make(&dir, "alpha").expect("one call makes the bundle");
+    assert!(made.signed);
+    assert_eq!(made.manifest.verity.root_hash, slot_root());
 
     let all = members(&bundle);
     let names: Vec<&str> = all.iter().map(|(n, _)| n.as_str()).collect();
@@ -221,42 +218,64 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
             "boot/initramfs.cpio.gz",
             "boot/overlays/one.dtbo",
         ],
-        "the image's slot.json is not a boot file of the bundle"
+        "Lemnos's order; the boot partition's slot.json is not a boot member"
     );
     let get = |name: &str| &all.iter().find(|(n, _)| n == name).expect(name).1;
 
-    // The slot file, byte for byte, and its digest against the image manifest.
+    // slot.json and slot.sig are the image's kept bytes, unchanged: nothing was written or signed here.
+    assert_eq!(
+        get("slot.json"),
+        &image_file_bytes(&dir, "alpha.json").expect("json")
+    );
+    assert_eq!(
+        get("slot.sig"),
+        &image_file_bytes(&dir, "alpha.sig").expect("kept sig")
+    );
+    assert_eq!(get("slot.sig").len(), RECORD_LEN);
+    // And they verify as the bundle did, under the key that signed it, and under no other.
+    assert_eq!(
+        verify_slot(
+            get("slot.json"),
+            get("slot.sig"),
+            &[public_key_for(&FIXTURE_SEED)]
+        )
+        .expect("verifies"),
+        0
+    );
+    assert!(
+        verify_slot(
+            get("slot.json"),
+            get("slot.sig"),
+            &[public_key_for(&[0x22; 32])]
+        )
+        .is_err()
+    );
+    let inspected =
+        inspect_bundle(&bundle[..], &[public_key_for(&FIXTURE_SEED)]).expect("inspects");
+    assert_eq!(inspected.board, "example-board");
+    assert_eq!(inspected.manifest.boot.files.len(), 5);
+
+    // The slot file and each boot file, byte for byte.
     assert_eq!(get("rootfs.erofs"), &alpha_file());
-    assert_eq!(manifest.image.sha256, hex(&Sha256::digest(alpha_file())));
-    assert_eq!(manifest.image.size, alpha_file().len() as u64);
-    // Each boot file, byte for byte.
+    assert_eq!(
+        made.manifest.image.sha256,
+        hex(&Sha256::digest(alpha_file()))
+    );
     for (path, bytes) in alpha_boot() {
         assert_eq!(get(&format!("boot/{path}")), &bytes, "boot/{path}");
     }
-    // slot.json and its signature.
-    let json = get("slot.json");
-    let sig = get("slot.sig");
-    assert_eq!(
-        sig.len(),
-        RECORD_LEN,
-        "slot.sig is Lemnos's 108-byte record"
-    );
-    assert_eq!(
-        verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
-        0
-    );
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
-    assert_eq!(inspected.board, "example-board");
-    assert_eq!(inspected.manifest.verity.root_hash, slot_root());
-    assert_eq!(inspected.manifest.boot.files.len(), 5);
-    assert!(!inspected.manifest.boot.files.contains_key("slot.json"));
+}
 
-    // One changed byte breaks the signature, and the inspector refuses it.
-    let mut changed = json.clone();
-    changed[20] ^= 1;
-    assert!(verify_slot(&changed, sig, &keys_of(&secret)).is_err());
-    // Nothing is left of the scratch spool.
-    assert!(fs::read_dir(&scratch).expect("scratch").next().is_none());
+#[test]
+fn an_unsigned_slot_gives_an_unsigned_bundle_never_one_signed_on_the_computer() {
+    let dir = TestDir::new("unsigned");
+    assert_eq!(image_file_bytes(&dir, "beta.sig"), None);
+    let (made, bundle) = make(&dir, "beta").expect("made");
+    assert!(!made.signed);
+    let all = members(&bundle);
+    let names: Vec<&str> = all.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["slot.json", "rootfs.erofs", "boot/cmdline.txt"]);
+    assert_eq!(all[0].1, image_file_bytes(&dir, "beta.json").expect("json"));
 }
 
 fn slot_root() -> String {
@@ -276,33 +295,7 @@ fn slot_root() -> String {
 #[test]
 fn a_missing_slot_is_refused_by_the_reader_with_its_message() {
     let dir = TestDir::new("missing");
-    let image_path = image_file(&dir);
-    let mut out = Vec::new();
-    let error = bundle_from_image(
-        &image_path,
-        dir.path(),
-        "gamma",
-        &meta(),
-        &throwaway("missing"),
-        &mut out,
-    )
-    .expect_err("refused");
+    let error = make(&dir, "gamma").expect_err("refused");
     assert!(matches!(error, BundleError::Image(_)), "{error:?}");
     assert!(error.to_string().contains("gamma"), "{error}");
-}
-
-#[test]
-fn a_slot_file_whose_digest_is_not_the_manifests_is_refused() {
-    let good = alpha_file();
-    let mut bad = good.clone();
-    bad[0] ^= 1;
-    let sha = hex(&Sha256::digest(&good));
-    check_stream_digest(&mut &good[..], good.len() as u64, &sha).expect("the right bytes pass");
-    let error = check_stream_digest(&mut &bad[..], bad.len() as u64, &sha).expect_err("refused");
-    assert!(
-        matches!(error, BundleError::ImageDigest { .. }),
-        "{error:?}"
-    );
-    // A length that differs is refused too, even with the right bytes.
-    assert!(check_stream_digest(&mut &good[..], good.len() as u64 - 1, &sha).is_err());
 }
