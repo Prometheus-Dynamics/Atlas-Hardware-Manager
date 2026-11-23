@@ -91,15 +91,16 @@ test("a refusal is on the page in the board's own words, in full: an action's in
   await openBoard(app);
   await expect(app.locator("[data-slot]")).toHaveCount(4);
   const whole = (el: Element) => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight;
-  // The board refuses the next Locate, with more words than a chip holds.
-  const words = "the status LED is held by a self-test that is still running, and it is not given to another caller until that test has ended";
-  await bridge.call("sim.node", { refuse: ["locate", words] });
-  await app.locator("header.top").getByRole("button", { name: "Locate" }).click();
+  // The board refuses the next Reboot (its restart device's call), with more words than a chip holds.
+  // No board offers a locate (Raze #2's offers, 2026-11-23), so the refusal is the restart's.
+  const words = "a slot install is running, and the board does not restart until that install has ended, so nothing is lost on the way";
+  await bridge.call("sim.node", { refuse: ["system.reboot.reboot", words] });
+  await app.locator("header.top").getByRole("button", { name: "Reboot" }).click();
   const chip = app.locator('header.top [data-said="refused"]');
-  await expect(chip).toContainText("locate");
+  await expect(chip).toContainText("reboot");
   await expect(chip).not.toHaveAttribute("title");
   const line = app.locator('[data-panel="dock"] .lines [data-refused]');
-  await expect(line).toContainText(`locate refused: `);
+  await expect(line).toContainText(`reboot refused: `);
   await expect(line).toContainText(words);
   expect(await line.locator("span").last().evaluate(whole)).toBe(true);
   await expectNoOverflow(app);
@@ -269,7 +270,8 @@ test("a board that stops answering shows as offline, and reads again when it is 
   await openBoard(app);
   await expect(app.locator('[data-panel="readings"] .tile[data-reading]')).toHaveCount(5);
   const buttons = app.locator("header.top").getByRole("button");
-  await expect(buttons.first()).toBeEnabled();
+  // Reboot is what the board offers (no board offers a locate): it is on while the board answers.
+  await expect(buttons.nth(1)).toBeEnabled();
   const places = [await buttons.nth(0).boundingBox(), await buttons.nth(1).boundingBox(), await app.getByRole("button", { name: "Install…" }).boundingBox()];
   await bridge.call("sim.set_online", { id: BOARD.id, online: false });
   await expect(app.locator("header.top .chip.off")).toHaveText("Offline");
