@@ -10,7 +10,8 @@
 # Orion.git) and from devices/components/*/component.toml (their `ref =`; a directory named orion* is Orion, one named
 # lemnos* or flasher-lemnos* is Lemnos). A rev matches a pinned one by prefix, at least seven hex digits.
 #
-# Rules (every tracked text file is read, except docs/prs/, which is PR history and is excluded from every rule):
+# Rules (every tracked text file is read, except docs/prs/, which is PR history, and this script, whose rule text and
+# fixtures are made to fail and are checked by --self-test; both are excluded from every rule):
 #   (a) A LOCK marker names the pin. A LOCK marker is `LOCK` followed by `:` or a space on a line that names Lemnos or
 #       Orion, and its block: that line and the comment lines after it. The block must name at least one rev, as
 #       `Lemnos <hex>`, `Orion <hex>` or `rev <hex>`, and every rev it names must be pinned for that repo (or, with
@@ -172,7 +173,8 @@ def run_tree():
     tracked = subprocess.run(["git", "-C", root, "ls-files"], capture_output=True, text=True, check=True).stdout.split()
     files = {}
     for path in tracked:
-        if path.startswith("docs/prs/") or path.startswith("target"):
+        # This script's own rule text and self-test fixtures are made to fail the rules: it is checked by --self-test.
+        if path.startswith("docs/prs/") or path.startswith("target") or path == "scripts/check-board-names.sh":
             continue
         try:
             with open(f"{root}/{path}", encoding="utf-8") as handle:
