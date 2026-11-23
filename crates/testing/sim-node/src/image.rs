@@ -118,8 +118,23 @@ pub fn files(slot: &Slot<'_>) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let mut tar = Vec::new();
     atlas_bundle::write_bundle(&source, slot.id, &meta, &key, &mut tar)
         .map_err(|error| format!("the slot cannot be made: {error}"))?;
+    bundle_files(&tar, slot.id, slot.signer.is_some())
+}
+
+/// The files a data partition keeps for the slot `id` of the bundle `bundle` (a tar as a board
+/// takes it), by path: what an image built with that slot holds. `keep_signature` keeps the
+/// bundle's `slot.sig` as the image's kept record.
+///
+/// # Errors
+///
+/// When the bundle is not a tar or lacks its manifest or slot file.
+pub fn bundle_files(
+    bundle: &[u8],
+    id: &str,
+    keep_signature: bool,
+) -> Result<BTreeMap<String, Vec<u8>>, String> {
     let mut members = BTreeMap::new();
-    let mut archive = tar::Archive::new(Cursor::new(tar));
+    let mut archive = tar::Archive::new(Cursor::new(bundle));
     for entry in archive.entries().map_err(|error| error.to_string())? {
         let mut entry = entry.map_err(|error| error.to_string())?;
         let name = entry
@@ -141,14 +156,19 @@ pub fn files(slot: &Slot<'_>) -> Result<BTreeMap<String, Vec<u8>>, String> {
     };
     let manifest = take(atlas_bundle::SLOT_JSON)?;
     let mut out = BTreeMap::new();
-    let id = slot.id;
     out.insert(format!("slots/{id}.erofs"), take(atlas_bundle::ROOTFS)?);
     out.insert(format!("slots/{id}.json"), manifest.clone());
-    if slot.signer.is_some() {
+    if keep_signature {
         out.insert(format!("slots/{id}.sig"), take(atlas_bundle::SLOT_SIG)?);
     }
     // The boot list names every boot file and the manifest, each kept by its content.
-    let mut listed: BTreeMap<String, Vec<u8>> = source.boot.clone();
+    let mut listed: BTreeMap<String, Vec<u8>> = members
+        .iter()
+        .filter_map(|(name, bytes)| {
+            name.strip_prefix(atlas_bundle::BOOT_DIR)
+                .map(|path| (path.to_owned(), bytes.clone()))
+        })
+        .collect();
     listed.insert("slot.json".to_owned(), manifest);
     let mut list = String::new();
     for (path, bytes) in &listed {
@@ -168,14 +188,23 @@ pub fn files(slot: &Slot<'_>) -> Result<BTreeMap<String, Vec<u8>>, String> {
 /// When the slot cannot be made, or `mke2fs` is missing or fails.
 pub fn build(slot: &Slot<'_>, scratch: &Path) -> Result<Vec<u8>, String> {
     let files = files(slot)?;
-    let data = data_partition(&files, scratch).map_err(|error| {
+    let data = data_partition(&files, scratch, DATA_BYTES).map_err(|error| {
         format!("the data partition cannot be made (mke2fs, from e2fsprogs, is needed): {error}")
     })?;
     Ok(disk(&data))
 }
 
-/// An ext4 filesystem labelled `data` holding `files`, made by `mke2fs -d` in `scratch`.
-fn data_partition(files: &BTreeMap<String, Vec<u8>>, scratch: &Path) -> io::Result<Vec<u8>> {
+/// An ext4 filesystem of `bytes` bytes labelled `data` holding `files`, made by `mke2fs -d` in
+/// `scratch`.
+///
+/// # Errors
+///
+/// When `mke2fs` is missing or fails.
+pub fn data_partition(
+    files: &BTreeMap<String, Vec<u8>>,
+    scratch: &Path,
+    bytes: usize,
+) -> io::Result<Vec<u8>> {
     let stage = scratch.join("stage");
     for (path, bytes) in files {
         let full = stage.join(path);
@@ -185,7 +214,7 @@ fn data_partition(files: &BTreeMap<String, Vec<u8>>, scratch: &Path) -> io::Resu
         std::fs::write(full, bytes)?;
     }
     let out = scratch.join("data.ext4");
-    std::fs::write(&out, vec![0u8; DATA_BYTES])?;
+    std::fs::write(&out, vec![0u8; bytes])?;
     let made = Command::new("mke2fs")
         .args([
             "-q",
@@ -227,20 +256,38 @@ fn crc32(bytes: &[u8]) -> u32 {
 /// A disk with a protective MBR, the primary GPT and one partition, `data`, holding `data`.
 #[must_use]
 pub fn disk(data: &[u8]) -> Vec<u8> {
-    let start = (FIRST_LBA * 512) as usize;
-    let end = start + data.len();
+    disk_of(&[("data", data)])
+}
+
+/// A disk with a protective MBR, the primary GPT and the partitions `parts` (name and bytes), one
+/// after the other from sector 2048, each starting on a 1 MiB boundary.
+#[must_use]
+pub fn disk_of(parts: &[(&str, &[u8])]) -> Vec<u8> {
+    const ALIGN: u64 = 2048;
+    let mut entries = vec![0u8; 128 * 128];
+    let mut placed = Vec::new();
+    let mut next = FIRST_LBA;
+    for (index, (name, bytes)) in parts.iter().enumerate() {
+        let sectors = (bytes.len() as u64).div_ceil(512).max(1);
+        let entry = &mut entries[index * 128..(index + 1) * 128];
+        entry[0..16].copy_from_slice(&[0x11; 16]);
+        entry[16..32].copy_from_slice(&[index as u8 + 1; 16]);
+        entry[32..40].copy_from_slice(&next.to_le_bytes());
+        entry[40..48].copy_from_slice(&(next + sectors - 1).to_le_bytes());
+        for (at, unit) in name.encode_utf16().enumerate() {
+            entry[56 + at * 2..58 + at * 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        placed.push(((next * 512) as usize, *bytes));
+        next = (next + sectors).div_ceil(ALIGN) * ALIGN;
+    }
+    let end = placed
+        .iter()
+        .map(|(start, bytes)| start + bytes.len())
+        .max()
+        .unwrap_or((FIRST_LBA * 512) as usize);
     let mut disk = vec![0u8; end];
     disk[510] = 0x55;
     disk[511] = 0xAA;
-    let mut entries = vec![0u8; 128 * 128];
-    entries[0..16].copy_from_slice(&[0x11; 16]);
-    entries[16..32].copy_from_slice(&[1; 16]);
-    let last = FIRST_LBA + (data.len() as u64).div_ceil(512) - 1;
-    entries[32..40].copy_from_slice(&FIRST_LBA.to_le_bytes());
-    entries[40..48].copy_from_slice(&last.to_le_bytes());
-    for (index, unit) in "data".encode_utf16().enumerate() {
-        entries[56 + index * 2..58 + index * 2].copy_from_slice(&unit.to_le_bytes());
-    }
     let mut header = vec![0u8; 92];
     header[0..8].copy_from_slice(b"EFI PART");
     header[8..12].copy_from_slice(&0x0001_0000u32.to_le_bytes());
@@ -257,6 +304,8 @@ pub fn disk(data: &[u8]) -> Vec<u8> {
     header[16..20].copy_from_slice(&header_crc.to_le_bytes());
     disk[512..512 + 92].copy_from_slice(&header);
     disk[1024..1024 + entries.len()].copy_from_slice(&entries);
-    disk[start..end].copy_from_slice(data);
+    for (start, bytes) in placed {
+        disk[start..start + bytes.len()].copy_from_slice(bytes);
+    }
     disk
 }

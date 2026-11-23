@@ -1,10 +1,15 @@
-//! `atlas-next usb-boot`: USB boots a board with the boot files of a built image, through the
+//! `atlas-next usb-boot`: USB boots a board with the boot files of a product's OS image, through the
 //! SystemCore agent's boot-only job. The eMMC is never written: the job has no write path.
+//!
+//! The one input is the OS image (`--image`, the `.img.xz` a first flash writes). Its slot (the
+//! signed manifest and the boot list the image keeps) and its boot partition are both read from it;
+//! no other build output is asked for.
 //!
 //! Before anything is sent the tool checks, and refuses on any failure, naming each reason:
 //!
-//! 1. the slot bundle's signature verifies with the given public key, and its manifest is read;
-//! 2. the boot partition (a FAT image from `lemnos-ctl boot-partition`) holds a bay set whose
+//! 1. the image's one slot is signed, its signature verifies with the given public key, and its
+//!    manifest is read;
+//! 2. the image's boot partition (the FAT that `lemnos-ctl boot-partition` made) holds a bay set whose
 //!    committed record (read with Lemnos's own readers) names the bundle's slot; the bundle lists
 //!    exactly that record's members (the five roles, then its firmware overlays), and each is in
 //!    the bay with the record's and the bundle's SHA-256 (of the stored bytes, the record's length);
@@ -106,6 +111,72 @@ pub const BAY_EXACT_IMAGE: &str = "boot.img";
 /// The BAY-EXACT form's outer config.txt.
 pub const BAY_EXACT_CONFIG: &str = "boot_ramdisk=1\n";
 
+/// The name of the boot partition in a product's image.
+const BOOT_PARTITION: &str = "boot";
+/// The largest boot partition read (it is held in memory).
+const MAX_BOOT_PARTITION: u64 = 1 << 30;
+
+/// A scratch directory for reading the image, removed when dropped.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn make() -> Result<Self, String> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "atlas-next-usb-boot-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&path)
+            .map_err(|error| format!("the scratch directory {}: {error}", path.display()))?;
+        Ok(Self(path))
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The one slot the image holds.
+fn one_slot(image: &std::path::Path, scratch: &std::path::Path) -> Result<String, String> {
+    let probe = atlas_image::probe_board(image, scratch)
+        .map_err(|error| format!("the image {}: {error}: nothing was sent", image.display()))?;
+    match probe.slots.as_slice() {
+        [slot] => Ok(slot.clone()),
+        [] => Err(format!(
+            "the image {} holds no slot: nothing was sent",
+            image.display()
+        )),
+        several => Err(format!(
+            "the image {} holds {} slots ({}), and a USB boot is of one: nothing was sent",
+            image.display(),
+            several.len(),
+            several.join(", ")
+        )),
+    }
+}
+
+/// The image's boot partition, byte for byte.
+fn boot_partition_of(
+    image: &std::path::Path,
+    scratch: &std::path::Path,
+) -> Result<Vec<u8>, String> {
+    atlas_image::partition_bytes(image, scratch, BOOT_PARTITION, MAX_BOOT_PARTITION).map_err(
+        |error| {
+            format!(
+                "the boot partition of the image {}: {error}: nothing was sent",
+                image.display()
+            )
+        },
+    )
+}
+
 /// Checks everything before anything is sent. `Err` carries every refusal, each in plain words.
 ///
 /// # Errors
@@ -116,17 +187,25 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         .map_err(|error| vec![format!("the public key {}: {error}", opts.pubkey.display())])?;
     let key = PublicKey::parse(&key_text)
         .map_err(|error| vec![format!("the public key {}: {error}", opts.pubkey.display())])?;
-    let bundle = std::fs::File::open(&opts.bundle)
-        .map_err(|error| vec![format!("the bundle {}: {error}", opts.bundle.display())])?;
-    let inspected = inspect_bundle(bundle, &[key])
-        .map_err(|error| vec![format!("the bundle is refused: {error}: nothing was sent")])?;
-    let manifest = inspected.manifest;
-    let image = std::fs::read(&opts.boot_partition).map_err(|error| {
+    let scratch = Scratch::make().map_err(|error| vec![error])?;
+    let slot = one_slot(&opts.image, scratch.path()).map_err(|error| vec![error])?;
+    // The slot as a board would take it, rebuilt from what the image keeps: nothing is signed here.
+    let mut bundle = Vec::new();
+    atlas_bundle::bundle_from_image(&opts.image, scratch.path(), &slot, &mut bundle).map_err(
+        |error| {
+            vec![format!(
+                "the slot {slot} of the image {}: {error}: nothing was sent",
+                opts.image.display()
+            )]
+        },
+    )?;
+    let inspected = inspect_bundle(std::io::Cursor::new(bundle), &[key]).map_err(|error| {
         vec![format!(
-            "the boot partition {}: {error}",
-            opts.boot_partition.display()
+            "the image's slot is refused: {error}: nothing was sent"
         )]
     })?;
+    let manifest = inspected.manifest;
+    let image = boot_partition_of(&opts.image, scratch.path()).map_err(|error| vec![error])?;
     let tree = fat::read_tree(image.clone())
         .map_err(|error| vec![format!("{error}: nothing was sent")])?;
 
@@ -175,7 +254,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
             let wanted: BTreeSet<&str> = bundle_names.iter().map(String::as_str).collect();
             if listed != wanted {
                 refusals.push(format!(
-                    "the bundle's boot files are {listed:?}, but the boot partition's firmware-overlays.txt makes {wanted:?}: nothing was sent"
+                    "the slot's boot files are {listed:?}, but the boot partition's firmware-overlays.txt makes {wanted:?}: nothing was sent"
                 ));
             }
             let names = layout.names();
@@ -218,7 +297,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                         let actual = sha256_hex(stored_bytes);
                         if &actual != bundle_sha {
                             refusals.push(format!(
-                                "{path}: bundle SHA-256 {bundle_sha}, boot partition SHA-256 {actual}: refused, nothing was sent"
+                                "{path}: the slot's manifest says SHA-256 {bundle_sha}, the boot partition holds SHA-256 {actual}: refused, nothing was sent"
                             ));
                         }
                     }
@@ -407,10 +486,11 @@ fn padded_differences(
     bay_set: usize,
     members: &[(String, u64)],
 ) -> Vec<String> {
-    let base_image = match std::fs::read(base) {
-        Ok(bytes) => bytes,
-        Err(error) => return vec![format!("the base partition {}: {error}", base.display())],
-    };
+    let base_image =
+        match Scratch::make().and_then(|scratch| boot_partition_of(base, scratch.path())) {
+            Ok(bytes) => bytes,
+            Err(error) => return vec![format!("the base image: {error}")],
+        };
     if base_image.len() != image.len() {
         return vec![format!(
             "the control image is {} bytes and the base's {}: A and C must load the same size",

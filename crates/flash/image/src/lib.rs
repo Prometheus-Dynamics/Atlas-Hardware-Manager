@@ -269,6 +269,51 @@ pub fn open(
     })
 }
 
+/// The bytes of the one partition named `name` in the image at `image` (`.img.xz` or `.img`), as the
+/// image holds them: for a caller that reads a partition itself (the boot partition's FAT, which a
+/// USB boot serves). The partition is spooled under `scratch_parent` and the spool is removed before
+/// this returns. `max` bounds the partition's length, which is also the memory this takes.
+///
+/// # Errors
+///
+/// When the image cannot be read, has no partition of that name or two, or the partition is
+/// longer than `max`.
+pub fn partition_bytes(
+    image: &Path,
+    scratch_parent: &Path,
+    name: &str,
+    max: u64,
+) -> Result<Vec<u8>, ImageError> {
+    let options = Options {
+        names: Names {
+            data: name.to_owned(),
+            ..Names::default()
+        },
+        max_spool_bytes: max,
+        ..Options::default()
+    };
+    let scratch = Scratch::create(scratch_parent)?;
+    let mut file = flash::Counted::open(image)?;
+    let layout = if atlas_xzdec::is_xz(&mut file).map_err(|e| ImageError::Io(e.to_string()))? {
+        atlas_xzdec::scan(&mut file)?
+    } else {
+        let len = file
+            .seek(std::io::SeekFrom::End(0))
+            .map_err(|e| ImageError::Io(e.to_string()))?;
+        file.seek(std::io::SeekFrom::Start(0))
+            .map_err(|e| ImageError::Io(e.to_string()))?;
+        atlas_xzdec::Layout::plain(len)
+    };
+    let mut router = Router::new(scratch.path(), &options, Mode::Slots);
+    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
+        .map_err(|error| error.to_string());
+    let output = router
+        .complete(stream)
+        .map_err(flash::FlashError::into_image)?;
+    std::fs::read(&output.data)
+        .map_err(|error| ImageError::Io(format!("the {name:?} partition: {error}")))
+}
+
 /// Reads and checks one slot's manifest, file, boot list and boot files.
 fn read_slot(
     fs: &Ext4,

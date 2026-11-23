@@ -14,6 +14,8 @@ path = "src/main.rs"
 atlas-actions = { path = "../../board/actions" }
 atlas-board-slots = { path = "../../drivers/board-slots" }
 atlas-bundle = { path = "../../core/bundle" }
+# usb-boot reads the slot and the boot partition out of the product's OS image.
+atlas-image = { path = "../../flash/image" }
 atlas-files = { path = "../../board/files" }
 lemnos-slot-store = { workspace = true }
 atlas-release = { path = "../../core/release" }
@@ -32,7 +34,6 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time", "signal"] }
 
 [dev-dependencies]
 atlas-actions = { path = "../../board/actions" }
-atlas-image = { path = "../../flash/image" }
 atlas-release = { path = "../../core/release" }
 atlas-sim-node = { path = "../../testing/sim-node" }
 tempfile = "3"

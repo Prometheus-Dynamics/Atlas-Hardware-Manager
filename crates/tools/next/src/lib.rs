@@ -64,8 +64,8 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               the slot cycle in one run: install, trial, a forced bad trial that falls
                               back by itself, confirm; one scorecard file says each step in plain words
                               (--json also writes <file>.json; --dry-run lists the steps and sends nothing)
-  usb-boot (--agent <host:port> | --serve-dir <new dir>) --port <usb path> --bundle <file>
-           --boot-partition <file> --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
+  usb-boot (--agent <host:port> | --serve-dir <new dir>) --port <usb path> --image <file>
+           --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
            [--bay-exact] [--control padded --base <file>]
                               USB boot a board through the SystemCore agent with a built image's
                               boot files (never writes the eMMC; refuses before sending on any check).

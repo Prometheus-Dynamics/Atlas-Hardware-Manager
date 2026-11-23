@@ -82,8 +82,9 @@ pub struct UsbBootOptions {
     pub agent: Option<String>,
     /// The board's USB port on the agent's host, sysfs form (`3-1.1.4.1`).
     pub port: String,
-    pub bundle: PathBuf,
-    pub boot_partition: PathBuf,
+    /// `--image <file>`: the product's OS image (`.img.xz` or `.img`). The slot's signed manifest and
+    /// boot list, and the boot partition, are both read from it.
+    pub image: PathBuf,
     pub pubkey: PathBuf,
     /// The directory holding `bootcode5.bin` (default: the repository's Pi flasher files).
     pub bootfiles: Option<PathBuf>,
@@ -91,7 +92,7 @@ pub struct UsbBootOptions {
     pub dry_run: bool,
     /// `--bay-exact`: serve the partition image byte for byte as `boot.img` (boot_ramdisk=1).
     pub bay_exact: bool,
-    /// `--control padded --base <file>`: a control run (needs `--bay-exact`).
+    /// `--control padded --base <image>`: a control run (needs `--bay-exact`).
     pub control: Option<crate::usb_boot::Control>,
     /// `--serve-dir <dir>`: write the checked BAY-EXACT set and the Pi's second stage into a new
     /// directory for Raspberry Pi's `rpiboot -d` on this PC, instead of sending it to an agent.
@@ -193,8 +194,7 @@ pub fn parse(args: &[String]) -> Parsed {
 fn parse_usb_boot(args: &[String]) -> Parsed {
     let mut agent = None;
     let mut port = None;
-    let mut bundle = None;
-    let mut boot_partition = None;
+    let mut image = None;
     let mut pubkey = None;
     let mut bootfiles = None;
     let mut timeout_s = None;
@@ -219,8 +219,7 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
             "--base" => &mut base,
             "--agent" => &mut agent,
             "--port" => &mut port,
-            "--bundle" => &mut bundle,
-            "--boot-partition" => &mut boot_partition,
+            "--image" => &mut image,
             "--pubkey" => &mut pubkey,
             "--bootfiles" => &mut bootfiles,
             "--timeout" => &mut timeout_s,
@@ -243,15 +242,15 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
             base: PathBuf::from(base),
         }),
         (Some("padded"), None) => {
-            return Parsed::Usage("--control padded needs --base <A's boot partition>".into());
+            return Parsed::Usage("--control padded needs --base <A's image>".into());
         }
         (Some(other), _) => {
             return Parsed::Usage(format!("--control takes padded (got {other:?})"));
         }
         (None, Some(_)) => return Parsed::Usage("--base is for --control padded".into()),
     };
-    match (agent.is_some() || serve_dir.is_some(), port, bundle, boot_partition, pubkey) {
-        (true, Some(port), Some(bundle), Some(boot_partition), Some(pubkey)) => {
+    match (agent.is_some() || serve_dir.is_some(), port, image, pubkey) {
+        (true, Some(port), Some(image), Some(pubkey)) => {
             if agent.is_some() && serve_dir.is_some() {
                 return Parsed::Usage(
                     "usb-boot takes --agent (serve through the agent) or --serve-dir (serve from this PC with rpiboot), not both".into(),
@@ -260,8 +259,7 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
             Parsed::UsbBoot(UsbBootOptions {
                 agent,
                 port,
-                bundle: PathBuf::from(bundle),
-                boot_partition: PathBuf::from(boot_partition),
+                image: PathBuf::from(image),
                 pubkey: PathBuf::from(pubkey),
                 bootfiles: bootfiles.map(PathBuf::from),
                 timeout_s,
@@ -272,7 +270,7 @@ fn parse_usb_boot(args: &[String]) -> Parsed {
             })
         }
         _ => Parsed::Usage(
-            "usb-boot needs --agent or --serve-dir, and --port, --bundle, --boot-partition and --pubkey".into(),
+            "usb-boot needs --agent or --serve-dir, and --port, --image and --pubkey".into(),
         ),
     }
 }

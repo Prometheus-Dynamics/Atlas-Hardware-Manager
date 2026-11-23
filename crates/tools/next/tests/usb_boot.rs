@@ -399,6 +399,37 @@ fn case(bundle_seed: &[u8; 32], partition_files: Vec<(String, Vec<u8>)>) -> Case
     }
 }
 
+/// The product's OS image for a case: a GPT disk whose `boot` partition is the case's FAT image
+/// and whose `data` partition keeps the case's slot as an image keeps one (the manifest, the kept
+/// signature, the slot file, the boot list and the boot files). Built from the case's files as they
+/// are when it is called, so a test that changes one is seen.
+fn image_of(case: &Case) -> PathBuf {
+    let dir = case.bootfiles.parent().expect("scratch");
+    let bundle = std::fs::read(&case.bundle).expect("the bundle");
+    let files =
+        atlas_sim_node::image::bundle_files(&bundle, "slot-a", true).expect("the slot's files");
+    let scratch = tempfile::tempdir_in(dir).expect("a scratch directory");
+    let data = atlas_sim_node::image::data_partition(&files, scratch.path(), 4 << 20)
+        .expect("the data partition (mke2fs is needed)");
+    let boot = std::fs::read(&case.partition).expect("the boot partition");
+    let path = dir.join("os.img");
+    std::fs::write(
+        &path,
+        atlas_sim_node::image::disk_of(&[("boot", &boot), ("data", &data)]),
+    )
+    .expect("the image");
+    path
+}
+
+/// An image whose `boot` partition is the FAT image at `partition`: the control's base.
+fn base_image(partition: &Path) -> PathBuf {
+    let boot = std::fs::read(partition).expect("the base partition");
+    let path = partition.with_extension("os.img");
+    std::fs::write(&path, atlas_sim_node::image::disk_of(&[("boot", &boot)]))
+        .expect("the base image");
+    path
+}
+
 async fn usb_boot(case: &Case, extra: &[&str]) -> (i32, String) {
     let mut args: Vec<String> = [
         "usb-boot",
@@ -406,14 +437,12 @@ async fn usb_boot(case: &Case, extra: &[&str]) -> (i32, String) {
         &case.agent.address,
         "--port",
         "3-1.1.4.1",
-        "--bundle",
+        "--image",
     ]
     .iter()
     .map(|s| s.to_string())
     .collect();
-    args.push(case.bundle.display().to_string());
-    args.push("--boot-partition".into());
-    args.push(case.partition.display().to_string());
+    args.push(image_of(case).display().to_string());
     args.push("--pubkey".into());
     args.push(case.pubkey.display().to_string());
     args.push("--bootfiles".into());
@@ -481,13 +510,14 @@ async fn a_bay_file_that_differs_is_refused_with_both_hashes_and_nothing_is_sent
 }
 
 #[tokio::test]
-async fn a_bundle_that_fails_its_signature_is_refused_and_nothing_is_sent() {
+async fn an_image_whose_slot_fails_its_signature_is_refused_and_nothing_is_sent() {
     let boot = boot_contents();
     let partition = partition_files("slot-a", &boot, vec![]);
     let case = case(&OTHER_SEED, partition);
     let (code, out) = usb_boot(&case, &[]).await;
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("the bundle is refused"), "{out}");
+    assert!(out.contains("the image's slot is refused"), "{out}");
+    assert!(out.contains("does not verify"), "{out}");
     assert!(
         sent(&case).is_empty(),
         "the agent received {:?}",
@@ -829,7 +859,7 @@ fn control_case(control: Vec<(String, Vec<u8>)>, base: &[(String, Vec<u8>)]) -> 
     let case = case_with(boot, control);
     let dir = case.bootfiles.parent().expect("scratch").join("a");
     std::fs::create_dir_all(&dir).expect("a dir");
-    let base = boot_partition(&dir, base);
+    let base = base_image(&boot_partition(&dir, base));
     (case, base)
 }
 
@@ -930,10 +960,8 @@ async fn serve_dir(case: &Case, dir: &Path, extra: &[&str]) -> (i32, String) {
         dir.display().to_string(),
         "--port".into(),
         "3-4.2.1.4.4.2".into(),
-        "--bundle".into(),
-        case.bundle.display().to_string(),
-        "--boot-partition".into(),
-        case.partition.display().to_string(),
+        "--image".into(),
+        image_of(case).display().to_string(),
         "--pubkey".into(),
         case.pubkey.display().to_string(),
         "--bootfiles".into(),
@@ -1020,4 +1048,61 @@ async fn agent_and_serve_dir_together_are_refused() {
     assert_ne!(code, 0, "{out}");
     assert!(out.contains("not both"), "{out}");
     assert!(!dir.exists());
+}
+
+#[tokio::test]
+async fn an_image_with_no_boot_partition_or_no_slot_is_refused_by_name() {
+    let boot = boot_contents();
+    let case = case(&SIGN_SEED, partition_files("slot-a", &boot, vec![]));
+    let dir = case.bootfiles.parent().expect("scratch");
+    // A disk with a boot partition and no data partition: there is no slot to read.
+    let partition = std::fs::read(&case.partition).expect("the boot partition");
+    let no_slot = dir.join("no-slot.img");
+    std::fs::write(
+        &no_slot,
+        atlas_sim_node::image::disk_of(&[("boot", &partition)]),
+    )
+    .expect("an image");
+    // The whole image with its boot partition under another name.
+    let whole = std::fs::read(image_of(&case)).expect("the image");
+    let renamed = dir.join("renamed.img");
+    let bundle = std::fs::read(&case.bundle).expect("the bundle");
+    let files = atlas_sim_node::image::bundle_files(&bundle, "slot-a", true).expect("files");
+    let scratch = tempfile::tempdir_in(dir).expect("scratch");
+    let data =
+        atlas_sim_node::image::data_partition(&files, scratch.path(), 4 << 20).expect("data");
+    std::fs::write(
+        &renamed,
+        atlas_sim_node::image::disk_of(&[("firmware", &partition), ("data", &data)]),
+    )
+    .expect("an image");
+    assert!(!whole.is_empty());
+    for (image, words) in [
+        (&no_slot, "no \"data\" partition"),
+        (&renamed, "no \"boot\" partition"),
+    ] {
+        let env = Env::new(None);
+        let args: Vec<String> = [
+            "usb-boot",
+            "--agent",
+            &case.agent.address,
+            "--port",
+            "3-1.1.4.1",
+            "--image",
+            &image.display().to_string(),
+            "--pubkey",
+            &case.pubkey.display().to_string(),
+            "--bootfiles",
+            &case.bootfiles.display().to_string(),
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let mut out = Vec::new();
+        let code = execute(&args, &env, &mut out).await;
+        let out = String::from_utf8(out).expect("text");
+        assert_eq!(code, 1, "{out}");
+        assert!(out.contains(words), "{out}");
+        assert!(sent(&case).is_empty(), "nothing is sent: {out}");
+    }
 }

@@ -293,3 +293,40 @@ fn the_kept_signature_is_given_back_as_the_image_holds_it_and_an_unsigned_slot_h
             .any(|entry| entry.path == "slot.json")
     );
 }
+
+#[test]
+fn a_named_partition_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_is_refused() {
+    let dir = TestDir::new("partition-bytes");
+    let boot = noise(96 * 1024, 7);
+    let disk = gpt_disk(&[
+        Part {
+            name: "boot",
+            first_lba: 2048,
+            bytes: &boot,
+        },
+        Part {
+            name: "data",
+            first_lba: 4096,
+            bytes: DATA_FIXTURE,
+        },
+    ]);
+    for (name, bytes) in [("raw.img", disk.clone()), ("xz.img.xz", xz(&disk))] {
+        let image = dir.write(name, &bytes);
+        let read = atlas_image::partition_bytes(&image, dir.path(), "boot", 1 << 20)
+            .expect("the boot partition is read");
+        assert_eq!(read, boot, "{name}");
+        let missing = atlas_image::partition_bytes(&image, dir.path(), "nope", 1 << 20);
+        assert!(
+            matches!(&missing, Err(error) if error.to_string().contains("no \"nope\" partition")),
+            "{missing:?}"
+        );
+        let large = atlas_image::partition_bytes(&image, dir.path(), "boot", 1024);
+        assert!(
+            matches!(&large, Err(error) if error.to_string().contains("more than")),
+            "{large:?}"
+        );
+        // Nothing is left behind in the scratch parent.
+        assert_eq!(dir.entries(), [name.to_owned()], "{name}");
+        std::fs::remove_file(image).expect("the image is removed");
+    }
+}
