@@ -1433,8 +1433,8 @@ mod answer_tests {
     #[test]
     fn a_list_answer_is_refused_as_a_slot_id_and_a_slot_id_is_accepted() {
         assert!(slot_id_answer(b"slot-2").is_ok());
-        // The id a real board answered with (bar run 11, 2026-11-23): a version carries dots.
-        assert!(slot_id_answer(b"raze-base-2026.1.0-dev.1328-c349ab5d").is_ok());
+        // The shape of the id a real board answered with (bar run 11, 2026-11-23): a version carries dots.
+        assert!(slot_id_answer(b"base-2026.1.0-dev.1328-c349ab5d").is_ok());
         let listing = br#"{"error":"","slots":[{"id":"slot-1"}]}"#;
         let refused = slot_id_answer(listing).expect_err("a list is not a slot id");
         assert!(refused.starts_with("`{"), "{refused}");
