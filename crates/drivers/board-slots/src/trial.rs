@@ -257,7 +257,7 @@ impl Follower {
     ///
     /// The board restarts into the trial, and a restart can take the start's answer with it: the
     /// bridge stops before it answers, and node logic ends the run as failed ("the program that runs
-    /// it went away", Raze #2, 2026-11-23), or the session ends first. A start whose answer is in
+    /// it went away", seen on a board 2026-11-23), or the session ends first. A start whose answer is in
     /// doubt ([`in_doubt`]) is therefore decided by the board, not by the answer: its list is read
     /// once, and the trial is followed unless the board answers that it has no trial of `id`. The
     /// note then says what the start's answer was. A refusal is the board's no, and is returned.
