@@ -9,12 +9,20 @@ SAME <name>, and <device id> must be a usb-gadget device of the Raze's board fil
   - the device id is a `usb-gadget` device in devices/boards/raze/lemnos-board.toml;
   - the gadget's `interfaces` text, if it gives one, puts <name> on interface 0 (the link must be first);
   - devices/components/orion/files/orion-comm-peer.conf reads its address file with `EnvironmentFile=-` (a missing file
-    must not fail the comm core) and orders on lemnos0-address with Wants= (not Requires=).
+    must not fail the comm core) and orders on lemnos0-address with Wants= (not Requires=). A product whose comm core
+    binds the board's own address uses it (zero-3e-bench);
+  - a product with a gadget link that gives its ways in itself (the Raze: WAYS_IN, a drop-in for orion-comm written
+    against Orion 5b94401's interface lists): every Environment= line is whole assignments (an unquoted list is split
+    at its space by systemd, and the rest is dropped); ORION_PEER_LISTEN is set; and when it is a wildcard address,
+    ORION_PEER_INTERFACE lists the gadget's network interface (lemnos0), so the way in is only ever kept to named
+    interfaces. A wildcard with no list would take connections on every interface and is refused.
 Run from the repository root. `--self-test` checks the rule on fixtures (a name mismatch, a device id that is not a
-gadget, and a Requires= that would make a failed address program stop the comm core are each refused).
+gadget, a Requires= that would make a failed address program stop the comm core, a wildcard listen with no interface
+list or without lemnos0, and an unquoted list are each refused).
 """
 
 import re
+import shlex
 import sys
 import tomllib
 
@@ -22,6 +30,9 @@ ORION_CONF = "devices/components/orion/files/orion.conf"
 BRIDGE_CONF = "devices/components/lemnos/files/lemnos-orion-links.conf"
 PEER_DROP_IN = "devices/components/orion/files/orion-comm-peer.conf"
 BOARD = "devices/boards/raze/lemnos-board.toml"
+# The products with a gadget link that give the comm core's ways in themselves, as a drop-in for orion-comm.
+WAYS_IN = ["devices/components/raze-base-files/files/30-raze-ways-in.conf"]
+GADGET_INTERFACE = "lemnos0"
 NAME = re.compile(r"^[A-Za-z0-9._:-]{1,63}$")
 
 
@@ -42,6 +53,33 @@ def environment_value(text, key):
         if match:
             return match.group(1)
     return None
+
+
+def ways_in(path, text):
+    """The problems of one product's ways-in drop-in (see the module's words)."""
+    problems, env = [], {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*Environment\s*=\s*(.+?)\s*$", line)
+        if not match:
+            continue
+        for word in shlex.split(match.group(1)):
+            key, sep, value = word.partition("=")
+            if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                problems.append(f"{path}: Environment= has {word!r}, which is not an assignment: a value with a space must be quoted whole")
+            else:
+                env[key] = value
+    listen = env.get("ORION_PEER_LISTEN")
+    if listen is None:
+        problems.append(f"{path}: ORION_PEER_LISTEN is not set: the board has no network way in")
+        return problems
+    host = listen.rsplit(":", 1)[0]
+    if host in ("0.0.0.0", "[::]", "::"):
+        names = [name.strip() for name in env.get("ORION_PEER_INTERFACE", "").split(",") if name.strip()]
+        if not names:
+            problems.append(f"{path}: ORION_PEER_LISTEN={listen} with no ORION_PEER_INTERFACE would take connections on every interface")
+        elif GADGET_INTERFACE not in names:
+            problems.append(f"{path}: ORION_PEER_INTERFACE={env['ORION_PEER_INTERFACE']!r} does not list {GADGET_INTERFACE}, the USB link's network")
+    return problems
 
 
 def check(orion_text, bridge_text, peer_text, board):
@@ -101,9 +139,22 @@ def self_test():
         if (not problems) != passes:
             print(f"check-orion-link: self-test: {label} gave {problems}", file=sys.stderr)
             failed = True
+    good = read(WAYS_IN[0])
+    ways = {
+        "the product's ways in pass": (good, True),
+        "a wildcard listen with no interface list is refused": (re.sub(r"(?m)^Environment=.*ORION_PEER_INTERFACE.*\n", "", good), False),
+        "an interface list without the gadget's is refused": (good.replace('"ORION_PEER_INTERFACE=lemnos0, end0"', "ORION_PEER_INTERFACE=end0"), False),
+        "an unquoted list is refused": (good.replace('"ORION_PEER_INTERFACE=lemnos0, end0"', "ORION_PEER_INTERFACE=lemnos0, end0"), False),
+        "no listen address is refused": (re.sub(r"(?m)^Environment=ORION_PEER_LISTEN.*\n", "", good), False),
+    }
+    for label, (text, passes) in ways.items():
+        problems = ways_in("fixture", text)
+        if (not problems) != passes:
+            print(f"check-orion-link: self-test: {label} gave {problems}", file=sys.stderr)
+            failed = True
     if failed:
         return 1
-    print("check-orion-link: self-test: a name mismatch, a non-gadget id, and Requires= are each refused; the match passes")
+    print("check-orion-link: self-test: a name mismatch, a non-gadget id, Requires=, a wildcard listen not kept to lemnos0 and an unquoted list are each refused; the match passes")
     return 0
 
 
@@ -112,6 +163,8 @@ def main():
         return self_test()
     board = tomllib.loads(read(BOARD))
     problems = check(read(ORION_CONF), read(BRIDGE_CONF), read(PEER_DROP_IN), board)
+    for path in WAYS_IN:
+        problems += ways_in(path, read(path))
     for problem in problems:
         print(f"check-orion-link: FAIL {problem}", file=sys.stderr)
     if problems:

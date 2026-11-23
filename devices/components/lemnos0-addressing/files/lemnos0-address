@@ -129,7 +129,15 @@ EmitRouter=no
 EmitDNS=no
 NET
 mv "$tmp" "$OUT/10-$interface.network" || fail "cannot place the network file: no address written"
-# The comm core's TCP way in: the board's own address, never a wildcard (Orion's peer.listen through the environment).
+# The comm core's TCP way in, for a product whose comm core binds the board's own address (Orion's peer.listen through
+# the environment). A product whose comm core keeps a listener to the interface instead (Orion's peer.interface) reads no
+# such file and says LEMNOS0_PEER_ENV=off in a drop-in for this unit: nothing is written then, and a file left by an
+# earlier run is removed.
+if [ "${LEMNOS0_PEER_ENV:-on}" = off ]; then
+	rm -f "$PEER_DIR/orion-peer.env"
+	echo "lemnos0-address: $interface gets $addr/$prefix from serial8 $s8 (scheme $scheme); DHCP pool offset $pool_offset size $pool_size; no peer address file (LEMNOS0_PEER_ENV=off)"
+	exit 0
+fi
 mkdir -p "$PEER_DIR" || fail "cannot create $PEER_DIR: no peer address written"
 printf 'ORION_PEER_LISTEN=%s:%s\n' "$addr" "$peer_port" > "$PEER_DIR/orion-peer.env.tmp" || fail "cannot write the peer address: no peer address written"
 mv "$PEER_DIR/orion-peer.env.tmp" "$PEER_DIR/orion-peer.env" || fail "cannot place the peer address file: no peer address written"

@@ -2479,8 +2479,9 @@ fi
 # The fixed-ids rule (coordinator's ruling 2026-11-20: any user that can own files on /data has a fixed id, so an image
 # update never orphans its files). Every component's [[users]] states its uid and every [[groups]] its gid; no two
 # users (or groups) declared in one product share an id; and a product with os/data-owners (USER UID GROUP GID reason)
-# lists exactly the users its image's components declare, at the declared ids. scripts/check-slot-users.sh holds the
-# built root to the same table.
+# lists exactly the users its image's components declare, at the declared ids, and every declared group that is no
+# user's own group as a line with `-` for its user and uid (- - GROUP GID reason). scripts/check-slot-users.sh holds
+# the built root to the same table.
 fixed_ids_rule() {  # <devices dir>
   python3 -I - "$1" <<'PY'
 import glob, os, sys, tomllib
@@ -2511,14 +2512,23 @@ for p in sorted(glob.glob(os.path.join(dev, "products", "*", "product.toml"))):
             seen.setdefault(i, n)
     owners = os.path.join(pdir, "os", "data-owners")
     if not os.path.isfile(owners): continue
-    rows = {}
+    rows, grows = {}, {}
     for n, line in enumerate(open(owners), 1):
         t = line.strip()
         if not t or t.startswith("#"): continue
         f = t.split(None, 4)
+        if len(f) == 5 and f[0] == "-" and f[1] == "-" and f[3].isdigit():
+            grows[f[2]] = int(f[3]); continue
         if len(f) < 5 or not f[1].isdigit() or not f[3].isdigit():
-            print(f"FAIL {os.path.relpath(owners, dev)}:{n}: not USER UID GROUP GID reason"); rc = 1; continue
+            print(f"FAIL {os.path.relpath(owners, dev)}:{n}: not USER UID GROUP GID reason (or - - GROUP GID reason)"); rc = 1; continue
         rows[f[0]] = (int(f[1]), f[2], int(f[3]))
+    own = {grp for _, grp in users.values()}
+    for name, gid in sorted(groups.items()):
+        if name in own: continue
+        if name not in grows: print(f"FAIL {os.path.relpath(owners, dev)}: group {name} (declared, gid {gid}) is no user's own group and is not in the table"); rc = 1
+        elif grows[name] != gid: print(f"FAIL {os.path.relpath(owners, dev)}: group {name} is {grows[name]} in the table, {gid} in the declarations"); rc = 1
+    for name in sorted(set(grows) - set(groups)):
+        print(f"FAIL {os.path.relpath(owners, dev)}: group {name} is in the table but no component of the product declares it"); rc = 1
     for name, (uid, grp) in sorted(users.items()):
         if name not in rows: print(f"FAIL {os.path.relpath(owners, dev)}: user {name} (declared, uid {uid}) is not in the table"); rc = 1; continue
         r = rows[name]
@@ -2539,6 +2549,13 @@ fixed_ids_self_test() {
   sed -i '/^uid = 905$/d' "$tmp/devices/components/lemnos/component.toml"
   out=$(fixed_ids_rule "$tmp/devices") && rc=1
   [[ $out == *'user lemnos has no fixed uid'* ]] || rc=1
+  # A group that is no user's own: declared at another gid than its table line, then not in the table at all.
+  sed -i 's/^gid = 904$/gid = 906/' "$tmp/devices/components/raze-base-files/component.toml"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *'group appdata is 904 in the table, 906 in the declarations'* ]] || rc=1
+  sed -i '/^- .* appdata /d' "$tmp/devices/products/raze-base/os/data-owners"
+  out=$(fixed_ids_rule "$tmp/devices") && rc=1
+  [[ $out == *"group appdata (declared, gid 906) is no user's own group and is not in the table"* ]] || rc=1
   rm -rf "$tmp"; return $rc
 }
 if ! fi_out=$(fixed_ids_rule "$root"); then

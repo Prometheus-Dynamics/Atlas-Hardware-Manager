@@ -48,8 +48,11 @@ REFUSALS = [
 ADDRESS = re.compile(r"^Address=(\S+)$", re.M)
 
 
-def run(serial, out_dir, scheme_conf=None):
+def run(serial, out_dir, scheme_conf=None, peer_env=None):
     env = dict(os.environ)
+    env.pop("LEMNOS0_PEER_ENV", None)
+    if peer_env is not None:
+        env["LEMNOS0_PEER_ENV"] = peer_env
     env["LEMNOS0_CONF"] = scheme_conf or CONF
     env["LEMNOS0_OUT"] = out_dir
     env["LEMNOS0_PEER_DIR"] = os.path.join(out_dir, "peer")
@@ -101,6 +104,19 @@ def check():
                 problems.append(f"serial {serial}: the network file lacks Name=lemnos0, DHCPServer=yes or IPv6AcceptRA=no")
             elif "EmitRouter=no" not in text or "EmitDNS=no" not in text:
                 problems.append(f"serial {serial}: the DHCP server would announce a router or DNS")
+    # A product that keeps its listener to the interface says LEMNOS0_PEER_ENV=off: the address is written as ever, no
+    # peer file is, and one left by an earlier run is removed.
+    serial, expected = VECTORS[0]
+    with tempfile.TemporaryDirectory() as out:
+        run(serial, out)
+        if peer_file(out) is None:
+            problems.append("peer env off: the first run wrote no peer file to remove")
+        result = run(serial, out, peer_env="off")
+        found = ADDRESS.search(network_file(out) or "")
+        if result.returncode != 0 or not found or found.group(1) != expected:
+            problems.append(f"peer env off: the address was not written as the vector gives it ({result.stderr.strip()})")
+        if peer_file(out) is not None:
+            problems.append("peer env off: a peer file is still there")
     for serial, why in REFUSALS:
         with tempfile.TemporaryDirectory() as out:
             result = run(serial, out)

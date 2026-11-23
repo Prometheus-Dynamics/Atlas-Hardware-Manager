@@ -1,12 +1,13 @@
 # The Raze's way in over SSH (coordinator's ruling 2026-11-18; Lemnos IMG-REQ-raze 27): Orion's own SSH server, on
-# lemnosd's USB network interface (lemnos0) only, never a wildcard. No sshd on the image. Orion binds port 22 on that
-# interface and keeps retrying, so a gadget that comes up after the comm core is fine. Set through the environment
+# lemnosd's USB network interface (lemnos0) and, since move 13 (Orion 5b94401's interface lists), wired Ethernet (end0),
+# never a wildcard. No sshd on the image. Orion binds port 22 on each and keeps retrying, so a gadget that comes up after
+# the comm core is fine. Set through the environment
 # (Orion reads ORION_* over orion.conf), so the shared orion.conf stays as it is: zero-3e-bench runs dropbear on 22.
 # Host key: orion.conf's ssh.host_key, on /data (it survives boots and slot changes). Logins go through Orion's trust
 # store. Untested on board.
 version = 1
 name = "raze-orion-ssh"
-description = "Orion's SSH on the Raze's USB network interface lemnos0 (a drop-in for orion-comm)."
+description = "Orion's SSH on the Raze's USB network interface lemnos0 and wired Ethernet end0 (a drop-in for orion-comm)."
 
 [[install]]
 from = { file = "files/20-ssh-lemnos0.conf" }

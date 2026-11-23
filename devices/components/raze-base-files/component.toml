@@ -2,7 +2,7 @@
 # leaves its logs for the support bundle (Orion).
 version = 1
 name = "raze-base-files"
-description = "Raze base system config: the bounded persistent journal"
+description = "Raze base system config: the bounded persistent journal, the console rule, and the product's own Orion lines (ways in, file roots, the appdata group)"
 
 [[install]]
 from = { file = "files/60-board-journald.conf" }
@@ -69,3 +69,28 @@ mode = "0644"
 [[services]]
 unit = "board-journal.service"
 enable = true
+
+# The Raze's own Orion lines (move 13; written against Orion 5b94401): the comm core's ways in (the USB link's network
+# and wired Ethernet, mDNS on both) and the application's two data directories; node logic's file roots; and no peer
+# address file from lemnos0-address. Each file says why.
+[[install]]
+from = { file = "files/30-raze-ways-in.conf" }
+to = "/etc/systemd/system/orion-comm.service.d/30-raze-ways-in.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/30-raze-file-roots.conf" }
+to = "/etc/systemd/system/orion-node.service.d/30-raze-file-roots.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/10-no-peer-env.conf" }
+to = "/etc/systemd/system/lemnos0-address.service.d/10-no-peer-env.conf"
+mode = "0644"
+
+# The group that owns the application's data on /data (/data/app, /data/calibrations: root:appdata 2770). A fixed id,
+# as every owner of files on /data has (os/data-owners). No user of this image has it as its own group: node logic
+# takes it as a supplementary group, and the application's user joins it when the HeliOS port defines that user.
+[[groups]]
+name = "appdata"
+gid = 904

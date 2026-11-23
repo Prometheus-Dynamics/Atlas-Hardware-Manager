@@ -274,6 +274,8 @@ if product:
             t = line.strip()
             if not t or t.startswith("#"): continue
             f = t.split(None, 4)
+            if len(f) == 5 and f[0] == "-" and f[1] == "-" and f[3].isdigit():
+                owners.append((None, None, f[2], f[3])); continue
             if len(f) < 5 or not f[1].isdigit() or not f[3].isdigit():
                 bad.append(f"{table}:{n}: not USER UID GROUP GID reason: {t}"); continue
             owners.append((f[0], f[1], f[2], f[3]))
@@ -306,7 +308,9 @@ for want, unit in named:
     targets = [w for s_, k, v in kv if s_ == "Install" and k in ("WantedBy", "RequiredBy") for w in v.split()]
     if not targets or not linked(unit, targets): bad.append(f"{unit}: os/units says linked, but no enable link names it")
 for user, uid, group, gid in owners:
-    if user not in uid_of: bad.append(f"data owner {user}: not in the root's /etc/passwd (pinned {uid}:{gid})")
+    # A group-only line (- - GROUP GID): a group that owns files on /data and is no user's own.
+    if user is None: pass
+    elif user not in uid_of: bad.append(f"data owner {user}: not in the root's /etc/passwd (pinned {uid}:{gid})")
     elif uid_of[user] != (uid, gid): bad.append(f"data owner {user}: the root has {uid_of[user][0]}:{uid_of[user][1]}, the pin is {uid}:{gid} (os/data-owners)")
     if group not in gid_of: bad.append(f"data owner group {group}: not in the root's /etc/group (pinned {gid})")
     elif gid_of[group] != gid: bad.append(f"data owner group {group}: the root has gid {gid_of[group]}, the pin is {gid} (os/data-owners)")
@@ -385,7 +389,7 @@ self_test() {
   mkdir -p "$tmp/prod/os" "$tmp/prod/c"
   printf 'version = 1\nname = "p"\n[components]\nc = "c/component.toml"\n[[images]]\nname = "img"\ncomponents = ["c"]\n' > "$tmp/prod/product.toml"
   printf 'version = 1\nname = "c"\n[[services]]\nunit = "lemnosd.service"\nenable = true\n[[services]]\nunit = "orion-node.service"\nenable = true\n' > "$tmp/prod/c/component.toml"
-  printf '# t\nlemnos 900 lemnos 900  test\norion 901 orion 901  test\n' > "$tmp/prod/os/data-owners"
+  printf '# t\nlemnos 900 lemnos 900  test\norion 901 orion 901  test\n- - orion 901  a group-only line\n' > "$tmp/prod/os/data-owners"
   printf '# t\nlinked orion-node.service  test\nmasked masked.service  test\n' > "$tmp/prod/os/units"
   expect_fail_p() {  # <name> <text>   (the product mode)
     check "$tmp/$1.erofs" "$tmp/prod/product.toml" > "$tmp/$1.p.log" 2>&1 && { echo "check-slot-users: self-test: $1 passed (product)" >&2; rc=1; return; }

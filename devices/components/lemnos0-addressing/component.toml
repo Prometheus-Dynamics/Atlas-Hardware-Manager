@@ -1,13 +1,12 @@
 # The Raze's USB network address scheme, shared by every product that uses it (Raze, and the ZERO 3E bench): serial-hash-v1.
 # The gadget's NCM interface lemnos0 (Lemnos's usb-gadget names it lemnos<N>) gets its address at boot from the board serial:
 # a /29 in 172.31.0.0/16, excluding 172.31.250.0/24, with systemd-networkd's DHCPServer for the host on the rest of that /29.
-# The four files are the one copy of the scheme: the script (lemnos0-address), its data (lemnos0-addressing.conf), the unit that
-# runs it before systemd-networkd, and the interim sysctl (the comm core binds its USB address before lemnos0 exists; the Raze's
-# interim ruling). Moved here from raze-base-files so two copies cannot drift; check-lemnos0-address.py tests this file.
+# The three files are the one copy of the scheme: the script (lemnos0-address), its data (lemnos0-addressing.conf) and the unit that
+# runs it before systemd-networkd. Moved here from raze-base-files so two copies cannot drift; check-lemnos0-address.py tests this file.
 # Untested on the bench; the Raze's proofs are in docs/prs/L2b.md and check-lemnos0-address.py.
 version = 1
 name = "lemnos0-addressing"
-description = "The USB network address of lemnos0 by serial-hash-v1 (a /29 in 172.31.0.0/16): the script, its data, its unit and the interim sysctl."
+description = "The USB network address of lemnos0 by serial-hash-v1 (a /29 in 172.31.0.0/16): the script, its data, and its unit."
 
 [[install]]
 from = { file = "files/lemnos0-addressing.conf" }
@@ -24,11 +23,9 @@ from = { file = "files/lemnos0-address.service" }
 to = "/etc/systemd/system/lemnos0-address.service"
 mode = "0644"
 
-# The interim sysctl: the comm core may bind its USB address before the address exists (see the file's comment).
-[[install]]
-from = { file = "files/60-raze-lemnos0.conf" }
-to = "/etc/sysctl.d/60-raze-lemnos0.conf"
-mode = "0644"
+# The interim sysctl (net.ipv4.ip_nonlocal_bind = 1) is NOT here since move 13: only a product whose comm core binds the
+# board's own address needs it, and it is that product's file (zero-3e-bench: components/bench-network). The Raze keeps a
+# listener to the interface instead (Orion's peer.interface) and has no such sysctl; the flasher sets it itself (S39flasher-net).
 
 # The address unit runs before systemd-networkd, which runs the network file it writes.
 [[services]]

@@ -21,3 +21,10 @@ from = { file = "files/20-bench-mdns.network" }
 to = "/etc/systemd/network/20-bench-mdns.network"
 mode = "0644"
 
+# The interim sysctl (moved here from lemnos0-addressing in move 13, unchanged): this product's comm core still binds the
+# board's own USB address (components/orion's orion-comm-peer.conf reads /run/lemnos0/orion-peer.env), which may come
+# before the address exists (the file's comment). It goes when this product takes Orion's interface lists.
+[[install]]
+from = { file = "files/60-raze-lemnos0.conf" }
+to = "/etc/sysctl.d/60-raze-lemnos0.conf"
+mode = "0644"

@@ -6,8 +6,9 @@
 # S39flasher-net reads the network file the script writes, gives lemnos0 the address, and runs udhcpd for the PC on
 # the rest of the /29. A stock host takes the lease with no configuration.
 #
-# lemnos0-addressing's systemd unit and sysctl.d file come along and do nothing here (no systemd, no sysctl at
-# boot; S39flasher-net sets the same sysctl). Two small text files, carried so the scheme stays one component.
+# lemnos0-addressing's systemd unit comes along and does nothing here (no systemd). One small text file, carried so
+# the scheme stays one component. S39flasher-net sets net.ipv4.ip_nonlocal_bind itself and reads the peer address
+# file (/run/lemnos0/orion-peer.env) the script writes.
 version = 1
 name = "flasher-lemnos0"
 description = "the bcm2712 flasher's USB network: the board's serial-hash-v1 address on lemnos0, udhcpd for the PC, and the comm core's settings with its TCP way in"
