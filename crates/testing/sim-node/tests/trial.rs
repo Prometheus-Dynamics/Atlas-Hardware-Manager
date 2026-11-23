@@ -158,7 +158,7 @@ fn list_has_the_i5f_fields_null_by_default_and_an_outcome_per_slot() {
 }
 
 #[test]
-fn a_list_over_60_kib_is_refused_by_name_with_no_output() {
+fn a_list_over_the_bridge_bound_is_refused_with_its_words_and_no_output() {
     let node = start("list-limit");
     let orion = node.connect("list-limit").expect("a session");
     // Each slot is about 480 bytes of JSON, so 300 of them are well over 60 KiB. They go in
@@ -191,7 +191,7 @@ fn a_list_over_60_kib_is_refused_by_name_with_no_output() {
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert_eq!(
         finished.detail,
-        "-22: system.slots.list: the reply is over 60 KiB; refused by name, nothing partial is sent"
+        "-4098: the reply is larger than 61440 bytes, the most a frame carries"
     );
     assert!(finished.output.is_empty(), "no partial output is sent");
 }

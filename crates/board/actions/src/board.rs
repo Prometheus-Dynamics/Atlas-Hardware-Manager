@@ -34,6 +34,7 @@
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 
+use atlas_session::lease::lapse_words;
 use atlas_session::lemnos;
 use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, RunHandle, Target, Update};
@@ -55,6 +56,17 @@ pub const DETACHED_DEADLINE_MS: u64 = 60 * 60 * 1000;
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+
+/// The sentence a run's lapse shows: the lease, the period it was kept for, and the run it may have
+/// cost. `said` is the board's own words when the run had ended with an error, else `not finished`.
+fn lapsed_reason(period: Duration, call: u64, said: &str) -> String {
+    let words = lapse_words(period, &format!("run {call}"));
+    if said == NOT_FINISHED || said.is_empty() {
+        words
+    } else {
+        format!("{words}. The board said: {said}")
+    }
+}
 
 /// The prefix a board's reply carries once the caller's lease ended and its holds were released:
 /// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
@@ -504,7 +516,7 @@ impl BoardActions {
             {
                 return Err(ActionError::HoldLapsed {
                     call,
-                    reason: NOT_FINISHED.to_owned(),
+                    reason: lapsed_reason(hold.lease_period(), call, NOT_FINISHED),
                 });
             }
             match seen {
@@ -515,7 +527,11 @@ impl BoardActions {
                     if lease_ended(&finished.detail) {
                         return Err(ActionError::HoldLapsed {
                             call,
-                            reason: finished.detail,
+                            reason: lapsed_reason(
+                                hold.map_or(atlas_session::LEASE, Hold::lease_period),
+                                call,
+                                &finished.detail,
+                            ),
                         });
                     }
                     let result = followed_end(finished);
@@ -524,7 +540,11 @@ impl BoardActions {
                         (Some(hold), Err(error)) if hold.lapsed() => {
                             return Err(ActionError::HoldLapsed {
                                 call,
-                                reason: error.to_string(),
+                                reason: lapsed_reason(
+                                    hold.lease_period(),
+                                    call,
+                                    &error.to_string(),
+                                ),
                             });
                         }
                         // An end read on a later session is not trusted, failure or cancel alike:

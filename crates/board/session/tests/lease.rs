@@ -174,17 +174,31 @@ async fn a_hold_is_renewed_when_the_renew_period_has_passed_on_the_clock() {
     connected(&handle).await;
 
     let _hold = handle.hold();
+    // The first renewal is due at once: its describe reply gives the board's lease period.
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
     let_turns_run().await;
     assert_eq!(
         renewals(&node),
-        0,
-        "the clock has not moved: nothing is due"
+        1,
+        "the clock has not moved: nothing else is due"
     );
 
     clock.advance(RENEW);
-    renewed(&handle, &node, 1, "the first renewal").await;
+    renewed(
+        &handle,
+        &node,
+        2,
+        "a renewal once the renew period has passed",
+    )
+    .await;
     clock.advance(RENEW);
-    renewed(&handle, &node, 2, "a second renewal").await;
+    renewed(&handle, &node, 3, "a second renewal").await;
 }
 
 #[tokio::test]
@@ -200,6 +214,13 @@ async fn the_holders_own_bridge_traffic_suppresses_renewals() {
     // Each step moves the clock by half the renew period, then the holder makes a bridge request.
     // The silence never reaches the renew period, however the machine is scheduled.
     let _hold = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
     for _ in 0..20 {
         clock.advance(RENEW / 2);
         bridge_read(&handle).await;
@@ -207,8 +228,8 @@ async fn the_holders_own_bridge_traffic_suppresses_renewals() {
     let_turns_run().await;
     assert_eq!(
         renewals(&node),
-        0,
-        "the holder's own requests renewed the lease, so none was sent"
+        1,
+        "the holder's own requests renewed the lease, so none was sent after the first"
     );
 }
 
@@ -224,8 +245,15 @@ async fn two_holders_keep_the_lease_until_both_are_gone() {
 
     let first = handle.hold();
     let second = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
     clock.advance(RENEW);
-    renewed(&handle, &node, 1, "a renewal with both holds").await;
+    renewed(&handle, &node, 2, "a renewal with both holds").await;
 
     drop(first);
     let before = renewals(&node);
@@ -483,9 +511,9 @@ async fn a_renewal_the_bridge_refused_is_not_counted_and_is_tried_again_on_the_b
         .expect("the node is on");
     connected(&handle).await;
 
-    let _hold = handle.hold();
+    // Refused from the start: the first renewal (due at once, to read the period) is refused too.
     node.refuse_describe(true);
-    clock.advance(RENEW);
+    let _hold = handle.hold();
     renewed(&handle, &node, 1, "the first renewal, refused").await;
     // The refused renewal is not a renewal: the session tries again well before a full renew period.
     node.refuse_describe(false);
@@ -504,6 +532,13 @@ async fn a_bridge_request_the_node_did_not_answer_does_not_renew_the_lease() {
     connected(&handle).await;
 
     let _hold = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
     clock.advance(RENEW / 2);
     // A bridge request that fails before the node answers it: it must not count as the renewal.
     let _ = handle
@@ -518,8 +553,87 @@ async fn a_bridge_request_the_node_did_not_answer_does_not_renew_the_lease() {
     renewed(
         &handle,
         &node,
-        1,
+        2,
         "the renewal, due a full period after the last answered request",
     )
     .await;
+}
+
+/// The locked board's own lease (`Lease::DEFAULT`, now in force): a hold is renewed on each renew period,
+/// so the board, which drops a caller silent for its period (60 s), drops nothing while the hold lasts.
+#[tokio::test]
+async fn the_locked_board_lease_is_kept_alive_by_a_hold_and_the_board_drops_nothing() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("locked-default"), &with_lemnos(), None);
+    let sessions = sessions(Lease::DEFAULT, &clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let hold = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
+    // Four renew periods of silence on the board's clock and the session's clock, in step: without the
+    // renewals the board would have dropped the caller at its first full period.
+    for step in 1..=4 {
+        node.lease_advance(20);
+        clock.advance(Duration::from_secs(20));
+        renewed(&handle, &node, 1 + step, "a renewal each renew period").await;
+    }
+    let_turns_run().await;
+    assert_eq!(
+        node.lease_drops(),
+        0,
+        "the board dropped nothing: the lease was renewed"
+    );
+    assert!(!hold.lapsed(), "the hold did not lapse");
+}
+
+/// The board's own period (its describe reply's `lease_seconds`) is the one the session keeps, and a
+/// silence past it with a hold is a lapse, even though the renew period has not passed.
+#[tokio::test]
+async fn the_boards_lease_period_is_read_and_a_silence_past_it_is_a_lapse() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("period-read"), &with_lemnos(), None);
+    node.lease_set(Duration::from_secs(10), Duration::from_secs(600));
+    let sessions = sessions(
+        Lease {
+            period: PERIOD,
+            renew: Duration::from_secs(20),
+            in_force: true,
+        },
+        &clock,
+    );
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let hold = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the first renewal, reading the board's period",
+    )
+    .await;
+    assert_eq!(
+        hold.lease_period(),
+        Duration::from_secs(10),
+        "the board's period of 10 s, not the 60 s default"
+    );
+    let mut lapses = handle.lapses();
+    // 11 s of silence: past the board's 10 s, short of the 20 s renew period, so only the lapse is due.
+    clock.advance(Duration::from_secs(11));
+    tokio::time::timeout(DEADLINE, lapses.changed())
+        .await
+        .expect("the silence past the board's period is a lapse")
+        .expect("the monitor is running");
+    assert!(hold.lapsed(), "the hold sees the lapse");
 }

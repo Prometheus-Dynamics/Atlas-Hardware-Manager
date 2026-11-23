@@ -15,6 +15,8 @@ use atlas_session::Handle;
 use atlas_slots::{SlotList, check_remove};
 use atlas_types::{CapabilityKind, CapabilitySet, Reading};
 
+use atlas_session::lemnos::actions;
+
 use crate::SlotError;
 
 /// Lemnos's `system.slots/1` methods, named `system.<contract>.<method>` with the method as the
@@ -22,14 +24,14 @@ use crate::SlotError;
 /// board node runs each one on the device that carries the contract (see `atlas_session::lemnos`).
 /// The list method is the only one whose reply is an out buffer (`list`, L1/M8a); it is called in
 /// ONE place: [`BoardSlots::list`].
-pub const LIST: &str = "system.slots.list";
-pub const ACCEPT: &str = "system.slots.accept";
-pub const INSTALL_FILE: &str = "system.slots.install_file";
-pub const SET_DEFAULT: &str = "system.slots.set_default";
-pub const TRIAL: &str = "system.slots.trial";
-pub const REMOVE: &str = "system.slots.remove";
-pub const PIN: &str = "system.slots.pin";
-pub const SET_KEEP: &str = "system.slots.set_keep";
+pub const LIST: &str = actions::SLOTS_LIST;
+pub const ACCEPT: &str = actions::SLOTS_ACCEPT;
+pub const INSTALL_FILE: &str = actions::SLOTS_INSTALL_FILE;
+pub const SET_DEFAULT: &str = actions::SLOTS_SET_DEFAULT;
+pub const TRIAL: &str = actions::SLOTS_TRIAL;
+pub const REMOVE: &str = actions::SLOTS_REMOVE;
+pub const PIN: &str = actions::SLOTS_PIN;
+pub const SET_KEEP: &str = actions::SLOTS_SET_KEEP;
 
 /// One short action the board names, with its argument kinds. Not reported as long, so it runs
 /// as a call, not a job.
@@ -80,8 +82,8 @@ impl BoardSlots {
     /// The slots of the node `handle` keeps a session with, as its capability set says. A set
     /// whose offers were not reported ([`CapabilitySet::offers_not_reported`]) gives
     /// [`SlotError::NotReported`] for every call, not [`SlotError::NoSlots`].
-    // LOCK: Lemnos M8c (offers cap 1024): until the board's offers are reported in full, a board
-    // with about 19 or more contracts reads as not reported here.
+    // A board whose offers text is over the hello limit (1024 bytes at the pin, hello.rs:19) reads as not
+    // reported here. Its contracts are not "none".
     #[must_use]
     pub fn for_capabilities(
         handle: Handle,
@@ -130,8 +132,10 @@ impl BoardSlots {
     /// reply (over 60 KiB, M8a) comes back as `Board(Refused)` with the board's words, never
     /// truncated and never retried.
     ///
-    /// // LOCK: Lemnos M8a 5dcf1a78: the reply is an out buffer; the Atlas lock does not carry it yet.
-    /// // LOCK: Lemnos L1 (paging, M8b): when the reply can be paged, this one call is what changes.
+    /// The bridge answers `list` in one out buffer of at most 60 KiB (Lemnos service/orion/src/calls.rs,
+    /// `ORION_REPLY_MAX`); a larger reply is refused by the board. The pin pages it (`list_page`,
+    /// contracts/system-slots/src/lib.rs:149); Atlas does not read pages yet, so this one call is what
+    /// would change.
     ///
     /// # Errors
     ///

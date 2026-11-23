@@ -7,8 +7,8 @@ the first free number, so the board-side name is `lemnos0`. A systemd-networkd f
 that matches the gadget's name must name exactly that interface: a wildcard such as `usb*` or
 `lemnos*` would also catch a host-role USB adapter, so the match here is exact.
 
-LOCK: the name is read from Lemnos contracts/usb-link.toml `[network] board_interface` (version 3, Lemnos
-R1i) when LEMNOS_USB_LINK names that file; otherwise the tip's DEFAULT_INTERFACES `lemnos%d` -> `lemnos0` is used.
+LOCK: Lemnos bbb3c420 contracts/usb-link.toml:12 (version 3) and :59 (board_interface_template). The name is read from
+`[network] board_interface` (version 3, Lemnos R1i) when LEMNOS_USB_LINK names that file; otherwise the tip's DEFAULT_INTERFACES `lemnos%d` -> `lemnos0` is used.
 
 Run from the repository root. `--self-test` checks the rule on fixtures.
 """
@@ -24,7 +24,7 @@ import tomllib
 # LEMNOS_USB_LINK (a Gaia-fetched or locally exported contracts/usb-link.toml). Unset, or a file with no [network]
 # table (Lemnos's version 2, which is what the tip and the lock carry today), the fallback below is used.
 CONTRACT = os.environ.get("LEMNOS_USB_LINK", "")
-# LOCK: Lemnos R1i (contracts/usb-link.toml version 3, [network] board_interface_template / board_interface).
+# LOCK: Lemnos bbb3c420 contracts/usb-link.toml:12 (version 3) and :59 (board_interface_template), the R1i keys.
 # Fallback until the lock has it: the tip's DEFAULT_INTERFACES `ifname=lemnos%d`, first free number lemnos0.
 FALLBACK_TEMPLATE = "lemnos%d"
 FALLBACK_FIRST = "lemnos0"
@@ -37,7 +37,7 @@ def contract_names():
             network = tomllib.load(handle).get("network")
         if network and "board_interface" in network:
             return network.get("board_interface_template", FALLBACK_TEMPLATE), network["board_interface"], CONTRACT
-    return FALLBACK_TEMPLATE, FALLBACK_FIRST, "the fallback (LOCK: Lemnos R1i)"
+    return FALLBACK_TEMPLATE, FALLBACK_FIRST, "the fallback (LOCK: Lemnos bbb3c420 contracts/usb-link.toml:59)"
 
 
 TEMPLATE, FIRST, SOURCE = contract_names()

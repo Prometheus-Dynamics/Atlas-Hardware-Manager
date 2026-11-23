@@ -154,7 +154,7 @@ impl CapabilitySet {
     }
 
     /// A set whose offers were not reported, with the kinds the driver granted anyway.
-    // LOCK: Lemnos M8c (offers cap 1024): until then a board whose offers are dropped is this set.
+    // A board whose offers text is over the hello limit (`FACT_MAX_BYTES`, 1024 bytes at the pin) is this set.
     pub fn offers_not_reported(kinds: impl IntoIterator<Item = CapabilityKind>) -> Self {
         Self {
             kinds: kinds.into_iter().collect(),

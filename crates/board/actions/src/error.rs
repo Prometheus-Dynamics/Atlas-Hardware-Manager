@@ -89,11 +89,9 @@ pub enum ActionError {
     NotYet(String),
     /// The session was silent for longer than the board's lease while this run's hold existed:
     /// the board may have dropped the hold, and with it the run. The outcome on the board is not
-    /// known from here. `reason` is the board's own words when the run had already ended with an
-    /// error, else `not finished`.
-    #[error(
-        "the board may have dropped the hold on run {call}: no request reached its bridge within the lease (the board said: {reason})"
-    )]
+    /// known from here. `reason` is the sentence for people: the lease, the period it was kept for,
+    /// and the run it cost; with the board's own words when the run had already ended with an error.
+    #[error("{reason}")]
     HoldLapsed { call: u64, reason: String },
     /// The job could not be queued (a second job holds the board, or the job list is refused).
     #[error(transparent)]

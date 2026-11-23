@@ -19,10 +19,10 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 /// The lease period of the locked bridge.
-// LOCK: Lemnos I6g lease period (the bridge's default, 60 s).
+// board: Lemnos bbb3c420 service/orion/src/config.rs:220 (LEASE, the default when LEMNOS_ORION_LEASE is unset).
 pub const PERIOD: Duration = Duration::from_secs(60);
 /// The stall time of the locked bridge's transfers.
-// LOCK: Lemnos I6g stall rule (a stalled transfer is dropped after 600 s).
+// board: Lemnos bbb3c420 service/orion/src/files.rs:40 (IDLE, 600 s: a file with no traffic is given up).
 pub const STALL: Duration = Duration::from_secs(600);
 
 /// What the node must end, as a drop the lease decided.
@@ -124,7 +124,7 @@ impl Leases {
         let silent: Vec<String> = state
             .last
             .iter()
-            .filter(|(_, last)| now.saturating_sub(**last) > period)
+            .filter(|(_, last)| now.saturating_sub(**last) >= period)
             .map(|(caller, _)| caller.clone())
             .collect();
         for caller in silent {
@@ -138,6 +138,11 @@ impl Leases {
     /// The note is given once.
     pub(crate) fn take_note(&self, caller: &str) -> bool {
         self.state().ended.remove(caller)
+    }
+
+    /// The lease period in whole seconds, as the bridge writes it in a describe record.
+    pub(crate) fn period_secs(&self) -> u64 {
+        self.state().period.as_secs()
     }
 
     /// Sets the period and the stall time (a test's shorter ones).
@@ -165,7 +170,7 @@ impl Leases {
 /// The note a caller's first reply after its lease ended carries, at the start of its detail (the
 /// bridge's `LEASE_ENDED_NOTE`, Lemnos M39-TCP). Matched by its prefix `lease-ended:`; the rest is
 /// free text. A typed reply field replaces the prefix later (M40).
-// LOCK: Lemnos c215f575 service/orion/src/calls.rs:446 (at the pinned 7d91d645: line 456, the same text), LEASE_ENDED_NOTE (the same text as at 31e0f736:421).
+// board: Lemnos bbb3c420 service/orion/src/calls.rs:473 (LEASE_ENDED_NOTE, the same text).
 pub const LEASE_ENDED_NOTE: &str = "lease-ended: holds released";
 
 /// A reply's detail with the note in front: the note alone when the detail is empty, else the note,

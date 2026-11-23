@@ -209,8 +209,8 @@ fn parse_slot(entry: &Value, index: usize) -> Result<Slot, ListError> {
                 .collect()
         })
         .unwrap_or_default();
-    // LOCK: Lemnos L2: today's board writes `signed` only; the `signature` word (the shared table,
-    // with slot.key) comes at L2. Until then an absent word is NotReported, never verified.
+    // The board writes `signature` (Lemnos bbb3c420 drivers/system-slots/src/lib.rs:1397, the shared table
+    // of `BoardOutcome` words). An absent word is NotReported, never verified; `signed` is the older flag.
     let signature = match entry.get("signature").and_then(Value::as_str) {
         Some(word) if !word.is_empty() => Reported::Known(BoardOutcome::parse(word)),
         _ => Reported::NotReported,

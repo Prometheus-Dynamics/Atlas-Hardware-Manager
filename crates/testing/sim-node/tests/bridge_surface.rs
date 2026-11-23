@@ -58,8 +58,8 @@ fn the_old_node_names_are_not_found() {
     let orion = node.connect("bridge-old").expect("a session");
     for name in [
         "system.slots.list",
-        "system.slots.set-default",
-        "system.slots.install-file",
+        "system.slots.set_default",
+        "system.slots.install_file",
         "system.reboot.reboot",
         "system.flash.verify",
     ] {

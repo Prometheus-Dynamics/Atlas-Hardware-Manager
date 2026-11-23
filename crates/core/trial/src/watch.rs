@@ -359,8 +359,8 @@ impl Watch {
     fn decide(&self, list: &SlotList) -> TrialState {
         let slot = self.slot.clone();
         let running = self.running();
-        // LOCK: Lemnos L2 (I5g): the per-slot `signature` word. Until the board writes it, an absent
-        // word is NotReported, never verified.
+        // The board writes the per-slot `signature` word (Lemnos bbb3c420 drivers/system-slots/src/lib.rs:1397).
+        // An absent word is NotReported, never verified.
         let signature = list
             .get(&self.slot)
             .map_or(Reported::NotReported, |listed| listed.signature.clone());

@@ -98,7 +98,8 @@ config = { timeout_s = 15 }
 # controller's device-tree path, which the boot script hands on (Lemnos docs/slots.md "the boot source").
 # Sizing (Z2; the arithmetic is in board.toml, [[partitions]] data): keep = 2 (running + the new install), reserve_mb = 128
 # (free space an install leaves). Neither inherits Lemnos's defaults (keep 3, reserve 2048 MiB). grow_data = false: GPT: Lemnos's
-# grow is MBR-only until Lemnos GROW; this stops its 8 s refusal loop (grow.rs:1-5, lib.rs:1344, :1666). Remove when Lemnos says.
+# GPT is grown in code at bbb3c420 (drivers/slot-store/src/grow/gpt.rs), but GROW is not yet run on a card
+# (testing/board-runs/GROW.md, docs/hardware-status.md). This stays false until that run; then it can change.
 [[devices]]
 id = "slots"
 driver = "system-slots"

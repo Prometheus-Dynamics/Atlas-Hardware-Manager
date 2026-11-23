@@ -112,8 +112,8 @@ pub struct DeviceRecord {
     pub reason: Option<String>,
     /// The device's lease period in seconds, when the description gives one. Not used for the
     /// session's lease yet (see `atlas-session`).
-    // LOCK: Lemnos I6g: `lease_seconds` on the device record. Not written at e5c0ff0e (the encoder
-    // has no such key), so it reads as not reported until the lock move that takes I6g.
+    // board: Lemnos bbb3c420 service/orion/src/description.rs:246 writes `lease_seconds` on the device record
+    // when the board's lease is on (its default). Absent when the lease is off.
     pub lease_seconds: Option<u64>,
     /// Whether the device is live (Lemnos 7b4fdb25: `live`): true while it runs, false when it is off or
     /// retrying. Absent from an older board's record.

@@ -10,9 +10,9 @@
 //!   name ([`TeamList`]), so with no robot nothing is probed.
 //! - Orion nodes ([`atlas_board::BoardDriver`]) on the same `Ethernet` link, at the addresses in
 //!   `ATLAS_ORION_ADDRESSES` (comma separated, `orion+tcp://host:port`). The driver takes its
-//!   addresses from its caller until Orion's own discovery lands (Orion D12), so there is nothing
-//!   to find a running board by yet; an address that is not an Orion address is left out and said
-//!   in the log.
+//!   addresses from its caller: Orion's discovery is in its pinned tree but Atlas does not read it
+//!   yet, so there is nothing to find a running board by; an address that is not an Orion address
+//!   is left out and said in the log.
 //!
 //! What is not wired, and why: the boot ROM drivers (USB boot, maskrom, burn, FEL). Each is
 //! built from the USB ids it serves, and the embedded catalog lists a board's USB ids without

@@ -6,11 +6,13 @@
 
 mod capability;
 mod device;
+mod facts;
 mod ids;
 mod link;
 pub mod socket;
 
 pub use capability::{CapabilityKind, CapabilitySet, Offers, Reading};
 pub use device::{DeviceState, Identity, LemnosState};
+pub use facts::{FACT_MAX_BYTES, LEMNOS_FACTS};
 pub use ids::{DeviceKey, Family, KeyError, LinkId, NoBoardIdentity, Serial};
 pub use link::{Candidate, Link, LinkKind};

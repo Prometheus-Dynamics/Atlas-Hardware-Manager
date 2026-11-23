@@ -5,7 +5,7 @@
 # This supersedes B9's unlanded flasher-bcm2712 (pr/B9 b2efaf42). What changed, and why (docs/prs/D6.md):
 #   - Orion runs as orion-comm and orion-node with hello.state = flasher (flasher-orion), not orion-recovery
 #     alone: the recovery comm core refuses file pushes and actions.
-#   - The board file is the flasher's own (raze-flasher-board: Lemnos bcm2712-flasher.toml with the Raze's id),
+#   - The board file is the flasher's own (raze-flasher-board, the Lemnos bcm2712-flasher.toml with the Raze's id),
 #     because only a flasher's board file sets allow_first_flash.
 #   - Every Lemnos part is at Lemnos next da86d0b3 and Orion at next 3f60576c (flasher-* components), confirmed for
 #     this work only. The Raze product's pins do not move.

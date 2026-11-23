@@ -12,9 +12,10 @@
 //! `describe` is the bare word, with no arguments; the bridge answers the device's description
 //! as text.
 //!
-//! Atlas names a Lemnos method `system.<contract>.<method>` (`system.slots.list`,
-//! `system.reboot.reboot`), where `-` in the method is `_` (`install-file` is `install_file`). Every
-//! contract Atlas names is version 1.
+//! Atlas names a Lemnos method `system.<contract>.<method>` with the method spelled as the contract
+//! crate spells it (`system.slots.list`, `system.reboot.reboot`, `system.slots.install_file`). There is
+//! one spelling: [`actions`] holds the names, and [`method_of`] and [`name_of`] are the only mappings.
+//! Every contract Atlas names is version 1.
 
 use std::collections::BTreeMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -33,13 +34,16 @@ use orion::actions::{ActionCall, Outcome, Target};
 use orion::types::ResourceName;
 
 /// The prefix of the resources of a node's devices (`lemnos.<device>`).
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:51 (RESOURCE_PREFIX)
 pub const RESOURCE_PREFIX: &str = "lemnos.";
 /// The kind a device resource is written as.
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:53 (RESOURCE_KIND)
 pub const RESOURCE_KIND: &str = "lemnos.device";
 /// What every file destination the bridge takes starts with: `lemnos/<device>/<name>`. The bridge
 /// takes a file only under this prefix, into the inbox of the device it names; a file pushed anywhere
 /// else is kept by the node and never reaches the device (Lemnos service/orion/src/files.rs:38,
 /// `DESTINATION_PREFIX`; the same at a6251ecf).
+// board: Lemnos bbb3c420 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
 pub const SINK_PREFIX: &str = "lemnos/";
 
 /// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`, with the file
@@ -68,6 +72,37 @@ pub const SLOTS: &str = <dyn Slots as Contract>::TAG.as_str();
 pub const REBOOT: &str = <dyn Reboot as Contract>::TAG.as_str();
 /// The contract the first-flash image is written through (Lemnos `contracts/system-flash`).
 pub const FLASH: &str = <dyn Flash as Contract>::TAG.as_str();
+
+/// The Atlas names of the Lemnos methods, one spelling: `system.<contract>.<method>`, with the method as the
+/// contract crate names it. Each is checked against [`methods`] and the contract crate's own table by the
+/// test `the_action_names_are_the_contracts_methods`. The sim (`atlas-sim-node`) names the same methods,
+/// and a test in this crate checks it agrees.
+pub mod actions {
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:89 (list)
+    pub const SLOTS_LIST: &str = "system.slots.list";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:129 (accept)
+    pub const SLOTS_ACCEPT: &str = "system.slots.accept";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:137 (install_file)
+    pub const SLOTS_INSTALL_FILE: &str = "system.slots.install_file";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:106 (set_default)
+    pub const SLOTS_SET_DEFAULT: &str = "system.slots.set_default";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:111 (trial)
+    pub const SLOTS_TRIAL: &str = "system.slots.trial";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:119 (remove)
+    pub const SLOTS_REMOVE: &str = "system.slots.remove";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:122 (pin)
+    pub const SLOTS_PIN: &str = "system.slots.pin";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:125 (set_keep)
+    pub const SLOTS_SET_KEEP: &str = "system.slots.set_keep";
+    // board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:154 (info)
+    pub const SLOTS_INFO: &str = "system.slots.info";
+    // board: Lemnos bbb3c420 contracts/system-reboot/src/lib.rs:12 (reboot)
+    pub const REBOOT_REBOOT: &str = "system.reboot.reboot";
+    // board: Lemnos bbb3c420 contracts/system-flash/src/lib.rs:63 (verify)
+    pub const FLASH_VERIFY: &str = "system.flash.verify";
+    // board: Lemnos bbb3c420 contracts/system-flash/src/lib.rs:38 (info)
+    pub const FLASH_INFO: &str = "system.flash.info";
+}
 
 /// The method names Atlas calls, as the contract crates name them. Each is checked against the crate's
 /// own method table by the test `the_method_names_atlas_calls_are_the_contracts`.
@@ -140,7 +175,7 @@ fn call_on(resource: &str, args: Vec<u8>) -> Result<Call, String> {
 }
 
 /// The contract and method an Atlas Lemnos name stands for: `system.slots.list` is
-/// `("system.slots/1", "list")`, `system.slots.install-file` is `("system.slots/1",
+/// `("system.slots/1", "list")`, `system.slots.install_file` is `("system.slots/1",
 /// "install_file")`. `None` for a name that is not of that form (a board's own action).
 #[must_use]
 pub fn method_of(name: &str) -> Option<(String, String)> {
@@ -148,7 +183,7 @@ pub fn method_of(name: &str) -> Option<(String, String)> {
     if contract.is_empty() || method.is_empty() || method.contains('.') {
         return None;
     }
-    Some((format!("system.{contract}/1"), method.replace('-', "_")))
+    Some((format!("system.{contract}/1"), method.to_owned()))
 }
 
 /// The contract tags a describe text gives, in order: the `tag=` of each `contract` record. The
@@ -169,15 +204,11 @@ pub fn tags(text: &str) -> Vec<String> {
 }
 
 /// The Atlas name of method `method` of contract `contract`: `system.slots/1` and `install_file` are
-/// `system.slots.install-file`. The inverse of [`method_of`]; `None` for a contract or method that
+/// `system.slots.install_file`. The inverse of [`method_of`]; `None` for a contract or method that
 /// form cannot name (a contract outside `system.`, or of another version).
 #[must_use]
 pub fn name_of(contract: &str, method: &str) -> Option<String> {
-    let name = format!(
-        "{}.{}",
-        contract.strip_suffix("/1")?,
-        method.replace('_', "-")
-    );
+    let name = format!("{}.{}", contract.strip_suffix("/1")?, method);
     (method_of(&name)? == (contract.to_owned(), method.to_owned())).then_some(name)
 }
 
@@ -688,4 +719,96 @@ fn search(
         return Ok(Lookup::NoContract);
     }
     Ok(Lookup::NotYet(incomplete(session, contract)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_action_names_are_the_contracts_methods_in_one_spelling() {
+        let slots: Vec<&str> = <dyn Slots as Contract>::INFO
+            .methods
+            .iter()
+            .map(|method| method.name)
+            .collect();
+        let reboot: Vec<&str> = <dyn Reboot as Contract>::INFO
+            .methods
+            .iter()
+            .map(|method| method.name)
+            .collect();
+        let flash: Vec<&str> = <dyn Flash as Contract>::INFO
+            .methods
+            .iter()
+            .map(|method| method.name)
+            .collect();
+        let pairs = [
+            (actions::SLOTS_LIST, SLOTS, methods::SLOTS_LIST, &slots),
+            (actions::SLOTS_ACCEPT, SLOTS, methods::SLOTS_ACCEPT, &slots),
+            (
+                actions::SLOTS_INSTALL_FILE,
+                SLOTS,
+                methods::SLOTS_INSTALL_FILE,
+                &slots,
+            ),
+            (
+                actions::SLOTS_SET_DEFAULT,
+                SLOTS,
+                methods::SLOTS_SET_DEFAULT,
+                &slots,
+            ),
+            (actions::SLOTS_TRIAL, SLOTS, methods::SLOTS_TRIAL, &slots),
+            (actions::SLOTS_REMOVE, SLOTS, methods::SLOTS_REMOVE, &slots),
+            (actions::SLOTS_PIN, SLOTS, methods::SLOTS_PIN, &slots),
+            (
+                actions::SLOTS_SET_KEEP,
+                SLOTS,
+                methods::SLOTS_SET_KEEP,
+                &slots,
+            ),
+            (actions::SLOTS_INFO, SLOTS, methods::SLOTS_INFO, &slots),
+            (
+                actions::REBOOT_REBOOT,
+                REBOOT,
+                methods::REBOOT_REBOOT,
+                &reboot,
+            ),
+            (actions::FLASH_VERIFY, FLASH, methods::FLASH_VERIFY, &flash),
+            (actions::FLASH_INFO, FLASH, methods::FLASH_INFO, &flash),
+        ];
+        for (name, contract, method, table) in pairs {
+            assert!(
+                table.contains(&method),
+                "{method} is a method of {contract}"
+            );
+            assert_eq!(name_of(contract, method).as_deref(), Some(name), "{name}");
+            assert_eq!(
+                method_of(name),
+                Some((contract.to_owned(), method.to_owned())),
+                "{name}"
+            );
+            assert!(
+                !name.contains('-'),
+                "{name} has one spelling: the contract's"
+            );
+        }
+    }
+
+    #[test]
+    fn the_dashed_spelling_is_no_method_of_any_contract() {
+        let slots: Vec<&str> = <dyn Slots as Contract>::INFO
+            .methods
+            .iter()
+            .map(|method| method.name)
+            .collect();
+        assert!(
+            !slots.contains(&"install-file"),
+            "the contract spells it install_file"
+        );
+        assert_eq!(
+            name_of(SLOTS, "install-file"),
+            Some("system.slots.install-file".to_owned()),
+            "a dashed method is not a contract's name; name_of keeps it as given"
+        );
+    }
 }

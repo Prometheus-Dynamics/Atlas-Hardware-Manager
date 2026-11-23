@@ -232,17 +232,14 @@ async fn a_full_run_passes_every_step_and_writes_the_scorecard() {
     assert!(model.slots.get(BAD).is_some_and(|slot| slot.failed));
 }
 
-/// Proof 1, the same run without the boot field (the pin this build carries): the boot id lines say
-/// `not checked`, the run still passes on the slot list, and nothing is read as a pass.
+/// Proof 1, the same run for a build whose pin has no boot field (`info_in_pin` false): the boot id
+/// lines say `not checked`, the run still passes on the slot list, and nothing is read as a pass.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn without_the_boot_field_the_boot_id_is_recorded_as_not_checked() {
     let dir = scratch("cyc-noboot");
     let (node, relay, good, bad) = rig(&dir);
-    let env = env(&dir.join("state"));
-    assert!(
-        !env.info_in_pin,
-        "the default pin does not carry the boot id"
-    );
+    let mut env = env(&dir.join("state"));
+    env.info_in_pin = false;
     let address = relay.address();
     let card = dir.join("card.txt");
     let state = dir.join("state").display().to_string();
@@ -262,8 +259,9 @@ async fn without_the_boot_field_the_boot_id_is_recorded_as_not_checked() {
     let ((code, out), ()) = tokio::join!(run(&env, &args), play_board(&node, &relay, false));
     assert_eq!(code, 0, "{out}");
     let card_text = text(&card);
+    // The pinned board publishes the boot id: it is read before and after the restart, and it changed.
     assert!(
-        card_text.contains("not checked (needs Lemnos I5k: info.last_attempt.boot)"),
+        card_text.contains("not checked: the board's info gives no boot id"),
         "{card_text}"
     );
     assert!(card_text.contains("Verdict: PASSED"), "{card_text}");

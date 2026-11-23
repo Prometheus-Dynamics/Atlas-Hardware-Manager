@@ -106,8 +106,8 @@ pub struct Env {
     pub recheck: Duration,
     /// Set by the binary when Ctrl-C should stop a trial's following. `None` means it never does.
     pub stop: Option<Arc<Notify>>,
-    /// Whether the Lemnos this build pins publishes the boot id (`info.last_attempt.boot`, I5k).
-    /// The binary takes `cycle::INFO_IN_PIN`; a test sets it when its simulated board has the field.
+    /// Whether the Lemnos this build pins publishes the boot id (`info.last_attempt.boot`). The binary
+    /// takes `cycle::INFO_IN_PIN`; a test sets it false for a board without the field.
     pub info_in_pin: bool,
 }
 

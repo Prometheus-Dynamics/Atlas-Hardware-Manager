@@ -3,31 +3,27 @@
 //! which is normal. The four states are [`LemnosState`] on the identity, not text in an error.
 
 use atlas_session::lemnos;
-use atlas_types::LemnosState;
+use atlas_types::{LEMNOS_FACTS, LemnosState};
 use orion::Orion;
 use orion::actions::{ActionCall, Outcome};
 use orion::node::Node;
 
-/// The hello facts that say a node runs Lemnos. A node that publishes one of them, or that
-/// offers anything, is expected to answer for Lemnos from then on.
-const LEMNOS_FACTS: [&str; 6] = [
-    "family",
-    "serial",
-    "offers",
-    "version.lemnos",
-    "version.slot",
-    "version.product",
-];
-
 /// How long the probe may take before it counts as not answering.
 pub const PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// The state an answer to the probe means. A refusal naming a layout mismatch is its own
-/// state; any other failure is not answering.
+// board: Lemnos bbb3c420 engine/client/src/error.rs:123 (LayoutMismatch, the client's words) and
+// engine/wire/src/protocol.rs:135 (the wire's words). The bridge has no typed kind for it: calls.rs:1057-1060
+// turns the client's error into the run's detail text, so the text is what reaches the probe.
+/// The start of the detail a layout mismatch carries: the two sides were built from different core
+/// protocols, so no call can be made between them.
+pub const LAYOUT_MISMATCH: &str = "core protocol differs";
+
+/// The state an answer to the probe means. A layout mismatch is its own state; any other failure is
+/// not answering.
 pub fn from_probe(outcome: Outcome, detail: &str) -> LemnosState {
     match outcome {
         Outcome::Succeeded => LemnosState::Answering,
-        _ if detail.contains("different Lemnos revisions") => LemnosState::RevisionMismatch {
+        _ if detail.contains(LAYOUT_MISMATCH) => LemnosState::RevisionMismatch {
             reason: detail.to_owned(),
         },
         _ => LemnosState::NotAnswering {
@@ -124,6 +120,7 @@ pub fn published_by(node: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orion::node::{Fact, Node};
 
     #[test]
     fn a_probe_that_succeeds_is_answering() {
@@ -141,14 +138,35 @@ mod tests {
     }
 
     #[test]
-    fn a_layout_refusal_is_its_own_state_not_a_fault() {
-        let state = from_probe(
-            Outcome::Rejected,
-            "built from different Lemnos revisions: client 1, daemon 2",
-        );
+    fn a_layout_mismatch_is_its_own_state_not_a_fault() {
+        // The text the pinned client gives (engine/client/src/error.rs:123), as the bridge's detail.
+        let detail = "core protocol differs (hash 0x0000000000000001 here, 0x0000000000000002 there; \
+            the service is Lemnos 1.0, this client is Lemnos 2.0)";
+        let state = from_probe(Outcome::Failed, detail);
         assert!(
             matches!(state, LemnosState::RevisionMismatch { .. }),
             "{state:?}"
         );
+    }
+
+    #[test]
+    fn a_node_publishing_any_lemnos_fact_is_a_lemnos_node() {
+        // The identity device's facts and `offers` are one list (atlas_types::LEMNOS_FACTS): `model`
+        // is one of them, and a node that publishes only it runs Lemnos.
+        assert_eq!(LEMNOS_FACTS.len(), 8);
+        let node = Node {
+            name: "board".into(),
+            cluster: "lab".into(),
+            public_key: [7; 32],
+            fingerprint: "ab:cd".into(),
+            revision: 3,
+            time_ms: 0,
+            facts: vec![Fact {
+                name: "model".into(),
+                ty: 4,
+                value: b"test-model".to_vec(),
+            }],
+        };
+        assert!(published_by(&node));
     }
 }

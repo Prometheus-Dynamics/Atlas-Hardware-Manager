@@ -26,8 +26,10 @@ use crate::description::{Description, DescriptionState, ItemRecord};
 use crate::value::{ItemKind, ReadingKind, Reported, Scalar, UnitState};
 
 /// The resource prefix of the devices a node lists (`lemnos.<device>`).
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:51 (RESOURCE_PREFIX)
 pub const RESOURCE_PREFIX: &str = "lemnos.";
 /// The kind a device resource is written as.
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:53 (RESOURCE_KIND)
 pub const RESOURCE_KIND: &str = "lemnos.device";
 /// The suffix of a device's status topic: its `health` and `reason`.
 pub const STATUS_SUFFIX: &str = ".status";

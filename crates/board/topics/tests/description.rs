@@ -95,6 +95,7 @@ fn every_lemnos_label_round_trips_through_the_reader_and_the_encoder() {
                 ..empty_device()
             },
             Some(7),
+            None,
         );
         let description = parse(&text).unwrap_or_else(|refusal| panic!("{label:?}: {refusal}"));
         assert_eq!(
@@ -182,7 +183,7 @@ fn a_whole_description_the_encoder_writes_reads_back_as_it_was_written() {
             group: Some("accel".to_owned()),
         }],
     };
-    let description = parse(&render(&device, Some(3))).expect("reads");
+    let description = parse(&render(&device, Some(3), None)).expect("reads");
     assert_eq!(
         description.device.label.as_deref(),
         Some("Motion \"unit\"\\")

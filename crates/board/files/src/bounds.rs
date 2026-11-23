@@ -35,7 +35,7 @@ pub fn job_timing() -> JobTiming {
 }
 
 /// How many of the session's bounds on one answer Orion's push gives the board's commit when no
-/// ceiling is set: "twelve timeouts" (LOCK: Orion 30d0bc02, `crates/client/files/src/push.rs:349`,
+/// ceiling is set: "twelve timeouts" (LOCK: Orion 2f52e457, `crates/client/files/src/push.rs:392`,
 /// `self.timeout * 12` under `Reply::Timeout`).
 pub const COMMIT_WAIT_IN_BOUNDS: u32 = 12;
 

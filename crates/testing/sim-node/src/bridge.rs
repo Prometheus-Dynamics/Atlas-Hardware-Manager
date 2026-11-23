@@ -1,4 +1,4 @@
-//! The devices of a simulated node, as Lemnos's bridge at a6251ecf offers them (`service/orion/src/calls.rs`,
+//! The devices of a simulated node, as Lemnos's bridge at bbb3c420 offers them (`service/orion/src/calls.rs`,
 //! `publish.rs`). This is what the default sim answers; a name or target the bridge does not offer is
 //! refused by Orion itself with "not found", as on a board.
 //!

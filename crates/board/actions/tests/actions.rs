@@ -230,14 +230,14 @@ async fn the_catalog_is_what_the_devices_describe_and_marks_the_rest_not_reporte
         [
             "system.reboot.reboot",
             "system.slots.list",
-            "system.slots.set-default",
+            "system.slots.set_default",
             "system.slots.trial",
             "system.slots.confirm",
             "system.slots.remove",
             "system.slots.pin",
-            "system.slots.set-keep",
+            "system.slots.set_keep",
             "system.slots.accept",
-            "system.slots.install-file",
+            "system.slots.install_file",
             "system.slots.info",
         ],
         "every method of the restart and slot devices, in the resource list's order, and nothing a board does not publish"
@@ -265,7 +265,7 @@ async fn the_catalog_is_what_the_devices_describe_and_marks_the_rest_not_reporte
     assert_eq!(pin.route(), Route::Direct);
 
     // The board says the install is a long job.
-    let install = named(&catalog, "system.slots.install-file");
+    let install = named(&catalog, "system.slots.install_file");
     assert_eq!(install.long_running, Reported::Known(true));
     assert_eq!(install.route(), Route::Job);
 }
@@ -903,7 +903,7 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
     // The session is silent past the lease with the hold on the board: the job learns of the lapse.
     clock.advance(Duration::from_secs(61));
     wait_status(&jobs, id, "the job to report the lapse", |status| {
-        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold"))
+        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold") && error.contains("for more than 60 seconds"))
     })
     .await;
 
@@ -995,8 +995,8 @@ async fn a_caller_whose_lease_lapsed_with_nothing_in_flight_is_told_its_holds_we
     match error {
         ActionError::HoldLapsed { reason, .. } => {
             assert!(
-                reason.starts_with(LEASE_ENDED_PREFIX),
-                "the note leads the reply: {reason}"
+                reason.contains(&format!("The board said: {LEASE_ENDED_PREFIX}")),
+                "the plain sentence is followed by the board's note: {reason}"
             );
         }
         other => panic!("the lapse is reported as a lapse, not {other:?}"),

@@ -441,7 +441,7 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
-                    // LOCK: Lemnos L2: a signed bundle needs slot.key (the bundle writer's, D13); the
+                    // LOCK: Lemnos bbb3c420 drivers/slot-store/src/signing.rs:502-507: a signed bundle needs slot.key (the key id); the
                     // bundle written here is only as signed as `atlas_bundle::bundle_from_image` makes it.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));

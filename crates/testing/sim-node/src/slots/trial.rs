@@ -109,10 +109,8 @@ pub struct Resolved {
     pub time_s: u64,
 }
 
-// LOCK: Lemnos L2 (the raw two-copy boot-partition records, I5i). Today: the boot record has
-// `trial_armed` only, and no attempt counter is written to the boot partition.
-// LOCK: Lemnos L1 (trial-reason and record_error, I5f3). Today: no trial-reason file, and no
-// record_error in `list`.
+// Not compared with the pin in this pass: the boot-partition record layout (Lemnos bbb3c420
+// drivers/slot-store/src/bootadd.rs, the kept and trial files) and the trial-reason file.
 /// The reason written when the driver cannot write its record.
 const RECORD_FAILED: &str = "the state directory refused the write";
 /// The reason a trial is not confirmed while the board is not healthy.
@@ -159,7 +157,7 @@ impl Slots {
     /// `confirm_uptime_s` confirms. At `confirm_deadline_s` with a condition still unmet, the reason
     /// is recorded and the board restarts into the default (or only records it, when
     /// `reboot_at_deadline` is off). Cheap when there is no trial: the node runs it on every tick.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     pub fn evaluate(&mut self) {
         let config = self.trial_config;
         let now = self.now_s;
@@ -195,7 +193,7 @@ impl Slots {
     /// A trial that reached the daemon and did not confirm falls back to the default, as a restart
     /// always did. A trial that has not reached the daemon boots again. With no trial, the default
     /// runs.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     pub fn reboot(&mut self) {
         self.restarted();
         self.state = State::Idle;
@@ -220,7 +218,7 @@ impl Slots {
     /// # Errors
     ///
     /// `NOT_FOUND` when the running slot is unknown.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     pub fn confirm(&mut self, caller: &str) -> Result<(), Status> {
         let active = self
             .active
@@ -267,7 +265,7 @@ impl Slots {
     }
 
     /// The `trial` and `resolved` fields of `list`.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     pub(super) fn trial_json(&self) -> Value {
         let Some(trial) = self.trial.as_ref() else {
             return Value::Null;
@@ -287,7 +285,7 @@ impl Slots {
         })
     }
 
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     pub(super) fn resolved_json(&self) -> Value {
         let Some(resolved) = self.resolved.as_ref() else {
             return Value::Null;
@@ -324,7 +322,7 @@ impl Slots {
     /// One boot of the pending trial. It either reaches the daemon, or does not: a boot that does
     /// not spends an attempt, and after `trial_attempts` of them the trial falls back. A boot that
     /// does not reach the daemon leaves the board on the default slot with the trial pending.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     fn boot_trial(&mut self) {
         let now = self.now_s;
         let lost = self.boots_without_daemon > 0;
@@ -371,7 +369,7 @@ impl Slots {
 
     /// Confirms the pending trial: it becomes the default (unless it was started to keep the
     /// default), the old default becomes previous, and housekeeping runs (unless it keeps old).
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     fn confirm_trial(&mut self, by: By, reason: String) {
         let Some(trial) = self.trial.take() else {
             return;
@@ -399,7 +397,7 @@ impl Slots {
     /// The trial falls back: the slot is marked failed, the board runs the default, and the
     /// resolution keeps the reason. When the record cannot be written, the reason also goes to the
     /// boot partition's `trial-reason`.
-    // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
+    // The pin resolves a trial on its own rules and writes `resolved` and `record_error` (board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:594-615, and resolve.rs).
     fn fall_back(&mut self, id: &str, reason: &str, by: By) {
         // A fall back is a restart into the default: the boot id changes.
         self.restarted();
@@ -418,7 +416,7 @@ impl Slots {
     }
 
     /// Writes the pending trial's record: it carries the error while the writes fail.
-    // LOCK: Lemnos L1 (I5f3, record_error). Pre-L1 board: no record_error in `list`.
+    // board: Lemnos bbb3c420 drivers/system-slots/src/trial.rs:614 (`record_error`, the reason the driver gave).
     fn write_record(&mut self) {
         let failing = self.fail_record_writes;
         if let Some(trial) = self.trial.as_mut() {

@@ -212,7 +212,7 @@ mod tests {
             job: Some(true),
             ..offered("system.slots/1", "install_file")
         }]);
-        let action = catalog.get("system.slots.install-file").unwrap();
+        let action = catalog.get("system.slots.install_file").unwrap();
         let kinds: Vec<ArgKind> = action
             .args
             .known()

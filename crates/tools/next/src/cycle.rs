@@ -29,13 +29,13 @@ use crate::pins::Pin;
 use crate::report::Report;
 use crate::{Env, parse_address};
 
-/// Whether the Lemnos this build pins publishes `info.last_attempt.boot` (Lemnos I5k). It does not
-/// yet: at this pin the boot id is recorded as not checked. When the pin moves to an I5k rev, this
-/// becomes `true`; nothing else changes.
-pub const INFO_IN_PIN: bool = false;
+// board: Lemnos bbb3c420 drivers/system-slots/src/attempt.rs:176 (the boot id, written in `last_attempt` by `info`)
+/// Whether the Lemnos this build pins publishes `info.last_attempt.boot`. It does at bbb3c420: the
+/// boot id is read before and after a restart, and checked.
+pub const INFO_IN_PIN: bool = true;
 
-/// The scorecard's words for a boot id that is not read at the pin.
-const NOT_CHECKED_AT_PIN: &str = "not checked (needs Lemnos I5k: info.last_attempt.boot)";
+/// The scorecard's words for a boot id that could not be read.
+const NOT_CHECKED: &str = "not checked: the board's info gives no boot id";
 
 /// The Atlas build this tool is part of (no commit is in the build; see the PR text).
 const ATLAS_BUILD: &str = env!("CARGO_PKG_VERSION");
@@ -259,7 +259,7 @@ fn slots_of(link: &Link) -> Result<BoardSlots, Refusal> {
     ))
 }
 
-/// The action that reads Lemnos's `system.slots` `info` (I5k). Read with no arguments.
+/// The action that reads Lemnos's `system.slots` `info` (Lemnos bbb3c420). Read with no arguments.
 fn info_action() -> Action {
     Action {
         name: "system.slots.info".to_owned(),
@@ -270,12 +270,12 @@ fn info_action() -> Action {
     }
 }
 
-/// The board's boot id, from `info.last_attempt.boot` (Lemnos I5k: present in every state). This is
-/// the ONLY place the boot id is read. At the pin this build carries (`INFO_IN_PIN` false) nothing
-/// is read and the boot id is not checked. An absent field is also not checked: never a pass.
+/// The board's boot id, from `info.last_attempt.boot` (Lemnos bbb3c420: present in every state). This is
+/// the ONLY place the boot id is read. A build whose pin does not publish it (`INFO_IN_PIN` false) reads
+/// nothing. An absent field is not checked: never a pass.
 async fn boot_id(ctx: &Ctx<'_>) -> BootRead {
     if !ctx.env.info_in_pin {
-        return BootRead::NotChecked(NOT_CHECKED_AT_PIN.to_owned());
+        return BootRead::NotChecked(NOT_CHECKED.to_owned());
     }
     let link = match ctx.link() {
         Ok(link) => link,
@@ -293,7 +293,7 @@ async fn boot_id(ctx: &Ctx<'_>) -> BootRead {
             {
                 Some(boot) => BootRead::Read(boot.to_owned()),
                 None => BootRead::NotChecked(format!(
-                    "{NOT_CHECKED_AT_PIN}: the board's info has no last_attempt.boot field"
+                    "{NOT_CHECKED}: the board's info has no last_attempt.boot field"
                 )),
             },
             Err(error) => BootRead::NotChecked(format!(
@@ -1086,10 +1086,13 @@ mod tests {
     }
 
     #[test]
-    fn an_absent_boot_id_is_not_checked() {
+    fn the_pinned_board_publishes_the_boot_id_and_an_absent_one_is_not_checked() {
+        // The pin writes `last_attempt.boot` (attempt.rs:176): the boot id is read, not skipped.
+        let published = INFO_IN_PIN;
+        assert!(published, "the pin publishes info.last_attempt.boot");
         assert_eq!(
-            BootRead::NotChecked(NOT_CHECKED_AT_PIN.to_owned()).words(),
-            "not checked (needs Lemnos I5k: info.last_attempt.boot)"
+            BootRead::NotChecked(NOT_CHECKED.to_owned()).words(),
+            "not checked: the board's info gives no boot id"
         );
     }
 }

@@ -17,18 +17,6 @@ use crate::pins::{Pin, Pins};
 /// How long a probe or an enrolment waits for the node to answer.
 const ANSWER_WAIT: Duration = Duration::from_secs(10);
 
-/// The facts a Lemnos board publishes. A node with any of them and no offers did not report what
-/// it offers.
-const LEMNOS_FACTS: [&str; 7] = [
-    "family",
-    "serial",
-    "model",
-    "version.slot",
-    "version.product",
-    "version.os",
-    "version.lemnos",
-];
-
 /// A session with a board that the pin rule has let through.
 pub struct Link {
     pub address: Address,
@@ -219,7 +207,7 @@ pub fn board_info(node: &Node) -> BoardInfo {
             .map(|fact| String::from_utf8_lossy(&fact.value).trim().to_owned())
             .filter(|value| !value.is_empty())
     };
-    let lemnos = LEMNOS_FACTS
+    let lemnos = atlas_types::LEMNOS_FACTS
         .iter()
         .any(|name| node.facts.iter().any(|fact| fact.name == *name));
     let (offered, reported) = match text("offers") {

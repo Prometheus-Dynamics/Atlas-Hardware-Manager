@@ -509,6 +509,13 @@ impl Handle {
         Hold::take(&self.lease)
     }
 
+    /// The board's lease period as this session knows it: the one its describe reply gave, or the
+    /// default until one has (see [`crate::lease`]). Holders say it when they report a lapse.
+    #[must_use]
+    pub fn lease_period(&self) -> Duration {
+        self.lease.period()
+    }
+
     /// The number of lapses this session has recorded: each time it was silent for longer than
     /// the lease period while holds existed. A holder that waits on the board also waits on this
     /// to learn that its hold may have been dropped (see [`Hold::lapsed`]).
@@ -676,7 +683,7 @@ impl Monitor {
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
-        let shared = Arc::new(LeaseShared::new());
+        let shared = Arc::new(LeaseShared::new(lease.period));
         let serial = Arc::new(AtomicU64::new(0));
         let thread_serial = Arc::clone(&serial);
         let (thread_address, thread_stop) = (address.clone(), stop.clone());
@@ -707,6 +714,7 @@ impl Monitor {
                     node: None,
                     device: None,
                     last_listed: None,
+                    period_read: false,
                     serial: thread_serial,
                 };
                 keeper.run();
@@ -798,6 +806,9 @@ struct Keeper {
     serial: Arc<AtomicU64>,
     /// The device whose bridge renews the lease, once listed (see `bridge_device`).
     device: Option<String>,
+    /// Whether a describe reply has given the board's lease period (see `keep_alive`). Until one has,
+    /// the first renewal of a hold is due at once, so the period is read before a silence can lapse.
+    period_read: bool,
     /// When the node's devices were last listed, when none was found.
     last_listed: Option<Duration>,
 }
@@ -828,6 +839,7 @@ impl Keeper {
                         self.renew_backoff.reset();
                         self.renew_wait = None;
                         self.device = None;
+                        self.period_read = false;
                         self.last_listed = None;
                         self.lapse_on_connect(&orion);
                         // Unique across every monitor in the process: a monitor turned off and on
@@ -966,6 +978,11 @@ impl Keeper {
         if !self.lease.in_force {
             return Ok(());
         }
+        // Another board answers at this address: the holds are on the board that was pinned, so the
+        // renewal is not sent to the other one (see `a_replaced_board_gets_no_renewal`).
+        if self.replacement.is_some() {
+            return Ok(());
+        }
         let Some(node) = self.node.as_ref() else {
             return Ok(());
         };
@@ -978,7 +995,9 @@ impl Keeper {
         let silent = self.since(self.last_bridge);
         // After a renewal that did not succeed, the next try comes on the short backoff, not a full period.
         let retry_after = self.renew_wait.unwrap_or(self.lease.renew);
-        let due = silent >= self.lease.renew
+        // Until a describe has given the board's period, the first renewal is due at once: a silence
+        // cannot lapse before the period is known.
+        let due = (!self.period_read || silent >= self.lease.renew)
             && self
                 .last_try
                 .is_none_or(|tried| self.since(tried) >= retry_after);
@@ -991,14 +1010,22 @@ impl Keeper {
             return Ok(());
         };
         match lease::renew(orion, &name, &device) {
-            // Renewed only when the bridge answered it successfully. A refusal or a silence is not renewed.
-            Ok(true) => {
+            // Renewed only when the bridge answered it successfully. A refusal or a silence is not renewed,
+            // and is not counted: it is tried again on the backoff.
+            Ok(lease::Renewal {
+                renewed: true,
+                period,
+            }) => {
                 self.renew_backoff.reset();
                 self.renew_wait = None;
+                if let Some(period) = period {
+                    self.shared.set_period(period);
+                }
+                self.period_read = true;
                 self.mark_bridge_at(sent);
                 Ok(())
             }
-            Ok(false) => {
+            Ok(lease::Renewal { renewed: false, .. }) => {
                 self.renew_wait = Some(self.renew_backoff.next_delay());
                 Ok(())
             }
@@ -1040,7 +1067,7 @@ impl Keeper {
         if !self.lease.in_force || self.shared.holds() == 0 {
             return;
         }
-        if self.since(self.last_bridge) > self.lease.period && !self.lapse_marked {
+        if self.since(self.last_bridge) >= self.shared.period() && !self.lapse_marked {
             // Silent for longer than the board's lease: the board may have dropped the holds.
             self.lapse_marked = true;
             self.shared.lapse();

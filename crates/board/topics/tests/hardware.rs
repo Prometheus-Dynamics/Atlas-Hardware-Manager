@@ -152,8 +152,8 @@ async fn a_device_the_crate_has_never_heard_of_shows_its_readings_with_their_uni
     assert_eq!(vane.generation, Reported::Value(1));
     assert_eq!(
         vane.lease_seconds,
-        Reported::NotReported,
-        "no lease period at e5c0ff0e"
+        Reported::Value(60),
+        "the pin's describe gives the lease period (bbb3c420 description.rs:246), 60 s by default"
     );
     assert_eq!(
         vane.contracts,

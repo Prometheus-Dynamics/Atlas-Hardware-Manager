@@ -16,12 +16,11 @@
 //! Each listing is a new appearance, so the generation moves. Their topics stay declared, as they
 //! do on a real bridge.
 //!
-//! // LOCK: the status and the generation are provider topics (`Describing::topic`). At Orion
-//! // dbd5fc08 that call declares every topic with `on_subscribe: FromNow` and takes no argument for
-//! // it (`crates/client/provider/src/lib.rs`), so a late subscriber gets nothing until the next
-//! // write. They are written on every tick until the provider takes `on_subscribe` (Orion C29 is
-//! // on `TopicDecl` only); the readings, hardware and hello topics are `TopicDecl`s and use
-//! // `OnSubscribe::Latest`. Marked for removal when the provider can declare Latest.
+//! // The status and the generation are provider topics (`Describing::topic`). At Orion 2f52e457 that call
+//! // declares every topic with `on_subscribe: FromNow` and takes no argument for it
+//! // (`crates/client/provider/src/lib.rs:124`, and :130-136 refuses `Latest` there), so a late subscriber gets
+//! // nothing until the next write. They are written on every tick until the provider can declare `Latest`;
+//! // the readings, hardware and hello topics are `TopicDecl`s and use `OnSubscribe::Latest`.
 
 use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -34,6 +33,7 @@ use orion::topics::{Field, FieldId, FieldType, Publisher, SampleTime};
 use crate::describe::{self, ItemKind, Reading, UnitState};
 
 /// The kind every device resource is written as. A provider's own word, not an Orion one.
+// board: Lemnos bbb3c420 service/orion/src/lib.rs:53 (RESOURCE_KIND)
 pub const DEVICE_KIND: &str = "lemnos.device";
 /// How many samples of each value the values topic keeps.
 const HISTORY: u32 = 16;
@@ -630,6 +630,11 @@ const REBOOT_METHODS: &[MethodSpec] = &[MethodSpec {
     out_buffer: false,
 }];
 
+/// The contract hash of `system.slots/1` (see the session's names test, which checks it).
+pub const SLOTS_CONTRACT_HASH: u64 = 0xab19a1e7d0b755c6;
+/// The contract hash of `system.reboot/1` (see the session's names test, which checks it).
+pub const REBOOT_CONTRACT_HASH: u64 = 0xface08cdca5b68c0;
+
 pub const DEVICES: &[Spec] = &[
     Spec {
         id: "vane0",
@@ -710,7 +715,7 @@ pub const DEVICES: &[Spec] = &[
         kind: "slots",
         state: Some(0),
         reason: "",
-        contract: Some(("system.slots/1", "slots", 0x5107)),
+        contract: Some(("system.slots/1", "slots", SLOTS_CONTRACT_HASH)),
         methods: SLOTS_METHODS,
         status: Some(("ok", "")),
         items: &[],
@@ -724,7 +729,7 @@ pub const DEVICES: &[Spec] = &[
         kind: "system",
         state: Some(0),
         reason: "",
-        contract: Some(("system.reboot/1", "reboot", 0x5e01)),
+        contract: Some(("system.reboot/1", "reboot", REBOOT_CONTRACT_HASH)),
         methods: REBOOT_METHODS,
         status: Some(("ok", "")),
         items: &[],
@@ -919,10 +924,10 @@ impl Devices {
                     let _ = values.publish(FieldId(field as u16), now, &payload);
                 }
             }
-            // LOCK: provider topics have no `on_subscribe` at dbd5fc08; see the module note. The
-            // status and the generation are written on every tick until they can declare Latest.
+            // Provider topics declare `FromNow` at Orion 2f52e457 (provider lib.rs:124); see the module note.
+            // The status and the generation are written on every tick until they can declare Latest.
             if let (Some(status), Some((health, reason))) = (&mut listed.status, spec.status) {
-                for (index, text) in ["ready", health, reason].iter().enumerate() {
+                for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
                     let _ = status.publish(FieldId(index as u16), now, text.as_bytes());
                 }
             }
@@ -975,7 +980,7 @@ impl Devices {
     ///
     /// The refusal's words: the board does not answer `describe`, the device is not listed, or
     /// the device is not running (an off device has no description).
-    pub fn describe(&self, device: &str) -> Result<String, String> {
+    pub fn describe(&self, device: &str, lease: Option<u64>) -> Result<String, String> {
         if self.control.refused() {
             return Err("this board does not answer describe".to_owned());
         }
@@ -989,7 +994,7 @@ impl Devices {
         if model.device.state == Some(2) {
             return Err("the device isn't running".to_owned());
         }
-        let text = describe::render(&model.device, Some(model.generation));
+        let text = describe::render(&model.device, Some(model.generation), lease);
         if text.len() > REPLY_MAX {
             return Err(format!(
                 "the description is {} bytes; the reply carries at most {REPLY_MAX}, and a partial one is never sent",
@@ -1144,15 +1149,18 @@ fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Li
             .map_err(|error| error.to_string())?;
         let status = match spec.status {
             Some((health, reason)) => {
+                // The pin's status fields (Lemnos bbb3c420 service/orion/src/publish.rs:248-252): `refusal` is
+                // the refusal kind in decimal, 0 for none, which a running device says.
                 let status_fields = [
                     text_field("state"),
                     text_field("health"),
                     text_field("reason"),
+                    text_field("refusal"),
                 ];
                 let mut status = builder
                     .topic("status", &status_fields, 1, 256)
                     .map_err(|error| error.to_string())?;
-                for (index, text) in ["ready", health, reason].iter().enumerate() {
+                for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
                     status
                         .publish(FieldId(index as u16), now, text.as_bytes())
                         .map_err(|error| error.to_string())?;
@@ -1218,7 +1226,7 @@ mod tests {
     #[test]
     fn the_modelled_description_renders_and_the_off_device_has_its_reason() {
         let vane = described(&DEVICES[0]);
-        let text = describe::render(&vane, Some(1));
+        let text = describe::render(&vane, Some(1), None);
         assert!(
             text.starts_with("describe 1\ndevice generation=1 label=\"Wind vane\""),
             "{text}"

@@ -1044,7 +1044,9 @@ impl Node {
                 // The device's description as `describe 1` text (Lemnos I6h, e5c0ff0e). It changes
                 // nothing, so the session's lease renewal is the same call.
                 let answer = match self.devices.as_ref() {
-                    Some(devices) => devices.describe(device),
+                    Some(devices) => {
+                        devices.describe(device, Some(self.shared.leases.period_secs()))
+                    }
                     None => Err("no such device".to_owned()),
                 };
                 match answer {
@@ -1133,7 +1135,7 @@ impl Node {
         }
     }
 
-    /// `system.slots.install-file <name> <pin> <keep_old>` on device `device`: starts the long job that
+    /// `system.slots.install_file <name> <pin> <keep_old>` on device `device`: starts the long job that
     /// installs the bundle pushed into that device's inbox as `<name>`. A name not there is refused
     /// NOT_FOUND, the way lemnosd refuses a start with no pushed file.
     fn install_start(&mut self, call: u64, caller: &str, device: &str, args: &[u8]) {
@@ -1518,16 +1520,15 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
     let nothing = Vec::new();
     let found = words(args);
     match name {
-        // LOCK: Lemnos L1 (the list refusal as part of the L1 rev). Pre-L1 board: no refusal by name.
-        // LOCK: Lemnos M8a 5dcf1a78. A reply over 60 KiB is refused by name, with no partial
-        // output. Today: the Atlas lock (4a2d3b7d) predates M8a, so a real board cannot answer
-        // `list` until the lock moves.
+        // A reply over the bridge's bound is refused, never sent in part: BUFFER_TOO_SMALL with the words
+        // the pinned wire gives (board: Lemnos bbb3c420 engine/wire/src/text.rs:298-308, `too_small`, and
+        // service/orion/src/calls.rs:1073-1080, `refused_reply`).
         names::SLOTS_LIST => {
             let listing = model.slots.list_json();
             if listing.len() > LIST_LIMIT {
                 Err(Status::new(
-                    code::INVALID_ARGUMENT,
-                    "system.slots.list: the reply is over 60 KiB; refused by name, nothing partial is sent",
+                    code::BUFFER_TOO_SMALL,
+                    "the reply is larger than 61440 bytes, the most a frame carries",
                 ))
             } else {
                 Ok(listing.into_bytes())

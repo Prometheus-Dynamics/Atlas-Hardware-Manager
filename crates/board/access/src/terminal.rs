@@ -253,7 +253,11 @@ pub async fn open(
     });
     spawn_reader(channel.output, finish.clone());
     let presence = tokio::spawn(watch_presence(handle.watch(), finish.clone()));
-    let lapses = tokio::spawn(watch_lapses(handle.lapses(), finish.clone()));
+    let lapses = tokio::spawn(watch_lapses(
+        handle.lapses(),
+        handle.lease_period(),
+        finish.clone(),
+    ));
     Ok(Terminal {
         kind,
         identity,
@@ -309,11 +313,16 @@ fn spawn_reader(mut output: Box<dyn Output>, finish: Arc<Finish>) {
 
 /// Ends the terminal when the session lapsed while its hold existed: the board may have dropped the
 /// shell with the lease. A lapse is seen once; the terminal then ends.
-async fn watch_lapses(mut lapses: watch::Receiver<u64>, finish: Arc<Finish>) {
+async fn watch_lapses(
+    mut lapses: watch::Receiver<u64>,
+    period: std::time::Duration,
+    finish: Arc<Finish>,
+) {
     if lapses.changed().await.is_ok() {
-        finish.finish(End::HoldLapsed(
-            "the board may have dropped this shell: no request reached its bridge within the lease. Nothing reopens it".into(),
-        ));
+        finish.finish(End::HoldLapsed(format!(
+            "{}. Nothing reopens it",
+            atlas_session::lease::lapse_words(period, "this shell")
+        )));
     }
 }
 

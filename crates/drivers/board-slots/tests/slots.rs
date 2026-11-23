@@ -543,7 +543,7 @@ async fn a_list_over_the_size_bound_is_passed_on_by_name_and_not_truncated() {
         Err(SlotError::Board(error)) => {
             let text = error.to_string();
             assert!(
-                text.contains("60 KiB"),
+                text.contains("the reply is larger than 61440 bytes"),
                 "the board's words are passed on: {text}"
             );
         }
