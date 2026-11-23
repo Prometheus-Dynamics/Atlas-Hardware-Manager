@@ -136,33 +136,33 @@ pub const HELLO: &[&str] = &[
 // the bundle is pushed as a file (Orion's `Files::push`) into the device's inbox (`inbox`), and
 // `install_file <name> <pin> <keep_old>` installs it as a long job. Direct socket callers
 // (`install` + `write`) are not on the Orion surface.
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:89 (list)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:89 (list)
 pub const SLOTS_LIST: &str = "system.slots.list";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:129 (accept)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:129 (accept)
 pub const SLOTS_ACCEPT: &str = "system.slots.accept";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:138 (install_file)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:138 (install_file)
 pub const SLOTS_INSTALL_FILE: &str = "system.slots.install_file";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:106 (set_default)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:106 (set_default)
 pub const SLOTS_SET_DEFAULT: &str = "system.slots.set_default";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:111 (trial)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:111 (trial)
 pub const SLOTS_TRIAL: &str = "system.slots.trial";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:116 (confirm)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:116 (confirm)
 pub const SLOTS_CONFIRM: &str = "system.slots.confirm";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:119 (remove)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:119 (remove)
 pub const SLOTS_REMOVE: &str = "system.slots.remove";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:122 (pin)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:122 (pin)
 pub const SLOTS_PIN: &str = "system.slots.pin";
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:125 (set_keep)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:125 (set_keep)
 pub const SLOTS_SET_KEEP: &str = "system.slots.set_keep";
 /// `info` (Lemnos I5k): a JSON text reply with `last_attempt`, whose `boot` is the board's boot id.
-// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:155 (info)
+// board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:155 (info)
 pub const SLOTS_INFO: &str = "system.slots.info";
 
 /// What every file destination the bridge takes starts with (`lemnos/<device>/<name>`). The bridge
 /// takes a file only under it, into the inbox of the device the destination names: Lemnos
 /// service/orion/src/files.rs:38, `DESTINATION_PREFIX` (the same at a6251ecf). A file pushed anywhere
 /// else is kept by the node and never reaches the device.
-// board: Lemnos 6c8568d0 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
+// board: Lemnos e199fcb9 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
 pub const SINK_PREFIX: &str = "lemnos/";
 
 /// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`. The driver
@@ -190,7 +190,7 @@ pub fn valid_name(name: &str) -> bool {
 }
 
 // system.reboot/1.
-// board: Lemnos 6c8568d0 contracts/system-reboot/src/lib.rs:12 (reboot)
+// board: Lemnos e199fcb9 contracts/system-reboot/src/lib.rs:12 (reboot)
 pub const REBOOT: &str = "system.reboot.reboot";
 
 /// Live readings: temperature (C), input voltage (V), fan speed (rpm).

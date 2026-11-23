@@ -55,8 +55,8 @@ The move's PR names each step's result.
     - Every board-facing string constant either imports the board's exported item, or carries a citation on one of the
       3 lines above it. The citation form is a comment that names the repo, the pinned rev, and the board's file:line:
 
-          // board: Lemnos 6c8568d0 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
-          // board: Orion b029f602 crates/client/files/src/push.rs:397
+          // board: Lemnos e199fcb9 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
+          // board: Orion b01a7fb2 crates/client/files/src/push.rs:411
 
       The rev is a prefix of the pinned rev (at least seven hex digits). A citation may not name a rev the pin does not
       carry, and neither may a `LOCK` block.

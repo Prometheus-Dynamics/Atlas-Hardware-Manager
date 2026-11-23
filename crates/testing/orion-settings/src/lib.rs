@@ -31,7 +31,7 @@ use orion_config::{Source, Warning};
 use orion_node_app::NodeSettings;
 
 /// The Orion commit this crate links (its `Cargo.toml`): the settings code that does the reading.
-pub const LINKED: &str = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0";
+pub const LINKED: &str = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab";
 
 const CONF: &str = "/etc/orion/orion.conf";
 const BINARY: &str = "/usr/bin/orion";

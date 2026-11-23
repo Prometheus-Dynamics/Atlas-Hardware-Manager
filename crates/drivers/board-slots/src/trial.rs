@@ -36,7 +36,7 @@ use tokio::sync::oneshot;
 use crate::SlotError;
 use crate::calls::BoardSlots;
 
-// LOCK: Lemnos 6c8568d0 publishes no slot state topic (service/orion/src/publish.rs has none). The board's own confirm produces no event a client can wait
+// LOCK: Lemnos e199fcb9 publishes no slot state topic (service/orion/src/publish.rs has none). The board's own confirm produces no event a client can wait
 // on, so a settling trial is read again on this interval. When Lemnos's slot state topics (`trial`,
 // `resolved`, the slot list) arrive as state-like topics with last value on subscribe, this poll is
 // replaced by a subscription. Until then it stays as it is.

@@ -5,7 +5,7 @@
 # (boot holds as gpio-hogs in the generated overlay) is merged and locked. Until then nothing we generate holds
 # the switched VBUS line (GPIO0 PD4) off during boot, so the upper USB 3.0 port could drive 5 V out of a
 # device-mode board. The entry is complete on paper (B21, Lemnos Q2f merged at 96080d36), but it is unvalidated
-# until the Lemnos lock moves (Lemnos 6c8568d0 testing/board-runs/Q2g.md; docs/hardware-status.md:160: untested on
+# until the Lemnos lock moves (Lemnos e199fcb9 testing/board-runs/Q2g.md; docs/hardware-status.md:161: untested on
 # board), and it stays commented out.
 #
 # Candidate entry, for Lemnos 96080d36 (Q2e and Q2f, socs/rk3588.toml): written to Q2f (96080d36), unvalidated

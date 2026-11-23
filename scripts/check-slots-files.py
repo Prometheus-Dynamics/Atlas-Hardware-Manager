@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Every device that takes files through the Orion bridge is given its directory, and no other name is.
 
-The bridge registers a file sink only for the devices LEMNOS_ORION_FILES names (board: Lemnos 6c8568d0
+The bridge registers a file sink only for the devices LEMNOS_ORION_FILES names (board: Lemnos e199fcb9
 service/orion/src/files.rs:3-5, config.rs:78); unset, no device takes files, and a slot bundle pushed to
 lemnos/<device>/<name> never reaches the device's inbox, so every live install is refused NOT_FOUND (bar run 10,
 2026-11-23). Under ProtectSystem=strict the inbox must also be writable through a drop-in
@@ -11,7 +11,7 @@ For each product image whose components install lemnos-orion.service, and whose 
 `system-slots` device: some installed lemnos-orion drop-in sets LEMNOS_ORION_FILES with `<device id>=<data>/slots/.incoming`
 (`data` from the device's config, default /data) and lists that directory in ReadWritePaths.
 
-Two ways to satisfy it. An image whose board component has the generator write both (Lemnos 6c8568d0,
+Two ways to satisfy it. An image whose board component has the generator write both (Lemnos e199fcb9,
 `lemnos-ctl tree --bridge-env FILE --bridge-dropin FILE`, from the same board file lemnosd reads) and places them (the
 env as an install or a fragment of /etc/lemnos/lemnos-orion.env, the drop-in under lemnos-orion.service.d/) names every
 file-taking device by construction: the declarations are checked, and no hand-written file may also set
@@ -30,7 +30,7 @@ ENVFILE = "/etc/lemnos/lemnos-orion.env"
 UNIT = "/usr/lib/systemd/system/lemnos-orion.service"
 BOARD = "/etc/lemnos/board.toml"
 # The drivers that take files through the bridge: system-slots (`install_file`, from <data>/slots/.incoming:
-# board: Lemnos 6c8568d0 packaging/systemd/lemnos-orion.env.example:23) and system-flash (the first-flash stream,
+# board: Lemnos e199fcb9 packaging/systemd/lemnos-orion.env.example:23) and system-flash (the first-flash stream,
 # docs/slots.md:3309). None other has an accept or a file method at the pin.
 TAKES_FILES = ("system-slots", "system-flash")
 

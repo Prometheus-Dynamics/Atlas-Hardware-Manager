@@ -91,7 +91,7 @@ impl Failure {
     ///
     /// Want of room and held share code 11 and are told apart as Orion tells them apart: a refusal for
     /// want of room has no words of its own, so its detail is exactly the code's text.
-    // board: Orion b029f602 crates/client/connect/src/error.rs:256 (is_busy: detail == "busy"; is_held: any other detail)
+    // board: Orion b01a7fb2 crates/client/connect/src/error.rs:256 (is_busy: detail == "busy"; is_held: any other detail)
     #[must_use]
     pub fn of_core(core: CoreError, text: String) -> Self {
         let kind = match core {

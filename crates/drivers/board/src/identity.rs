@@ -241,7 +241,7 @@ fn serial_form(value: &str) -> Result<(), String> {
 
 /// Offers: contract ids (`name/version`, such as `system.slots/1`), separated by single spaces.
 // `hello.offers` names every contract the board's devices serve, computed by the bridge from the devices
-// lemnosd lists now (Lemnos 6c8568d0 service/orion/src/hello.rs:23 and :1-12), so it follows devices as they come and go.
+// lemnosd lists now (Lemnos e199fcb9 service/orion/src/hello.rs:23 and :1-12), so it follows devices as they come and go.
 fn offers_form(value: &str) -> Result<(), String> {
     text(value)?;
     for contract in value.split(' ') {

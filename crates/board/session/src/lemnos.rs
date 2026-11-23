@@ -34,16 +34,16 @@ use orion::actions::{ActionCall, Outcome, Target};
 use orion::types::ResourceName;
 
 /// The prefix of the resources of a node's devices (`lemnos.<device>`).
-// board: Lemnos 6c8568d0 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
+// board: Lemnos e199fcb9 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
 pub const RESOURCE_PREFIX: &str = "lemnos.";
 /// The kind a device resource is written as.
-// board: Lemnos 6c8568d0 service/orion/src/lib.rs:54 (RESOURCE_KIND)
+// board: Lemnos e199fcb9 service/orion/src/lib.rs:54 (RESOURCE_KIND)
 pub const RESOURCE_KIND: &str = "lemnos.device";
 /// What every file destination the bridge takes starts with: `lemnos/<device>/<name>`. The bridge
 /// takes a file only under this prefix, into the inbox of the device it names; a file pushed anywhere
 /// else is kept by the node and never reaches the device (Lemnos service/orion/src/files.rs:38,
 /// `DESTINATION_PREFIX`; the same at a6251ecf).
-// board: Lemnos 6c8568d0 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
+// board: Lemnos e199fcb9 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
 pub const SINK_PREFIX: &str = "lemnos/";
 
 /// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`, with the file
@@ -78,29 +78,29 @@ pub const FLASH: &str = <dyn Flash as Contract>::TAG.as_str();
 /// test `the_action_names_are_the_contracts_methods`. The sim (`atlas-sim-node`) names the same methods,
 /// and a test in this crate checks it agrees.
 pub mod actions {
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:89 (list)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:89 (list)
     pub const SLOTS_LIST: &str = "system.slots.list";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:129 (accept)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:129 (accept)
     pub const SLOTS_ACCEPT: &str = "system.slots.accept";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:138 (install_file)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:138 (install_file)
     pub const SLOTS_INSTALL_FILE: &str = "system.slots.install_file";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:106 (set_default)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:106 (set_default)
     pub const SLOTS_SET_DEFAULT: &str = "system.slots.set_default";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:111 (trial)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:111 (trial)
     pub const SLOTS_TRIAL: &str = "system.slots.trial";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:119 (remove)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:119 (remove)
     pub const SLOTS_REMOVE: &str = "system.slots.remove";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:122 (pin)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:122 (pin)
     pub const SLOTS_PIN: &str = "system.slots.pin";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:125 (set_keep)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:125 (set_keep)
     pub const SLOTS_SET_KEEP: &str = "system.slots.set_keep";
-    // board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:155 (info)
+    // board: Lemnos e199fcb9 contracts/system-slots/src/lib.rs:155 (info)
     pub const SLOTS_INFO: &str = "system.slots.info";
-    // board: Lemnos 6c8568d0 contracts/system-reboot/src/lib.rs:12 (reboot)
+    // board: Lemnos e199fcb9 contracts/system-reboot/src/lib.rs:12 (reboot)
     pub const REBOOT_REBOOT: &str = "system.reboot.reboot";
-    // board: Lemnos 6c8568d0 contracts/system-flash/src/lib.rs:63 (verify)
+    // board: Lemnos e199fcb9 contracts/system-flash/src/lib.rs:63 (verify)
     pub const FLASH_VERIFY: &str = "system.flash.verify";
-    // board: Lemnos 6c8568d0 contracts/system-flash/src/lib.rs:38 (info)
+    // board: Lemnos e199fcb9 contracts/system-flash/src/lib.rs:38 (info)
     pub const FLASH_INFO: &str = "system.flash.info";
 }
 

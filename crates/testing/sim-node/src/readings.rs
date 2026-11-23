@@ -16,7 +16,7 @@
 //! Each listing is a new appearance, so the generation moves. Their topics stay declared, as they
 //! do on a real bridge.
 //!
-//! // The status and the generation are provider topics (`Describing::topic`). At Orion b029f602 that call
+//! // The status and the generation are provider topics (`Describing::topic`). At Orion b01a7fb2 that call
 //! // declares every topic with `on_subscribe: FromNow` and takes no argument for it
 //! // (`crates/client/provider/src/lib.rs:124`, and :130-136 refuses `Latest` there), so a late subscriber gets
 //! // nothing until the next write. They are written on every tick until the provider can declare `Latest`;
@@ -33,7 +33,7 @@ use orion::topics::{Field, FieldId, FieldType, Publisher, SampleTime};
 use crate::describe::{self, ItemKind, Reading, UnitState};
 
 /// The kind every device resource is written as. A provider's own word, not an Orion one.
-// board: Lemnos 6c8568d0 service/orion/src/lib.rs:54 (RESOURCE_KIND)
+// board: Lemnos e199fcb9 service/orion/src/lib.rs:54 (RESOURCE_KIND)
 pub const DEVICE_KIND: &str = "lemnos.device";
 /// How many samples of each value the values topic keeps.
 const HISTORY: u32 = 16;
@@ -924,7 +924,7 @@ impl Devices {
                     let _ = values.publish(FieldId(field as u16), now, &payload);
                 }
             }
-            // Provider topics declare `FromNow` at Orion b029f602 (provider lib.rs:124); see the module note.
+            // Provider topics declare `FromNow` at Orion b01a7fb2 (provider lib.rs:124); see the module note.
             // The status and the generation are written on every tick until they can declare Latest.
             if let (Some(status), Some((health, reason))) = (&mut listed.status, spec.status) {
                 for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
@@ -1149,7 +1149,7 @@ fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Li
             .map_err(|error| error.to_string())?;
         let status = match spec.status {
             Some((health, reason)) => {
-                // The pin's status fields (Lemnos 6c8568d0 service/orion/src/publish.rs:250-256): `refusal` is
+                // The pin's status fields (Lemnos e199fcb9 service/orion/src/publish.rs:250-256): `refusal` is
                 // the refusal kind in decimal, 0 for none, which a running device says; `pushes` is empty for a
                 // device that takes no files and `accepted` for one the bridge has a place for (the slots
                 // device, whose contract has `accept`: Lemnos engine/wire/src/text.rs, `takes_files`).

@@ -11,9 +11,9 @@ publish = false
 # Orion's own settings readers, at the commit the image's `orion` component pins (the test holds the two revs equal).
 # comm-app with the features the image's binary has (Orion's crates/bins/orion: the defaults and the three links):
 # a key of a part that is not built in is unknown to the board, so it must be unknown here too.
-orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0", features = ["link-serial", "link-can", "link-usb"] }
-orion-node-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0" }
-orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0" }
+orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab", features = ["link-serial", "link-can", "link-usb"] }
+orion-node-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab" }
+orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab" }
 toml = "0.8"
 
 [lints]

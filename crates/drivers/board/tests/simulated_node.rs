@@ -447,7 +447,7 @@ async fn a_malformed_serial_is_refused_with_its_reason_and_the_node_is_keyed_by_
 /// A board that serves contracts but whose `hello.offers` is not published: at the locked revision
 /// a board with about 19 or more contracts has its offers dropped from the hello document. Its
 /// Lemnos facts are there, so the offers are NOT REPORTED: neither "has slots" nor "has no slots".
-// LOCK: Lemnos 6c8568d0 (service/orion/src/hello.rs:19, the 1024-byte cap): with the cap raised the offers come, and this test's board
+// LOCK: Lemnos e199fcb9 (service/orion/src/hello.rs:19, the 1024-byte cap): with the cap raised the offers come, and this test's board
 // reports them like any other.
 #[tokio::test]
 async fn a_board_whose_offers_are_missing_reports_them_not_reported_and_no_slots_is_not_claimed() {

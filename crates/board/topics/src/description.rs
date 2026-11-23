@@ -112,7 +112,7 @@ pub struct DeviceRecord {
     pub reason: Option<String>,
     /// The device's lease period in seconds, when the description gives one. Not used for the
     /// session's lease yet (see `atlas-session`).
-    // board: Lemnos 6c8568d0 service/orion/src/description.rs:246 writes `lease_seconds` on the device record
+    // board: Lemnos e199fcb9 service/orion/src/description.rs:246 writes `lease_seconds` on the device record
     // when the board's lease is on (its default). Absent when the lease is off.
     pub lease_seconds: Option<u64>,
     /// Whether the device is live (Lemnos 7b4fdb25: `live`): true while it runs, false when it is off or
@@ -434,7 +434,7 @@ fn link(mut description: Description) -> Result<Description, Refusal> {
         match (item.contract, item.method) {
             // Method 0 is no method: a value the driver publishes itself (method ids start at 1;
             // a real board's watchdog: `contract=0 method=0`). The wire requires only a job method
-            // to be among the methods (board: Lemnos 6c8568d0 docs/wire.md:663).
+            // to be among the methods (board: Lemnos e199fcb9 docs/wire.md:663).
             (Some(_), Some(0)) => {}
             (Some(contract), Some(method)) => {
                 if !seen.contains(&(contract, method)) {
@@ -807,7 +807,7 @@ fn hex_u8(text: &str) -> Option<u8> {
 }
 
 /// A real value in the form the board writes it, Rust's shortest round-trip form (`{:?}`; board:
-/// Lemnos 6c8568d0 service/orion/src/description.rs:226): an optional minus, digits, optionally a
+/// Lemnos e199fcb9 service/orion/src/description.rs:226): an optional minus, digits, optionally a
 /// point and more digits, and optionally `e`, an optional minus and digits (`1.25e-6`, `1e17`). Not
 /// NaN and not infinite: a description never says so, and a figure that is not finite is refused.
 fn real(text: &str) -> Option<f64> {
