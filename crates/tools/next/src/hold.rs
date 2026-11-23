@@ -219,12 +219,21 @@ mod tests {
     #[tokio::test]
     async fn a_hold_over_more_than_two_periods_prints_renewals_and_is_kept() {
         let (_node, _sessions, handle, clock, _dir) = connected(true).await;
-        let moving = advance(
-            clock,
-            Duration::from_secs(10),
-            8,
-            Duration::from_millis(150),
-        );
+        // The clock moves only once the first renewal is recorded, and then slower than `follow` reads
+        // (POLL): each renewal is read before the next can happen, however loaded the machine is. Moving
+        // it from the start let renewals 1 and 2 land between two reads, and the first was never printed.
+        let moving = {
+            let mut renewals = handle.renewals();
+            tokio::spawn(async move {
+                renewals
+                    .wait_for(|counts| counts.renewed + counts.failed >= 1)
+                    .await
+                    .expect("the session is up");
+                advance(clock, Duration::from_secs(10), 4, super::POLL * 3)
+                    .await
+                    .expect("the clock moved");
+            })
+        };
         let mut out = Vec::new();
         let tally = {
             let _hold = handle.hold();
