@@ -299,3 +299,67 @@ fn a_missing_slot_is_refused_by_the_reader_with_its_message() {
     assert!(matches!(error, BundleError::Image(_)), "{error:?}");
     assert!(error.to_string().contains("gamma"), "{error}");
 }
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// A real product image, read off the board. Set `ATLAS_REAL_IMAGE` to a product's `.flash`
+/// (`.img.xz`) and, to compare, `ATLAS_REAL_BUNDLE` to the board-side slot file the same build
+/// made. With neither set the test says so and does nothing: the gate's fixtures cover the
+/// reader, and this is how a real image is checked on the computer before a board sees it.
+#[test]
+fn a_real_product_image_gives_the_slot_its_build_made() {
+    let Some(image) = std::env::var_os("ATLAS_REAL_IMAGE") else {
+        println!("ATLAS_REAL_IMAGE is not set: no real image was read");
+        return;
+    };
+    let image = std::path::PathBuf::from(image);
+    let scratch = tempfile::tempdir().expect("a scratch directory");
+    let probe = atlas_image::probe_board(&image, scratch.path()).expect("the image is read");
+    println!("board {:?}, slots {:?}", probe.board, probe.slots);
+    assert_eq!(probe.slots.len(), 1, "one slot: {:?}", probe.slots);
+    let mut out = Vec::new();
+    let made = bundle_from_image(&image, scratch.path(), &probe.slots[0], &mut out)
+        .expect("the slot is read out of the image");
+    println!(
+        "slot {} signed {} bundle {} bytes sha256 {}",
+        made.manifest.id,
+        made.signed,
+        out.len(),
+        sha256_hex(&out)
+    );
+    if let Some(bundle) = std::env::var_os("ATLAS_REAL_BUNDLE") {
+        // The two tars need not be the same bytes (member order and padding are the writer's);
+        // what a board reads is the members: each name with its bytes.
+        let built = std::fs::read(bundle).expect("the build's slot file");
+        let members = |tar: &[u8]| -> std::collections::BTreeMap<String, (u64, String)> {
+            tar::Archive::new(tar)
+                .entries()
+                .expect("a tar")
+                .filter_map(|entry| {
+                    let mut entry = entry.expect("a member");
+                    // A directory entry (the build's tar has `boot/`) carries no bytes.
+                    if entry.header().entry_type().is_dir() {
+                        return None;
+                    }
+                    let name = entry.path().expect("a name").to_string_lossy().into_owned();
+                    let mut bytes = Vec::new();
+                    entry.read_to_end(&mut bytes).expect("its bytes");
+                    Some((name, (bytes.len() as u64, sha256_hex(&bytes))))
+                })
+                .collect()
+        };
+        let (mine, theirs) = (members(&out), members(&built));
+        assert_eq!(mine, theirs, "every member, by name, length and SHA-256");
+        println!(
+            "equal to the build's own slot file, member for member: {} members ({} and {} bytes of tar)",
+            mine.len(),
+            out.len(),
+            built.len()
+        );
+    }
+}

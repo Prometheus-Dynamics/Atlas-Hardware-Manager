@@ -80,7 +80,7 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
                 || size != 0
             {
                 return Err(malformed(format!(
-                    "{name} is a directory, not part of a slot bundle"
+                    "{name} is a directory, not part of a slot's file"
                 )));
             }
             if std::mem::replace(&mut boot_dir_seen, true) {
@@ -146,17 +146,19 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
                     }
                     check_stream(&mut entry, size, &mut buf, &name, size, expected)?;
                 } else {
-                    return Err(malformed(format!("{name} is not part of a slot bundle")));
+                    return Err(malformed(format!("{name} is not part of a slot's file")));
                 }
             }
         }
     }
 
     let Some(manifest) = manifest else {
-        return Err(malformed("the bundle has no slot.sig".into()));
+        return Err(malformed(
+            "the slot is not signed: there is no slot.sig".into(),
+        ));
     };
     if !rootfs_done {
-        return Err(malformed(format!("the bundle has no {ROOTFS}")));
+        return Err(malformed(format!("the slot's file has no {ROOTFS}")));
     }
     if let Some(missing) = manifest
         .boot

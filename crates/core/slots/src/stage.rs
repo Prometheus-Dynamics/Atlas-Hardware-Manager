@@ -46,7 +46,7 @@ impl Stage {
 impl fmt::Display for Stage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Preparing => f.write_str("preparing the bundle"),
+            Self::Preparing => f.write_str("reading the slot out of the image"),
             Self::WaitingForBoard { reason } => write!(f, "waiting for the board: {reason}"),
             Self::Sending { sent, total } => write!(f, "sending {sent} of {total} bytes"),
             Self::Installing {

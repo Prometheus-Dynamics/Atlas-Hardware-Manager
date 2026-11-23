@@ -1,6 +1,7 @@
 # Fixture for atlas-image
 
-`data.ext4`: one ext4 image, 512 KiB, label `data`, made on a workstation with
+`data.ext4`: one ext4 image, 512 KiB, label `lemnos-data` (the label a product's slot layout states and the
+reader finds the data partition by; relabelled in place with `tune2fs -L` on 2026-11-23), made on a workstation with
 e2fsprogs (`mke2fs 1.47.3`) and no root. It is the real form's data partition in
 Lemnos's layout, for two slots:
 
@@ -19,7 +20,7 @@ Lemnos's layout, for two slots:
   (`slot.json`).
 
 Made by `python3 make-fixtures.py` in this directory. The script writes a staging
-tree, then runs `mke2fs -q -t ext4 -b 1024 -N 64 -O ^has_journal -L data -d
+tree, then runs `mke2fs -q -t ext4 -b 1024 -N 64 -O ^has_journal -L lemnos-data -d
 <stage> data.ext4 512K`. `-d` copies the tree in without mounting, so no root is
 needed. The contents come from `pattern()` in the script; the Rust tests in
 `tests/common/mod.rs` repeat it exactly.

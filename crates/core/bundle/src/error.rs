@@ -44,7 +44,7 @@ pub enum BundleError {
         expected: String,
         actual: String,
     },
-    #[error("the bundle is not valid: {0}")]
+    #[error("the slot's file is not valid: {0}")]
     Malformed(String),
     #[error("slot.sig does not verify against slot.json with any trusted key")]
     BadSignature,

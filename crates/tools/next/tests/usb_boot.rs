@@ -1078,7 +1078,10 @@ async fn an_image_with_no_boot_partition_or_no_slot_is_refused_by_name() {
     .expect("an image");
     assert!(!whole.is_empty());
     for (image, words) in [
-        (&no_slot, "no \"data\" partition"),
+        (
+            &no_slot,
+            "no partition whose filesystem is labelled \"lemnos-data\": it holds partition 1 (named \"boot\", vfat, no label)",
+        ),
         (&renamed, "no \"boot\" partition"),
     ] {
         let env = Env::new(None);

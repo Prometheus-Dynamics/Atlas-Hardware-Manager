@@ -184,6 +184,66 @@ pub fn gpt_disk(parts: &[Part<'_>]) -> Vec<u8> {
     disk
 }
 
+/// One primary partition of an MBR disk: its type byte, first sector and bytes.
+pub struct MbrPart<'a> {
+    pub kind: u8,
+    pub first_lba: u64,
+    pub bytes: &'a [u8],
+}
+
+/// A disk with an MBR partition table (no GPT): up to four primary partitions at their sectors,
+/// as Gaia writes a board whose layout says `scheme = "mbr"` (the Raze).
+pub fn mbr_disk(parts: &[MbrPart<'_>]) -> Vec<u8> {
+    let end = parts
+        .iter()
+        .map(|p| (p.first_lba * 512) as usize + p.bytes.len())
+        .max()
+        .unwrap_or(0)
+        .max(64 * 512);
+    let mut disk = vec![0u8; end];
+    disk[440..444].copy_from_slice(&0x6209_12bfu32.to_le_bytes());
+    disk[510] = 0x55;
+    disk[511] = 0xAA;
+    for (index, part) in parts.iter().enumerate() {
+        let at = 446 + 16 * index;
+        disk[at + 4] = part.kind;
+        disk[at + 8..at + 12].copy_from_slice(&(part.first_lba as u32).to_le_bytes());
+        let sectors = (part.bytes.len() as u64).div_ceil(512) as u32;
+        disk[at + 12..at + 16].copy_from_slice(&sectors.to_le_bytes());
+        let start = (part.first_lba * 512) as usize;
+        disk[start..start + part.bytes.len()].copy_from_slice(part.bytes);
+    }
+    disk
+}
+
+/// A FAT16 boot sector with the volume label `label` (none when `None`: eleven NUL bytes, as the
+/// Raze's boot partition has), followed by noise: enough for the reader to say "vfat".
+pub fn fat_partition(label: Option<&str>, len: usize) -> Vec<u8> {
+    let mut bytes = noise(len, 11);
+    bytes[..512].fill(0);
+    bytes[3..11].copy_from_slice(b"LEMNOS  ");
+    bytes[54..62].copy_from_slice(b"FAT16   ");
+    if let Some(label) = label {
+        let mut field = [b' '; 11];
+        field[..label.len()].copy_from_slice(label.as_bytes());
+        bytes[43..54].copy_from_slice(&field);
+    }
+    bytes[510] = 0x55;
+    bytes[511] = 0xAA;
+    bytes
+}
+
+/// The data fixture with its filesystem's label replaced by `label` (at most 16 bytes). The
+/// superblock's checksum is left as it was: the reader finds a partition by its label before any
+/// filesystem is opened, and these copies are only ever refused.
+pub fn data_labelled(label: &str) -> Vec<u8> {
+    let mut bytes = DATA_FIXTURE.to_vec();
+    let field = &mut bytes[1024 + 120..1024 + 136];
+    field.fill(0);
+    field[..label.len()].copy_from_slice(label.as_bytes());
+    bytes
+}
+
 /// The xz file of `raw`, as the image's build writes it: the `xz` program
 /// (liblzma, the same library as Gaia's xz writer) with its default CRC-64 block
 /// check. The pure-Rust encoder in lzma-rs writes no check at all, so it cannot
@@ -259,7 +319,7 @@ pub fn ext4_data(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
             "-O",
             "^has_journal",
             "-L",
-            "data",
+            "lemnos-data",
             "-d",
         ])
         .arg(&stage)

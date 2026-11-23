@@ -100,9 +100,9 @@ pub fn write_bundle<W: Write>(
     }
     let mut out = tar
         .into_inner()
-        .map_err(|error| BundleError::Io(format!("writing the bundle: {error}")))?;
+        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
     out.flush()
-        .map_err(|error| BundleError::Io(format!("writing the bundle: {error}")))?;
+        .map_err(|error| BundleError::Io(format!("writing the slot's file: {error}")))?;
     Ok(manifest)
 }
 

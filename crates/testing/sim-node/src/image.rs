@@ -228,7 +228,7 @@ pub fn data_partition(
             "-O",
             "^has_journal",
             "-L",
-            "data",
+            "lemnos-data",
             "-d",
         ])
         .arg(&stage)

@@ -169,8 +169,15 @@ fn boot_partition_of(
 ) -> Result<Vec<u8>, String> {
     atlas_image::partition_bytes(image, scratch, BOOT_PARTITION, MAX_BOOT_PARTITION).map_err(
         |error| {
+            // An MBR image's boot partition can only be told by a label on its FAT, which Lemnos's
+            // boot-partition tool does not write yet: such an image predates the boot label.
+            let predates = if error.to_string().contains("an MBR") {
+                " (this image predates the boot partition's label, so its boot partition cannot be told from the others)"
+            } else {
+                ""
+            };
             format!(
-                "the boot partition of the image {}: {error}: nothing was sent",
+                "the boot partition of the image {}: {error}{predates}: nothing was sent",
                 image.display()
             )
         },

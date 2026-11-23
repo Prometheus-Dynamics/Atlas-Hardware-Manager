@@ -14,7 +14,7 @@ const MAX_ENTRY_TABLE: u64 = 64 * 1024;
 /// until it does, so this is the cap on that buffer.
 pub(crate) const MAX_HEAD: u64 = 1 << 20;
 
-const SIGNATURE: &[u8] = b"EFI PART";
+pub(crate) const SIGNATURE: &[u8] = b"EFI PART";
 
 /// The checked header: where the entry array is and how big.
 #[derive(Clone, Debug, PartialEq, Eq)]

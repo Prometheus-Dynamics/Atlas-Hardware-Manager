@@ -69,8 +69,10 @@ mod budget;
 mod error;
 mod ext;
 mod flash;
+mod fsprobe;
 mod gpt;
 mod manifest;
+mod mbr;
 mod names;
 mod route;
 mod scratch;
@@ -110,8 +112,11 @@ const CHUNK: usize = 64 * 1024;
 /// Gaia writes it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Names {
-    /// The data partition's name. Default `data`.
-    pub data: String,
+    /// The label of the data partition's filesystem: the partition holding the slots is the one
+    /// whose filesystem carries it, on a GPT and an MBR disk alike. It is what the product's
+    /// slot layout states (`data_label`), the same fact Lemnos's slot-init finds the partition
+    /// by. Default `lemnos-data`.
+    pub data_label: String,
     /// The slot file. Default `slots/{id}.erofs`.
     pub slot_file: String,
     /// The manifest. Default `slots/{id}.json`.
@@ -127,7 +132,7 @@ pub struct Names {
 impl Default for Names {
     fn default() -> Self {
         Self {
-            data: "data".into(),
+            data_label: "lemnos-data".into(),
             slot_file: "slots/{id}.erofs".into(),
             manifest_file: "slots/{id}.json".into(),
             boot_list: "slots/{id}.boot".into(),
@@ -269,15 +274,20 @@ pub fn open(
     })
 }
 
-/// The bytes of the one partition named `name` in the image at `image` (`.img.xz` or `.img`), as the
-/// image holds them: for a caller that reads a partition itself (the boot partition's FAT, which a
-/// USB boot serves). The partition is spooled under `scratch_parent` and the spool is removed before
-/// this returns. `max` bounds the partition's length, which is also the memory this takes.
+/// The bytes of the one partition a GPT names `name` in the image at `image` (`.img.xz` or
+/// `.img`), as the image holds them: for a caller that reads a partition itself (the boot
+/// partition's FAT, which a USB boot serves). The partition is spooled under `scratch_parent` and
+/// the spool is removed before this returns. `max` bounds the partition's length, which is also
+/// the memory this takes.
+///
+/// An MBR names no partition, so an MBR image is refused here, with what it holds: a partition
+/// is never taken by its position. (The data partition is found by its filesystem's label on
+/// either kind of disk; the boot partition's FAT carries no label yet.)
 ///
 /// # Errors
 ///
-/// When the image cannot be read, has no partition of that name or two, or the partition is
-/// longer than `max`.
+/// When the image cannot be read, is an MBR disk, has no partition of that name or two, or the
+/// partition is longer than `max`.
 pub fn partition_bytes(
     image: &Path,
     scratch_parent: &Path,
@@ -285,10 +295,6 @@ pub fn partition_bytes(
     max: u64,
 ) -> Result<Vec<u8>, ImageError> {
     let options = Options {
-        names: Names {
-            data: name.to_owned(),
-            ..Names::default()
-        },
         max_spool_bytes: max,
         ..Options::default()
     };
@@ -304,7 +310,8 @@ pub fn partition_bytes(
             .map_err(|e| ImageError::Io(e.to_string()))?;
         atlas_xzdec::Layout::plain(len)
     };
-    let mut router = Router::new(scratch.path(), &options, Mode::Slots);
+    let mut router = Router::new(scratch.path(), &options, Mode::Slots)
+        .keeping(route::Select::GptName(name.to_owned()));
     let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
         .map_err(|error| error.to_string());
     let output = router

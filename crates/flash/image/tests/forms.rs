@@ -182,18 +182,208 @@ fn a_bad_slot_id_is_refused_before_anything_is_made() {
 }
 
 #[test]
-fn an_image_without_a_data_partition_is_refused() {
+fn an_image_with_no_partition_labelled_as_the_data_partition_is_refused_saying_what_it_holds() {
     let dir = TestDir::new("no-data");
     let scratch = TestDir::new("no-data-scratch");
+    // A GPT partition NAMED data whose filesystem carries another label: the name decides nothing.
+    let other = data_labelled("something-else");
+    let disk = gpt_disk(&[Part {
+        name: "data",
+        first_lba: 2048,
+        bytes: &other,
+    }]);
+    let path = dir.write("unlabelled.img", &disk);
+    let error = open(&path, scratch.path(), &["alpha"], &Options::default()).unwrap_err();
+    assert!(matches!(error, ImageError::Layout(_)), "{error}");
+    let words = error.to_string();
+    assert!(words.contains("labelled \"lemnos-data\""), "{words}");
+    assert!(
+        words.contains("partition 1 (named \"data\", ext, labelled \"something-else\")"),
+        "{words}"
+    );
+    assert!(scratch.entries().is_empty());
+}
+
+#[test]
+fn a_partition_is_the_data_partition_by_its_filesystem_s_label_whatever_the_table_calls_it() {
+    let dir = TestDir::new("by-label");
+    let scratch = TestDir::new("by-label-scratch");
     let disk = gpt_disk(&[Part {
         name: "rootfs",
         first_lba: 2048,
         bytes: DATA_FIXTURE,
     }]);
-    let path = dir.write("rootfs-only.img", &disk);
+    let path = dir.write("named-rootfs.img", &disk);
+    let image = open(&path, scratch.path(), &["alpha"], &Options::default()).expect("read");
+    assert_eq!(image.slot("alpha").expect("alpha").id(), "alpha");
+}
+
+/// The Raze's disk as Gaia writes it: an MBR, partition 1 a FAT with no label (type 0x0c),
+/// partition 2 the data filesystem (type 0x83).
+fn raze_like_disk() -> Vec<u8> {
+    let boot = fat_partition(None, 64 * 1024);
+    mbr_disk(&[
+        MbrPart {
+            kind: 0x0C,
+            first_lba: 2048,
+            bytes: &boot,
+        },
+        MbrPart {
+            kind: 0x83,
+            first_lba: 4096,
+            bytes: DATA_FIXTURE,
+        },
+    ])
+}
+
+#[test]
+fn an_mbr_image_is_read_and_its_data_partition_is_found_by_label() {
+    let dir = TestDir::new("mbr");
+    let disk = raze_like_disk();
+    for (name, bytes) in [("mbr.img", disk.clone()), ("mbr.img.xz", xz(&disk))] {
+        let scratch = TestDir::new("mbr-scratch");
+        let path = dir.write(name, &bytes);
+        let image = open(
+            &path,
+            scratch.path(),
+            &["alpha", "beta"],
+            &Options::default(),
+        )
+        .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let alpha = image.slot("alpha").expect("alpha");
+        assert_eq!(alpha.root_hash(), alpha_root(), "{name}");
+        let mut file = Vec::new();
+        alpha
+            .rootfs()
+            .expect("rootfs")
+            .read_to_end(&mut file)
+            .expect("read");
+        assert_eq!(file, alpha_file(), "{name}");
+        // The partitions are reported with their places; an MBR names none.
+        assert_eq!(image.partitions().len(), 2, "{name}");
+        assert!(
+            image.partitions().iter().all(|p| p.name.is_empty()),
+            "{name}"
+        );
+        // The first-flash pass reads the same disk: the board and its slots.
+        let probe = atlas_image::probe_board(&path, scratch.path())
+            .unwrap_or_else(|error| panic!("{name}: probe: {error}"));
+        assert_eq!(probe.slots, ["alpha", "beta"], "{name}");
+        drop(image);
+    }
+}
+
+#[test]
+fn an_mbr_image_with_no_or_two_labelled_data_partitions_is_refused_by_name() {
+    let dir = TestDir::new("mbr-refused");
+    let scratch = TestDir::new("mbr-refused-scratch");
+    let boot = fat_partition(None, 64 * 1024);
+    let other = data_labelled("other");
+    // None: the listing says each partition's number, type byte, filesystem and label.
+    let none = mbr_disk(&[
+        MbrPart {
+            kind: 0x0C,
+            first_lba: 2048,
+            bytes: &boot,
+        },
+        MbrPart {
+            kind: 0x83,
+            first_lba: 4096,
+            bytes: &other,
+        },
+    ]);
+    let path = dir.write("none.img", &none);
     let error = open(&path, scratch.path(), &["alpha"], &Options::default()).unwrap_err();
-    assert!(matches!(error, ImageError::Layout(_)), "{error}");
+    let words = error.to_string();
+    assert!(matches!(error, ImageError::Layout(_)), "{words}");
+    assert!(
+        words.contains("partition 1 (type 0x0c, vfat, no label), partition 2 (type 0x83, ext, labelled \"other\")"),
+        "{words}"
+    );
+    // Two: never the first, never the second; refused, naming both.
+    let two = mbr_disk(&[
+        MbrPart {
+            kind: 0x83,
+            first_lba: 2048,
+            bytes: DATA_FIXTURE,
+        },
+        MbrPart {
+            kind: 0x83,
+            first_lba: 4096,
+            bytes: DATA_FIXTURE,
+        },
+    ]);
+    let path = dir.write("two.img", &two);
+    let error = open(&path, scratch.path(), &["alpha"], &Options::default()).unwrap_err();
+    let words = error.to_string();
+    assert!(
+        words.contains(
+            "two partitions' filesystems are labelled \"lemnos-data\": partition 1 and partition 2"
+        ),
+        "{words}"
+    );
     assert!(scratch.entries().is_empty());
+}
+
+#[test]
+fn an_extended_partition_and_a_disk_with_no_table_are_refused() {
+    let dir = TestDir::new("mbr-table");
+    let scratch = TestDir::new("mbr-table-scratch");
+    let extended = mbr_disk(&[MbrPart {
+        kind: 0x05,
+        first_lba: 2048,
+        bytes: DATA_FIXTURE,
+    }]);
+    let path = dir.write("extended.img", &extended);
+    let error = open(&path, scratch.path(), &["alpha"], &Options::default()).unwrap_err();
+    assert!(error.to_string().contains("extended partition"), "{error}");
+    let blank = dir.write("blank.img", &vec![0u8; 4 << 20]);
+    let error = open(&blank, scratch.path(), &["alpha"], &Options::default()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("no GPT header at LBA 1 and no MBR partition table"),
+        "{error}"
+    );
+}
+
+#[test]
+fn every_scheme_a_board_declares_has_a_reader_that_reads_a_disk_of_it() {
+    // The boards' own layouts: `scheme = "..."` under [layout]; a board that states none is GPT
+    // (Gaia's default). A board whose scheme has no disk here fails this test, not a bench.
+    let boards = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../devices/boards");
+    let mut schemes = std::collections::BTreeMap::new();
+    for entry in std::fs::read_dir(&boards).expect("the boards") {
+        let file = entry.expect("a board").path().join("board.toml");
+        let Ok(text) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        let scheme = text
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("scheme"))
+            .filter_map(|rest| rest.trim_start().strip_prefix('='))
+            .map(|value| value.trim().trim_matches('"').to_owned())
+            .next()
+            .unwrap_or_else(|| "gpt".to_owned());
+        schemes.entry(scheme).or_insert_with(Vec::new).push(file);
+    }
+    assert!(
+        schemes.contains_key("mbr"),
+        "the Raze declares mbr: {schemes:?}"
+    );
+    let dir = TestDir::new("schemes");
+    for (scheme, boards) in &schemes {
+        let disk = match scheme.as_str() {
+            "gpt" => image_disk(),
+            "mbr" => raze_like_disk(),
+            other => panic!("no reader test for the scheme {other:?}, which {boards:?} declare"),
+        };
+        let scratch = TestDir::new("schemes-scratch");
+        let path = dir.write(&format!("{scheme}.img"), &disk);
+        let image = open(&path, scratch.path(), &["alpha"], &Options::default())
+            .unwrap_or_else(|error| panic!("a {scheme} disk ({boards:?}): {error}"));
+        assert_eq!(image.slot("alpha").expect("alpha").id(), "alpha");
+    }
 }
 
 #[test]
@@ -329,4 +519,21 @@ fn a_named_partition_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_
         assert_eq!(dir.entries(), [name.to_owned()], "{name}");
         std::fs::remove_file(image).expect("the image is removed");
     }
+}
+
+#[test]
+fn a_named_partition_of_an_mbr_image_is_refused_since_an_mbr_names_none() {
+    let dir = TestDir::new("partition-bytes-mbr");
+    let image = dir.write("mbr.img", &raze_like_disk());
+    let error = atlas_image::partition_bytes(&image, dir.path(), "boot", 1 << 20).unwrap_err();
+    let words = error.to_string();
+    assert!(
+        words.contains("an MBR, which names no partition"),
+        "{words}"
+    );
+    assert!(
+        words.contains("partition 1 (type 0x0c, not read)"),
+        "{words}"
+    );
+    assert_eq!(dir.entries(), ["mbr.img".to_owned()]);
 }

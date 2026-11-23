@@ -147,7 +147,7 @@ def main():
         if os.path.exists(out):
             os.remove(out)
         subprocess.run(["mke2fs", "-q", "-t", "ext4", "-b", "1024", "-N", "64",
-                        "-O", "^has_journal", "-L", "data", "-d", stage, out, "512K"],
+                        "-O", "^has_journal", "-L", "lemnos-data", "-d", stage, out, "512K"],
                        check=True)
     print("alpha root", alpha_root)
 
