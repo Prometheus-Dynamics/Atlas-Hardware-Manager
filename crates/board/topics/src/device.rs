@@ -444,14 +444,17 @@ pub(crate) fn describe(raw: RawDevice) -> Device {
             .collect();
         let mut matched = Vec::new();
         for item in &description.items {
-            let value = item.field.as_deref().and_then(|field| {
+            // The values topic has one field per item, named as the item is (board: Lemnos bbb3c420
+            // service/orion/src/publish.rs:1332). The item's `field` names a field of its method's
+            // reply, never a topic field, so it plays no part here.
+            let value = item.name.as_deref().and_then(|name| {
                 values
                     .iter()
-                    .find(|candidate| candidate.name == field)
+                    .find(|candidate| candidate.name == name)
                     .and_then(|candidate| candidate.value.clone())
             });
-            if let Some(field) = &item.field {
-                matched.push(field.clone());
+            if let Some(name) = &item.name {
+                matched.push(name.clone());
             }
             if item.kind == Some(ItemKind::Control) {
                 let takes = match (item.contract, item.method) {
@@ -566,6 +569,29 @@ mod tests {
             }],
             description: DescriptionState::Described(Box::new(parse(text).expect("reads"))),
         })
+    }
+
+    #[test]
+    fn a_value_is_joined_to_its_item_by_the_item_s_name_whatever_the_reply_field() {
+        // A real board's cpu-thermal, as it described it on 2026-11-22: the item reads the whole
+        // reply of method 1 (`field=none`), and the bridge publishes the value under the item's
+        // name (board: Lemnos bbb3c420 service/orion/src/publish.rs:1332, `name: &item.name`).
+        let board = described(
+            "describe 1\ndevice\ncontract index=0 tag=\"temperature/1\" kind=\"sensor\" hash=0x1 methods=1\nmethod contract=0 id=1 name=\"read\" params=\"\" returns=\"f32\" out_buffer=false job=false\nitem kind=value name=\"v\" unit=\"°C\" unit_state=known exponent=0 contract=0 method=1 field=none reading=number group=none",
+        );
+        assert_eq!(
+            board.readings.len(),
+            1,
+            "one reading, not a described one and a nameless value: {:?}",
+            board.readings
+        );
+        assert_eq!(board.readings[0].value, Some(Scalar::Number(2.0)));
+        assert_eq!(board.readings[0].unit, Reported::Value("°C".into()));
+        // A reply field other than the item's name changes nothing: the topic field is the name.
+        let field =
+            described("describe 1\ndevice\nitem kind=value name=\"v\" field=\"raw\" unit=\"V\"");
+        assert_eq!(field.readings.len(), 1, "{:?}", field.readings);
+        assert_eq!(field.readings[0].value, Some(Scalar::Number(2.0)));
     }
 
     #[test]
