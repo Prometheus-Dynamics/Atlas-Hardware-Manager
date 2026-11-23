@@ -1,0 +1,22 @@
+# The commands this product's shipped shell scripts call, and where each comes from (scripts/check-script-commands.py):
+#   busybox   a BusyBox applet        ash   a builtin of BusyBox's shell        any other word: the package it is from
+# The gate holds every shipped script to this list and each busybox and ash line to os/busybox.config.
+# scripts/build-product.sh holds the list to the root each build makes.
+# Read against a built root: build pm14 (dev.1405), 2026-11-23.
+[          ash
+echo       ash
+printf     ash
+cat        busybox
+cut        busybox
+head       busybox
+id         busybox
+install    busybox
+mkdir      busybox
+mv         busybox
+rm         busybox
+sed        busybox
+sha256sum  busybox
+sleep      busybox
+tr         busybox
+wc         busybox
+mount      util-linux

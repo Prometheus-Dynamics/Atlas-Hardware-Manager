@@ -178,6 +178,12 @@ if [ -f scripts/check-wired-ethernet.py ]; then
 fi
 
 # The board's small boot scripts (the Orion name from the serial, the journal's bind), run against made-up inputs.
+# Every shell script an image ships calls only commands its product lists, and the list is held to the product's
+# BusyBox config where that is a whole file (board-journal called chown on an image without it, 2026-11-23).
+if [ -f scripts/check-script-commands.py ]; then
+  step "shipped scripts' commands" python3 -I scripts/check-script-commands.py
+  step "shipped scripts' commands self-test" python3 -I scripts/check-script-commands.py --self-test
+fi
 if [ -f scripts/check-boot-scripts.sh ]; then
   step "boot scripts" scripts/check-boot-scripts.sh
 fi

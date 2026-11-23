@@ -1,0 +1,25 @@
+# The commands this product's shipped shell scripts call, and where each comes from (scripts/check-script-commands.py):
+#   busybox   a BusyBox applet        ash   a builtin of BusyBox's shell        any other word: the package it is from
+# The gate holds every shipped script to this list (BusyBox here is Buildroot's default plus os/busybox.fragment: no whole config to hold it to).
+# scripts/build-product.sh holds the list to the root each build makes.
+# Read against a built root: the flasher set of 2026-11-22.
+[          busybox
+cat        busybox
+chmod      busybox
+chown      busybox
+cp         busybox
+cut        busybox
+echo       busybox
+ip         busybox
+kill       busybox
+mkdir      busybox
+mount      busybox
+mv         busybox
+printf     busybox
+reboot     busybox
+rm         busybox
+sha256sum  busybox
+sleep      busybox
+touch      busybox
+tr         busybox
+udhcpd     busybox

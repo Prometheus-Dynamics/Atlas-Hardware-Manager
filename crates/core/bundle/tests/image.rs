@@ -311,6 +311,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// (`.img.xz`) and, to compare, `ATLAS_REAL_BUNDLE` to the board-side slot file the same build
 /// made. With neither set the test says so and does nothing: the gate's fixtures cover the
 /// reader, and this is how a real image is checked on the computer before a board sees it.
+/// `scripts/build-product.sh` runs it with both set on every image a build makes (`.flash` and
+/// `.disk`), and fails the build unless the comparison's own line is printed.
 #[test]
 fn a_real_product_image_gives_the_slot_its_build_made() {
     let Some(image) = std::env::var_os("ATLAS_REAL_IMAGE") else {

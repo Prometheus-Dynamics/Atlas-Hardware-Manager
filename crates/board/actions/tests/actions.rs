@@ -636,13 +636,14 @@ async fn a_same_session_follow_never_returns_an_older_runs_answer() {
     let catalog = rig.catalog().await;
     let long = named(&catalog, FOLLOWED);
     rig.node.script().push_action(FOLLOWED, Behaviour::Answer);
+    let ended = rig.node.ended_runs();
     let a = rig
         .board
         .start(long, &[])
         .await
         .expect("A starts on session 1");
-    until("A to run on session 1", || rig.node.calls_received() >= 2).await;
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // A has finished on the board and nobody has read its answer: that is the state the hazard needs.
+    until("A to end on session 1", || rig.node.ended_runs() > ended).await;
     let a_call = a.call();
 
     let text = rig.address.to_string();

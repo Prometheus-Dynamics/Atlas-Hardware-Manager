@@ -39,8 +39,9 @@ if is_mount "$VAR"; then
 	exit 0
 fi
 install -d -m 2755 -o root -g systemd-journal "$DATA" || { say "$DATA cannot be made: nothing is bound"; exit 1; }
-# The image has no chown or chmod: install -d (BusyBox) sets the mode and the owner of the directory it names whether
-# it made it or found it. What it left is then looked at: root's, set-group-id.
+# The image has no chown or chmod. BusyBox's install -d sets the owner and then the mode of the directory it names,
+# whether it made it or found it (BusyBox 1.38 coreutils/install.c: lchown, then chmod "always, not only with -m"),
+# and fails if either does. What it left is then looked at: root's, set-group-id.
 [ -O "$DATA" ] && [ -g "$DATA" ] || { say "$DATA is not root's with the set-group-id bit after install -d: nothing is bound"; exit 1; }
 [ -L "$DATA" ] && { say "$DATA became a symlink: refused, nothing is bound"; exit 1; }
 mkdir -p "$VAR" || { say "$VAR cannot be made: nothing is bound"; exit 1; }

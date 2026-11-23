@@ -243,6 +243,8 @@ struct Shared {
     stalled: Arc<AtomicUsize>,
     /// How many calls the node logic has been asked to start (every run request it received).
     calls: Arc<AtomicUsize>,
+    /// How many runs the node logic has ended, whatever their outcome (their answer handed to the comm core).
+    ended: Arc<AtomicUsize>,
     /// Withdraws the device resources while set (see [`readings`]).
     devices: readings::Control,
     /// How many runs have been asked for, by action name, refused ones included.
@@ -399,6 +401,7 @@ impl SimNode {
             hold_installs: Arc::new(AtomicBool::new(false)),
             stalled: Arc::new(AtomicUsize::new(0)),
             calls: Arc::new(AtomicUsize::new(0)),
+            ended: Arc::new(AtomicUsize::new(0)),
             devices: readings::Control::default(),
             runs: Arc::new(Mutex::new(BTreeMap::new())),
             follow_boot: Arc::new(AtomicBool::new(false)),
@@ -480,6 +483,13 @@ impl SimNode {
     #[must_use]
     pub fn calls_received(&self) -> usize {
         self.shared.calls.load(Ordering::SeqCst)
+    }
+
+    /// How many runs this node has ended so far, whatever their outcome: each one's answer is with the
+    /// comm core. A test waits on this to know a run has finished on the board, rather than on a delay.
+    #[must_use]
+    pub fn ended_runs(&self) -> usize {
+        self.shared.ended.load(Ordering::SeqCst)
     }
 
     /// How many runs the script has stalled so far. A test waits on this to know a stalled run
@@ -957,6 +967,7 @@ impl Node {
         if let Some(registration) = requests(&mut self.devices) {
             let _ = registration.finish_with_code(call, outcome, code, output, &detail);
         }
+        self.shared.ended.fetch_add(1, Ordering::SeqCst);
     }
 
     fn finish_status(&mut self, call: u64, status: &Status) {

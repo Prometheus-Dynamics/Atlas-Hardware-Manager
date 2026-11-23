@@ -218,6 +218,45 @@ PY
   fi
 fi
 
+# The commands the product's shipped scripts call (scripts/check-script-commands.py, the product's script-commands
+# list) are in the root this build made: the EROFS root where there is one (the scripts' own bytes too), else the one
+# tree Buildroot made that holds BusyBox (the OS before the components are placed: commands only).
+if [[ -z $until_step && -f $(dirname "$product")/script-commands ]]; then
+  if [[ -n ${erofs:-} ]]; then
+    sc_tmp=$(mktemp -d)
+    fsck.erofs --extract="$sc_tmp/root" "$erofs" >"$sc_tmp/fsck.log" 2>&1 \
+      || { cat "$sc_tmp/fsck.log" >&2; rm -rf "${sc_tmp:?}"; die "FAILED products/$pname: fsck.erofs could not read $erofs for the script commands check"; }
+    python3 -I "$repo/scripts/check-script-commands.py" --root "$sc_tmp/root" "$pname" \
+      || { rm -rf "${sc_tmp:?}"; die "FAILED products/$pname: a shipped script calls a command the built root lacks (above)"; }
+    rm -rf "${sc_tmp:?}"
+  else
+    os_tree=$(python3 -I - "$product" "$(dirname "$GAIA_STORE")/runs" "$GAIA_STORE" <<'PY'
+import glob, json, os, sys
+product, runs, store = sys.argv[1:]
+recs = []
+for f in glob.glob(os.path.join(runs, "*.json")):
+    try: r = json.load(open(f))
+    except (OSError, ValueError): continue
+    if os.path.realpath(r.get("product", "")) == os.path.realpath(product) and r.get("outcome") == "done":
+        recs.append((r.get("end_ns", 0), f, r))
+if not recs: sys.exit(f"no finished run record of {product} in {runs}")
+_, rec, run = max(recs)
+trees = set()
+for s in run["steps"]:
+    ref = s.get("outputs", {}).get("rootfs") if s["step"] == "gaia.os.buildroot" else None
+    if not ref: continue
+    kind, _, digest = ref.partition(":sha256:")
+    d = os.path.join(store, "objects", kind, digest[:2], digest)
+    if os.path.lexists(os.path.join(d, "bin", "busybox")): trees.add(d)
+if len(trees) != 1: sys.exit(f"{rec}: {len(trees)} Buildroot trees hold BusyBox: the script commands check reads one")
+print(trees.pop())
+PY
+    ) || die "FAILED products/$pname: the script commands check could not find the OS tree this build made (above)"
+    python3 -I "$repo/scripts/check-script-commands.py" --os-root "$os_tree" "$pname" \
+      || die "FAILED products/$pname: a shipped script calls a command the built OS lacks (above)"
+  fi
+fi
+
 # What was made: each output of the plan, as Gaia shows it. A partial build has no outputs to show.
 [[ -z $until_step ]] || { echo "build-product: partial build (--until $until_step): no outputs are listed"; exit 0; }
 plan=$("$gaia" plan "${args[@]}") || die "gaia plan failed for $pname after the build (Gaia's words are above)"
@@ -228,10 +267,12 @@ outputs=$(sed -n '/^outputs:$/,$p' <<<"$plan" | sed -n 's/^  \([^ ]*\)  .*/\1/p'
 only=""
 grep -qE '\.flash$' <<<"$outputs" && only='\.flash$'
 [[ -z $out ]] || : > "$out/$pname.outputs.txt"
+declare -A object=()  # each output's first store object, for the read-back below
 for o in $outputs; do
   echo "build-product: output $o"
   shown=$("$gaia" show "$o") || die "gaia show $o failed"
   sed 's/^/  /' <<<"$shown"
+  object[$o]=$(grep -oE "$GAIA_STORE/[^ ]+" <<<"$shown" | sort -u | head -n 1)
   [[ -n $out ]] || continue
   { echo "$o"; sed 's/^/  /' <<<"$shown"; } >> "$out/$pname.outputs.txt"
   if [[ -n $only ]] && ! grep -qE "$only" <<<"$o"; then continue; fi
@@ -247,6 +288,28 @@ for o in $outputs; do
   done < <(grep -oE "$GAIA_STORE/[^ ]+" <<<"$shown" | sort -u)
   [[ $n -gt 0 ]] || die "gaia show $o names no store object under $GAIA_STORE: nothing to copy"
 done
+# The slot, read back out of each image this build made, as an install reads it (atlas-image and atlas-bundle), and
+# compared with the build's own slot file member for member: name, length and SHA-256. The images are the one OS image
+# (`.flash`) and the disk the emulator boots (`.disk`). Atlas could not read the first MBR image a board was given
+# (2026-11-23): the fixtures were GPT only, and no build read its own image back.
+for o in $outputs; do
+  case $o in *.flash | *.disk) ;; *) continue ;; esac
+  slot_file=${object[${o%.*}.bundle]:-}
+  if [[ -z $slot_file ]]; then echo "build-product: $o: this product makes no slot file: no slot is read back"; continue; fi
+  [[ -f ${object[$o]:-} ]] || die "FAILED products/$pname: $o has no file in the store to read back"
+  command -v cargo >/dev/null || die "FAILED products/$pname: cargo is needed to read the slot back out of $o"
+  rb=$(mktemp -d)
+  ln -s "${object[$o]}" "$rb/$o"  # the store names objects by digest; the reader is given the output's name
+  said=$(cd "$repo" && ATLAS_REAL_IMAGE=$rb/$o ATLAS_REAL_BUNDLE=$slot_file cargo test --locked -p atlas-bundle --test image \
+    a_real_product_image_gives_the_slot_its_build_made -- --exact --nocapture 2>&1) \
+    || { echo "$said" >&2; rm -rf "${rb:?}"; die "FAILED products/$pname: the slot read back out of $o is not the build's slot file (above)"; }
+  rm -rf "${rb:?}"
+  # The test does nothing without its two paths: its own line is what says the comparison ran.
+  line=$(grep -m1 "equal to the build's own slot file" <<<"$said") \
+    || { echo "$said" >&2; die "FAILED products/$pname: the read-back of $o did not compare the slot (above)"; }
+  echo "build-product: $o: the slot read back is $line"
+done
+
 if [[ -n $out ]]; then
   echo "build-product: files in $out"
   (cd "$out" && find . -type f | sort | while IFS= read -r f; do

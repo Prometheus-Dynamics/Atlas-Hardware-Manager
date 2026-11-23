@@ -3,6 +3,8 @@
 #   orion-node-name  (devices/components/orion-node-name)  the board's Orion name from its serial;
 #   board-journal    (devices/components/raze-base-files)  the journal's bind onto /data, the paths that bind nothing.
 # board-journal's bind itself needs root and is proven on the board.
+# These run with the PC's tools, so they cannot say whether the image has a command a script calls: that is
+# scripts/check-script-commands.py (every shipped script, held to its product's list and to the built root).
 #
 #   scripts/check-boot-scripts.sh            every case below; exit 1 at the first that fails
 set -euo pipefail
