@@ -1,10 +1,15 @@
-//! The install of a slot, as a job: make the bundle, check the board, accept, push, install.
+//! The install of a slot, as a job: read the slot out of the image, check the board, accept, push, install.
+//!
+//! A person installs from the one OS image (`.img.xz`). The board takes a slot as one file, Lemnos's
+//! bundle; that file is made here from the image and is never something a person handles, so the
+//! words a person reads say "the image" and "the slot", and "bundle" is this module's own word.
 //!
 //! Stages, in order, and what each does on a board:
 //!
 //! 1. **Preparing**: the bundle is rebuilt on the computer from the image's kept manifest and
 //!    signature ([`Source::Image`] through `atlas_bundle::bundle_from_image`, streamed to a file in
-//!    the scratch directory; nothing is signed here), or taken as given ([`Source::Bundle`]).
+//!    the scratch directory; nothing is signed here), or, in tests only, taken as given
+//!    (`Source::Bundle`, the `bundle-source` feature).
 //!    Nothing is sent.
 //! 2. **Board check**: the bundle's `board` must be this board's id. A mismatch ends the install
 //!    here, before any byte or call reaches the board.
@@ -83,16 +88,37 @@ const LEMNOS_NOT_FOUND: u16 = 2;
 const PUSH_POLL: Duration = Duration::from_millis(20);
 const PUSH_FILE_TAG: &str = "slot";
 
-/// Where the bundle comes from.
+/// Where an install's slot comes from. One OS image is the only thing a person installs from: the
+/// same `.img.xz` a first flash writes whole. What the board is sent is made here from that image.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
-    /// A bundle already made, taken as it is. Not deleted when the install ends.
-    Bundle(PathBuf),
-    /// A first-flash image (`.img.xz`) and the slot in it: the bundle is rebuilt here from the
-    /// image's own manifest and kept signature (`atlas_bundle::bundle_from_image`), streamed into the
-    /// scratch directory, and deleted when the install ends. Nothing is signed on the computer: a
+    /// A first-flash image (`.img.xz`) and the slot in it: what the board takes is rebuilt here from
+    /// the image's own manifest and kept signature (`atlas_bundle::bundle_from_image`), streamed into
+    /// the scratch directory, and deleted when the install ends. Nothing is signed on the computer: a
     /// slot the image keeps unsigned is installed unsigned, and the board's security decides.
-    Image { image: PathBuf, slot: String },
+    ///
+    /// `slot` is `None` for the image's one slot, which is how a person installs: an image names its
+    /// slots itself. An image with several is refused by name until one is said.
+    Image {
+        image: PathBuf,
+        slot: Option<String>,
+    },
+    /// The board-side form already made, taken as it is and not deleted when the install ends. For
+    /// tests only (the `bundle-source` feature, which no program enables): the simulated node's
+    /// tests build one in memory. Never a file a person is offered or asked for.
+    #[cfg(feature = "bundle-source")]
+    Bundle(PathBuf),
+}
+
+impl Source {
+    /// The image at `image`, for its one slot.
+    #[must_use]
+    pub fn image(image: impl Into<PathBuf>) -> Self {
+        Self::Image {
+            image: image.into(),
+            slot: None,
+        }
+    }
 }
 
 /// What one install is asked to do.
@@ -119,10 +145,16 @@ struct Spec {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 enum SavedSource {
-    Bundle { path: PathBuf },
+    Bundle {
+        path: PathBuf,
+    },
     // Jobs saved before 13-client also carry product, version, variant, kernel, display_name and a
     // signing key: serde ignores them, and the key is never read again.
-    Image { image: PathBuf, slot: String },
+    Image {
+        image: PathBuf,
+        #[serde(default)]
+        slot: Option<String>,
+    },
 }
 
 /// One install's state, kept in memory per nonce.
@@ -316,7 +348,7 @@ async fn slot_ids(board: &BoardActions) -> Result<Vec<String>, String> {
 pub fn missing_bundle(name: &str, device: &str) -> String {
     let inbox = atlas_session::lemnos::inbox(device);
     format!(
-        "the board has no pushed bundle named {name} in its {device} inbox ({inbox}); the push did not reach the board's {device} device"
+        "the board has no pushed file named {name} in its {device} inbox ({inbox}); the push did not reach the board's {device} device"
     )
 }
 
@@ -430,21 +462,27 @@ impl InstallKind {
                         make_bundle(&image, &scratch, &partial)
                     })
                     .await
-                    .map_err(|error| Step::Settled(format!("the bundle maker stopped: {error}")))?;
+                    .map_err(|error| {
+                        Step::Settled(format!(
+                            "reading the slot out of the image stopped: {error}"
+                        ))
+                    })?;
                     made.map_err(Step::Settled)?;
                     std::fs::rename(
                         self.scratch.join(format!("{}.tar.partial", spec.nonce)),
                         &target,
                     )
                     .map_err(|error| {
-                        Step::Settled(format!("the bundle could not be kept: {error}"))
+                        Step::Settled(format!(
+                            "the slot read out of the image could not be kept: {error}"
+                        ))
                     })?;
                 }
                 (target, true)
             }
         };
         let size = std::fs::metadata(&path)
-            .map_err(|error| Step::Settled(format!("the bundle cannot be read: {error}")))?
+            .map_err(|error| Step::Settled(format!("the slot's file cannot be read: {error}")))?
             .len();
         self.with(&spec.nonce, |run| {
             run.bundle = Some(path.clone());
@@ -494,7 +532,7 @@ impl InstallKind {
         self.set_stage(
             &spec.nonce,
             Stage::WaitingForBoard {
-                reason: "accepting the bundle".into(),
+                reason: "asking the board whether there is room".into(),
             },
         );
         board
@@ -545,8 +583,9 @@ impl InstallKind {
                 .jobs
                 .get()
                 .ok_or_else(|| Step::Settled("the job list is not open".into()))?;
-            let file = File::open(bundle)
-                .map_err(|error| Step::Settled(format!("the bundle cannot be opened: {error}")))?;
+            let file = File::open(bundle).map_err(|error| {
+                Step::Settled(format!("the slot's file cannot be opened: {error}"))
+            })?;
             let push = submit_push(
                 &self.push_kind,
                 jobs,
@@ -716,7 +755,7 @@ impl InstallKind {
         let identity = self
             .with_run(&spec.nonce, |run| Some(run.identity.clone()))
             .flatten()
-            .ok_or_else(|| Step::Settled("the bundle was not checked before the install".into()))?;
+            .ok_or_else(|| Step::Settled("the slot was not checked before the install".into()))?;
         let job = self.with_run(&spec.nonce, |run| Some(run.job)).flatten();
 
         // What the one follow said, as the install decides on it.
@@ -979,16 +1018,17 @@ fn flag(value: bool) -> String {
 
 /// The bundle's `board`, read from its `slot.json` member. Refuses anything that is not a bundle.
 fn bundle_identity(path: &Path) -> Result<BundleIdentity, String> {
-    let file = File::open(path).map_err(|error| format!("the bundle cannot be opened: {error}"))?;
+    let file =
+        File::open(path).map_err(|error| format!("the slot's file cannot be opened: {error}"))?;
     let mut archive = tar::Archive::new(file);
     let entries = archive
         .entries()
-        .map_err(|error| format!("the bundle is not a tar: {error}"))?;
+        .map_err(|error| format!("the slot's file is not a tar: {error}"))?;
     for entry in entries {
-        let entry = entry.map_err(|error| format!("the bundle is damaged: {error}"))?;
+        let entry = entry.map_err(|error| format!("the slot's file is damaged: {error}"))?;
         let name = entry
             .path()
-            .map_err(|error| format!("the bundle has a bad name: {error}"))?
+            .map_err(|error| format!("the slot's file has a bad name: {error}"))?
             .to_string_lossy()
             .into_owned();
         if name == "slot.json" {
@@ -1018,7 +1058,7 @@ fn bundle_identity(path: &Path) -> Result<BundleIdentity, String> {
             });
         }
     }
-    Err("the bundle has no slot.json".to_owned())
+    Err("the slot's file has no slot.json".to_owned())
 }
 
 /// Makes the bundle from the image, streamed, into `partial`.
@@ -1026,11 +1066,38 @@ fn make_bundle(source: &SavedSource, scratch: &Path, partial: &Path) -> Result<(
     let SavedSource::Image { image, slot } = source else {
         return Err("not an image".into());
     };
-    let out =
-        File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;
-    atlas_bundle::bundle_from_image(image, scratch, slot, out)
+    // The scratch directory is made on first use: a program that has installed nothing yet has none.
+    std::fs::create_dir_all(scratch).map_err(|error| {
+        format!(
+            "the scratch directory {} cannot be made: {error}",
+            scratch.display()
+        )
+    })?;
+    let slot = match slot {
+        Some(slot) => slot.clone(),
+        None => only_slot(image, scratch)?,
+    };
+    let out = File::create(partial)
+        .map_err(|error| format!("the slot cannot be written out of the image: {error}"))?;
+    atlas_bundle::bundle_from_image(image, scratch, &slot, out)
         .map(drop)
-        .map_err(|error| format!("the bundle cannot be made from the image: {error}"))
+        .map_err(|error| format!("the slot cannot be read out of the image: {error}"))
+}
+
+/// The one slot the image at `image` holds. An image with none, or with several, is refused in
+/// words that name what it holds.
+fn only_slot(image: &Path, scratch: &Path) -> Result<String, String> {
+    let probe = atlas_image::probe_board(image, scratch)
+        .map_err(|error| format!("the image cannot be read: {error}"))?;
+    match probe.slots.as_slice() {
+        [slot] => Ok(slot.clone()),
+        [] => Err("the image holds no slot to install".to_owned()),
+        several => Err(format!(
+            "the image holds {} slots ({}): which one to install must be said",
+            several.len(),
+            several.join(", ")
+        )),
+    }
 }
 
 /// The install jobs of one program: submitted, staged, and cancelled.
@@ -1097,6 +1164,7 @@ impl SlotInstalls {
         }
         let nonce = next_nonce();
         let source = match request.source {
+            #[cfg(feature = "bundle-source")]
             Source::Bundle(path) => SavedSource::Bundle { path },
             Source::Image { image, slot } => SavedSource::Image { image, slot },
         };
@@ -1380,7 +1448,7 @@ mod answer_tests {
         assert!(not_found(&busy).is_none(), "BUSY is not NOT_FOUND");
         assert_eq!(
             missing_bundle("slot-7.tar", "slots"),
-            "the board has no pushed bundle named slot-7.tar in its slots inbox (lemnos/slots/); the push did not reach the board's slots device"
+            "the board has no pushed file named slot-7.tar in its slots inbox (lemnos/slots/); the push did not reach the board's slots device"
         );
     }
 }

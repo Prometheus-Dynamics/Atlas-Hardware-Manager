@@ -1,8 +1,8 @@
 //! The slot bundle Lemnos reads (I5): a plain tar with `slot.json`, `rootfs.erofs` (the
-//! verity tree appended), `boot/...` files, and an optional `slot.sig`, the raw 64-byte
-//! Ed25519 signature over the exact bytes of `slot.json`, with `slot.key`, the key id of the
-//! signer (64 lowercase hex digits: the SHA-256 of its public key). Signing is I5g's table in
-//! [`verify`].
+//! verity tree appended), `boot/...` files, and an optional `slot.sig`: Lemnos's 108-byte signing
+//! record (`LMNSSIG1`, the signer's key id, the Ed25519 signature over Lemnos's slot-bundle
+//! message of `slot.json`'s exact bytes), read with Lemnos's own `lemnos-slot-store` so the sim
+//! takes exactly what a board takes. Signing is I5g's table in [`verify`].
 //!
 //! [`verify`] is the install's check on a finished bundle. [`build`] and [`sign`] make one,
 //! for tests and for the sim's own "Atlas made this bundle" fixtures.
@@ -15,6 +15,8 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use lemnos_slot_store::signing;
+
 use crate::slots::{Signed, Status, TrustedKey, code, valid_id};
 
 /// The slot.json schema this board reads: `product`, `version`, optional `variant`, `board`, and the
@@ -22,7 +24,6 @@ use crate::slots::{Signed, Status, TrustedKey, code, valid_id};
 pub const SCHEMA: u64 = 3;
 pub const SLOT_JSON: &str = "slot.json";
 pub const SLOT_SIG: &str = "slot.sig";
-pub const SLOT_KEY: &str = "slot.key";
 pub const ROOTFS: &str = "rootfs.erofs";
 const BOOT_PREFIX: &str = "boot/";
 
@@ -44,59 +45,42 @@ pub struct Verified {
 }
 
 /// The signature rule of I5g, with the security switch off (on, the gate is `Slots::check_signed`).
-/// Signed bundles need both `slot.sig` and `slot.key`; a malformed signature or key id is refused
-/// (-22). A key id on the board's list must verify, or the bundle is refused by name (-1). A key id
-/// the board does not hold, or a board with no list, is not checked.
-// `slot.key` is the signer's key id (board: Lemnos 6c8568d0 drivers/slot-store/src/signing.rs:502-507, whose
-// refusal words for a malformed key id these are).
+/// A `slot.sig` that is not Lemnos's record is refused as malformed (-22). A record whose key is on
+/// the board's list must verify, or the bundle is refused by name (-1). A key the board does not
+/// hold, or a board with no list, is not checked.
+// board: Lemnos 6c8568d0 drivers/slot-store/src/signing.rs:67 (parse_record: 108 bytes, LMNSSIG1, algorithm 1)
 fn signature_of(
     members: &BTreeMap<String, Vec<u8>>,
     manifest_bytes: &[u8],
     trusted: &[TrustedKey],
 ) -> Result<Signed, Status> {
-    let key_id = match members.get(SLOT_KEY) {
-        None => None,
-        Some(bytes) => {
-            let text = std::str::from_utf8(bytes)
-                .unwrap_or_default()
-                .trim_end_matches('\n');
-            if !is_hex64(text) || text.bytes().any(|byte| byte.is_ascii_uppercase()) {
-                return Err(refuse("slot.key is not 64 hex digits"));
-            }
-            Some(text.to_string())
-        }
+    let Some(record) = members.get(SLOT_SIG) else {
+        return Ok(Signed::Unsigned);
     };
-    match (members.get(SLOT_SIG), key_id) {
-        (None, None) => Ok(Signed::Unsigned),
-        (None, Some(_)) => Err(refuse("slot.key is there with no slot.sig")),
-        (Some(_), None) => Err(refuse(
-            "slot.sig is there with no slot.key: the bundle is malformed",
-        )),
-        (Some(signature), Some(key_id)) => {
-            let signature: [u8; 64] = signature
-                .as_slice()
-                .try_into()
-                .map_err(|_| refuse("slot.sig is not 64 bytes"))?;
-            let Some(key) = trusted.iter().find(|key| sha256_hex(&key.public) == key_id) else {
-                return Ok(Signed::Untrusted);
-            };
-            let signature = Signature::from_bytes(&signature);
-            let verifies = VerifyingKey::from_bytes(&key.public)
-                .is_ok_and(|public| public.verify(manifest_bytes, &signature).is_ok());
-            if verifies {
-                Ok(Signed::Trusted {
-                    owner: key.owner.clone(),
-                })
-            } else {
-                Err(Status::new(
-                    code::NOT_PERMITTED,
-                    format!(
-                        "the signature does not verify with the key {} on this board's list, owned by {}: refused, nothing is written",
-                        key_id, key.owner
-                    ),
-                ))
-            }
-        }
+    let record = signing::parse_record(record).map_err(|why| refuse(format!("slot.sig: {why}")))?;
+    let Some(key) = trusted
+        .iter()
+        .find(|key| signing::key_id(&key.public) == record.key_id)
+    else {
+        return Ok(Signed::Untrusted);
+    };
+    let message = signing::slot_bundle_message(manifest_bytes);
+    let signature = Signature::from_bytes(&record.signature);
+    let verifies = VerifyingKey::from_bytes(&key.public)
+        .is_ok_and(|public| public.verify(&message, &signature).is_ok());
+    if verifies {
+        Ok(Signed::Trusted {
+            owner: key.owner.clone(),
+        })
+    } else {
+        Err(Status::new(
+            code::NOT_PERMITTED,
+            format!(
+                "the signature does not verify with the key {} on this board's list, owned by {}: refused, nothing is written",
+                sha256_hex(&key.public),
+                key.owner
+            ),
+        ))
     }
 }
 
@@ -169,7 +153,6 @@ pub fn verify(bundle: &[u8], trusted: &[TrustedKey], board: &str) -> Result<Veri
         let name = path.to_string_lossy().into_owned();
         let known = name == SLOT_JSON
             || name == SLOT_SIG
-            || name == SLOT_KEY
             || name == ROOTFS
             || name
                 .strip_prefix(BOOT_PREFIX)
@@ -317,8 +300,8 @@ pub fn manifest(id: &str, version: &str, rootfs: &[u8], boot: &[(&str, &[u8])]) 
     })
 }
 
-/// Makes a bundle: `slot.json` from `manifest`, the signature members if given (`slot.sig` as
-/// `signature`, whatever its length, and `slot.key` as `key_id`), the rootfs and the boot files.
+/// Makes a bundle: `slot.json` from `manifest`, `slot.sig` as `signature` if given (whatever its
+/// bytes), the rootfs and the boot files.
 /// The members are given as they are, so a test can make a malformed one.
 ///
 /// # Panics
@@ -328,7 +311,6 @@ pub fn manifest(id: &str, version: &str, rootfs: &[u8], boot: &[(&str, &[u8])]) 
 pub fn build(
     manifest: &Value,
     signature: Option<&[u8]>,
-    key_id: Option<&str>,
     rootfs: &[u8],
     boot: &[(&str, &[u8])],
 ) -> Vec<u8> {
@@ -337,9 +319,6 @@ pub fn build(
     append(&mut builder, SLOT_JSON, &manifest_bytes);
     if let Some(signature) = signature {
         append(&mut builder, SLOT_SIG, signature);
-    }
-    if let Some(key_id) = key_id {
-        append(&mut builder, SLOT_KEY, key_id.as_bytes());
     }
     append(&mut builder, ROOTFS, rootfs);
     for (path, bytes) in boot {
@@ -358,13 +337,18 @@ fn append(builder: &mut tar::Builder<Vec<u8>>, name: &str, bytes: &[u8]) {
         .expect("a member in memory");
 }
 
-/// The 64-byte signature over the exact bytes of a manifest.
+/// The `slot.sig` record of a manifest signed by `key`: Lemnos's 108 bytes, over its slot-bundle
+/// message of the manifest's exact bytes.
 #[must_use]
-pub fn sign(manifest: &Value, key: &SigningKey) -> [u8; 64] {
-    key.sign(manifest.to_string().as_bytes()).to_bytes()
+pub fn sign(manifest: &Value, key: &SigningKey) -> Vec<u8> {
+    let message = signing::slot_bundle_message(manifest.to_string().as_bytes());
+    signing::record_bytes(
+        &signing::key_id(&key.verifying_key().to_bytes()),
+        &key.sign(&message).to_bytes(),
+    )
 }
 
-/// The key id of a signer: the SHA-256 of its public key, as 64 lowercase hex digits (`slot.key`).
+/// The key id of a signer: the SHA-256 of its public key, as 64 lowercase hex digits.
 #[must_use]
 pub fn key_id(key: &SigningKey) -> String {
     sha256_hex(&key.verifying_key().to_bytes())

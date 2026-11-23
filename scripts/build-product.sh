@@ -20,7 +20,12 @@
 #   --until STEP  stop after this step of the plan (a node name from `gaia plan`), for a partial build
 #   --jobs N      Gaia's job count (default: Gaia's own)
 #   --tool N=PATH a tool given to Gaia by name (repeatable), as `gaia build --tool`
-#   --out DIR     copy what each output holds into DIR (the image files), with their sizes and SHA-256
+#   --out DIR     copy the product's one OS image into DIR, with its size and SHA-256: the `.flash` output, the file a
+#                 first flash writes and an install reads its slot from. Nothing else is copied for a product that
+#                 has one: one image is the only thing a person downloads or installs, so the slot's board-side
+#                 form, the partitions and the reports stay in Gaia's store (every output's store path, size and
+#                 digest is still printed, and DIR/<product>.outputs.txt keeps that listing). A product with no
+#                 `.flash` output (a flasher, a bring-up card image) has every output copied, as before.
 #   --build-mode  clean (the default, and the only mode for a release) or dev-reuse: `gaia build --dev-reuse` (Gaia
 #                 docs/dev-reuse.md), whose generator steps see @build@ = dev-reuse, so the slot's manifest says
 #                 build.mode dev-reuse (Lemnos 7b4fdb25, `lemnos-ctl bundle --build`). Gaia refuses a dev build of a
@@ -219,11 +224,17 @@ plan=$("$gaia" plan "${args[@]}") || die "gaia plan failed for $pname after the 
 outputs=$(sed -n '/^outputs:$/,$p' <<<"$plan" | sed -n 's/^  \([^ ]*\)  .*/\1/p')
 [[ -n $outputs ]] || die "the plan of $pname names no outputs"
 [[ -z $out ]] || mkdir -p "$out"
+# The one OS image, when the product has one: then it is the only output copied out (see --out above).
+only=""
+grep -qE '\.flash$' <<<"$outputs" && only='\.flash$'
+[[ -z $out ]] || : > "$out/$pname.outputs.txt"
 for o in $outputs; do
   echo "build-product: output $o"
   shown=$("$gaia" show "$o") || die "gaia show $o failed"
   sed 's/^/  /' <<<"$shown"
   [[ -n $out ]] || continue
+  { echo "$o"; sed 's/^/  /' <<<"$shown"; } >> "$out/$pname.outputs.txt"
+  if [[ -n $only ]] && ! grep -qE "$only" <<<"$o"; then continue; fi
   # the store paths the output holds: copied out by name, with size and digest
   # A store object is named by its digest: the copy is named by the output (`raze-base.slot`), with a number
   # only when one output holds several objects.

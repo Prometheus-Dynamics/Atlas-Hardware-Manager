@@ -62,9 +62,9 @@ pub enum Parsed {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CycleArgs {
     pub address: String,
-    /// `--good <bundle>`: a bundle that boots.
+    /// `--good <image>`: an OS image whose slot boots.
     pub good: PathBuf,
-    /// `--bad <bundle>`: a bundle whose slot does not come up (its trial must fall back by itself).
+    /// `--bad <image>`: an OS image whose slot does not come up (its trial must fall back by itself).
     pub bad: PathBuf,
     /// `--scorecard <file>`: where the scorecard is written (text; `--json` also writes JSON beside it).
     pub scorecard: PathBuf,
@@ -296,7 +296,7 @@ fn parse_identity(args: &[String]) -> Parsed {
     Parsed::Identity { identity, json }
 }
 
-/// Reads the operands of `cycle`: `<address>`, `--good <bundle>`, `--bad <bundle>`,
+/// Reads the operands of `cycle`: `<address>`, `--good <image>`, `--bad <image>`,
 /// `--scorecard <file>`, and optionally `--state`, `--identity`, `--json`, `--dry-run`, `--help`.
 fn parse_cycle(args: &[String]) -> Parsed {
     let mut positional: Vec<&str> = Vec::new();
@@ -344,11 +344,11 @@ fn parse_cycle(args: &[String]) -> Parsed {
         }
     }
     let [address] = positional.as_slice() else {
-        return Parsed::Usage("cycle takes one address: cycle <address> --good <bundle> --bad <bundle> --scorecard <file>".into());
+        return Parsed::Usage("cycle takes one address: cycle <address> --good <image> --bad <image> --scorecard <file>".into());
     };
     let (Some(good), Some(bad), Some(scorecard)) = (good, bad, scorecard) else {
         return Parsed::Usage(
-            "cycle needs --good <bundle>, --bad <bundle> and --scorecard <file>".into(),
+            "cycle needs --good <image>, --bad <image> and --scorecard <file>".into(),
         );
     };
     Parsed::Cycle(CycleArgs {
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn cycle_takes_an_address_two_bundles_and_a_scorecard() {
+    fn cycle_takes_an_address_two_images_and_a_scorecard() {
         assert_eq!(
             parse(&words(
                 "cycle orion+tcp://[::1]:9200 --good g.tar --bad b.tar --scorecard /x/card.txt --dry-run"

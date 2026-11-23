@@ -36,7 +36,8 @@ The move's PR names each step's result.
 9. `scripts/check-devices.sh --self-test` and `scripts/check-devices.sh`.
 10. The scoped check (`scripts/check-scoped.sh`), then the full gate (`scripts/gate.sh`) with the UI gate.
 11. **Images.** Build each product the move touches with the pinned Gaia, signed. Record the version, slot name
-    and sizes (`.flash`, `.slot`, `.bundle`), before and after.
+    and the sizes of the image (`.flash`) and of the slot inside it (`.slot`), before and after. The sizes of every
+    output are in the build's printed listing and in `<out>/<product>.outputs.txt`; `--out` copies the one OS image only.
 12. **Board profile.** Run the move's bar in Gaia's board profile (`scripts/qemu-rpi-slots.sh --profile board`)
     at the pinned Gaia. Reach Orion the way the board is reached (the USB gadget through `--usb-host` and
     `--usb-host-forward`). Report each line of the bar with the log lines that show it.

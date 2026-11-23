@@ -6,7 +6,7 @@ mod common;
 use atlas_next::{PINS_FILE, parse_address};
 use atlas_sim_node::{SimNode, names};
 use atlas_trial::hex;
-use common::{Relay, bundle_bytes, env, identity, run, scratch, start_node, until, write_bundle};
+use common::{Relay, env, identity, image_bytes, run, scratch, start_node, until, write_image};
 
 fn direct(node: &SimNode) -> String {
     format!("orion+tcp://127.0.0.1:{}", node.network().port())
@@ -126,10 +126,10 @@ async fn the_cycle_installs_trials_confirms_and_lists() {
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
 
-    let bundle = write_bundle(
-        &dir.join("bundles"),
-        "slot-2.tar",
-        &bundle_bytes("slot-2", "2.0.0", None),
+    let bundle = write_image(
+        &dir.join("images"),
+        "slot-2.img",
+        &image_bytes("slot-2", "2.0.0", None),
     );
     let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
     let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;
@@ -213,10 +213,10 @@ async fn a_failed_trial_says_the_board_came_back_in_the_previous_slot() {
     let env = env(&dir.join("state"));
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
-    let bundle = write_bundle(
-        &dir.join("bundles"),
-        "slot-2.tar",
-        &bundle_bytes("slot-2", "2.0.0", None),
+    let bundle = write_image(
+        &dir.join("images"),
+        "slot-2.img",
+        &image_bytes("slot-2", "2.0.0", None),
     );
     let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
     let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;
@@ -276,10 +276,10 @@ async fn a_trial_whose_answer_the_restart_takes_is_followed_and_reported_as_the_
     let env = env(&dir.join("state"));
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
-    let bundle = write_bundle(
-        &dir.join("bundles"),
-        "slot-2.tar",
-        &bundle_bytes("slot-2", "2.0.0", None),
+    let bundle = write_image(
+        &dir.join("images"),
+        "slot-2.img",
+        &image_bytes("slot-2", "2.0.0", None),
     );
     let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
     let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;
@@ -371,10 +371,10 @@ async fn a_bundle_for_another_board_prints_the_refusal_and_sends_nothing() {
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
 
-    let bundle = write_bundle(
-        &dir.join("bundles"),
-        "other.tar",
-        &bundle_bytes("slot-9", "9.0.0", Some("other-board")),
+    let bundle = write_image(
+        &dir.join("images"),
+        "other.img",
+        &image_bytes("slot-9", "9.0.0", Some("other-board")),
     );
     let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
     let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;
@@ -408,10 +408,10 @@ async fn stopping_a_trial_leaves_the_boards_trial_pending() {
     env.stop = Some(std::sync::Arc::clone(&stop));
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
-    let bundle = write_bundle(
-        &dir.join("bundles"),
-        "slot-2.tar",
-        &bundle_bytes("slot-2", "2.0.0", None),
+    let bundle = write_image(
+        &dir.join("images"),
+        "slot-2.img",
+        &image_bytes("slot-2", "2.0.0", None),
     );
     let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
     let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;

@@ -65,7 +65,7 @@ pub enum SlotError {
     #[error(transparent)]
     Removal(#[from] RemoveRefusal),
     /// The bundle could not be made or read.
-    #[error("the slot bundle could not be made: {0}")]
+    #[error("the slot could not be read out of the image: {0}")]
     Bundle(String),
     /// The job list refused the install.
     #[error(transparent)]

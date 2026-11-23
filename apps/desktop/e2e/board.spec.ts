@@ -194,12 +194,12 @@ test("the keep count is set on the board", async ({ app }) => {
 test("an install is a job with progress, and ends as a new slot", async ({ app, bridge }) => {
   await openBoard(app);
   await bridge.call("sim.node", { hold_installs: true });
-  await bridge.call("sim.pick_bundle", { slot: "slot-5", version: "2026.11.14" });
+  await bridge.call("sim.pick_os_image", { slot: "slot-5", version: "2026.11.14" });
   const install = app.getByRole("button", { name: "Install…" });
   const place = await install.boundingBox();
   await install.click();
   const row = app.locator("[data-install]");
-  await expect(row.locator(".l1 b")).toHaveText("demo-os-2026.11.14.tar");
+  await expect(row.locator(".l1 b")).toHaveText("demo-os-2026.11.14.img");
   await expect(row).toHaveClass(/write/);
   await expect(row.locator(".bar")).toBeVisible();
   // While it runs there is one install at a time: the button stays where it is and cannot be pressed.
@@ -216,9 +216,9 @@ test("an install is a job with progress, and ends as a new slot", async ({ app, 
   await expect(app.getByRole("button", { name: "Install…" })).toBeVisible();
 });
 
-test("a bundle for another board is refused on the computer, in the board library's words", async ({ app, bridge }) => {
+test("an image for another board is refused on the computer, in the board library's words", async ({ app, bridge }) => {
   await openBoard(app);
-  await bridge.call("sim.pick_bundle", { slot: "slot-9", version: "2026.12.1", board: "another-board" });
+  await bridge.call("sim.pick_os_image", { slot: "slot-9", version: "2026.12.1", board: "another-board" });
   await app.getByRole("button", { name: "Install…" }).click();
   const row = app.locator('[data-install="failed"]');
   await expect(row.locator(".chip.err")).toHaveText("Failed");

@@ -52,7 +52,7 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   pin                         trust the board's key for this address
   repin --reflashed           replace the pin after the board was reflashed
   list                        the board's slots
-  install <bundle file>       send a slot bundle and install it; prints the stages
+  install <image file>        install the slot of an OS image (the .img.xz a first flash writes); prints the stages
   trial <slot id>             start a trial and follow it to its outcome (Ctrl-C stops following)
   confirm <slot id>           make the slot the default
   remove <slot id>            remove a slot (never a starred or the default one)
@@ -60,7 +60,7 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   enrol <address>             ask the board to know this PC's identity (no proof: the owner approves it)
   identity                    this PC's client identity: made once, prints its fingerprint and file
 
-  cycle <address> --good <bundle> --bad <bundle> --scorecard <file> [--json] [--dry-run]
+  cycle <address> --good <image> --bad <image> --scorecard <file> [--json] [--dry-run]
                               the slot cycle in one run: install, trial, a forced bad trial that falls
                               back by itself, confirm; one scorecard file says each step in plain words
                               (--json also writes <file>.json; --dry-run lists the steps and sends nothing)

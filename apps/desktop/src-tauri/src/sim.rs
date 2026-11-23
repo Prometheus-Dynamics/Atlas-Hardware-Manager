@@ -467,7 +467,7 @@ struct Inner {
 }
 
 /// The files the simulated person will choose, in order: what stands in for the file dialog
-/// where there is no window. A test queues one with `sim.pick_bundle`; with none queued the
+/// where there is no window. A test queues one with `sim.pick_os_image`; with none queued the
 /// person chose nothing.
 #[derive(Debug, Default)]
 pub struct Picks {
@@ -870,32 +870,34 @@ impl World {
         &self.inner.node_id
     }
 
-    /// Writes a slot bundle for the simulated board under `dir` and queues it as the next file
-    /// the person chooses. `board` overrides the board the bundle says it is for.
-    fn pick_bundle(
+    /// Writes an OS image holding one slot for the simulated board under `dir` and queues it as the
+    /// next file the person chooses. `board` overrides the board the slot says it is for. The image
+    /// is made as a test's is (`atlas_sim_node::image`), which needs `mke2fs` on this computer.
+    fn pick_os_image(
         &self,
         dir: &std::path::Path,
         id: &str,
         version: &str,
         board: Option<&str>,
     ) -> Result<PathBuf, String> {
-        let rootfs = format!("rootfs of {id} at {version}\n")
-            .repeat(40_000)
-            .into_bytes();
-        let boot: [(&str, &[u8]); 2] = [
-            ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
-            ("kernel.img", b"kernel bytes"),
-        ];
-        let mut manifest = atlas_sim_node::bundle::manifest(id, version, &rootfs, &boot);
-        manifest["product"] = Value::String("demo-os".into());
-        manifest["display_name"] = Value::String(format!("demo-os {version}"));
-        if let Some(board) = board {
-            manifest["board"] = Value::String(board.into());
-        }
-        let bytes = atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot);
         std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
-        let path = dir.join(format!("demo-os-{version}.tar"));
-        std::fs::write(&path, bytes).map_err(|error| error.to_string())?;
+        let scratch = dir.join(format!("make-{id}"));
+        std::fs::create_dir_all(&scratch).map_err(|error| error.to_string())?;
+        let display_name = format!("demo-os {version}");
+        let bytes = atlas_sim_node::image::build(
+            &atlas_sim_node::image::Slot {
+                id,
+                product: "demo-os",
+                version,
+                board: board.unwrap_or("simulated"),
+                display_name: Some(&display_name),
+                signer: None,
+            },
+            &scratch,
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+        let path = dir.join(format!("demo-os-{version}.img"));
+        std::fs::write(&path, bytes?).map_err(|error| error.to_string())?;
         self.inner
             .picks
             .queued
@@ -964,8 +966,8 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 .map_err(|error| CallError(error.to_string()))??;
             Ok(Value::Null)
         }
-        // Queues a slot bundle as the next file the person chooses in a file dialog.
-        "sim.pick_bundle" => {
+        // Queues an OS image holding one slot as the next file the person chooses in a file dialog.
+        "sim.pick_os_image" => {
             #[derive(Deserialize)]
             struct Bundle {
                 slot: String,
@@ -982,7 +984,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 .map(|dirs| dirs.data.join("sim-files"))
                 .ok_or_else(|| CallError::from("the app has no data directory"))?;
             let path = tokio::task::spawn_blocking(move || {
-                world.pick_bundle(&dir, &slot, &version, board.as_deref())
+                world.pick_os_image(&dir, &slot, &version, board.as_deref())
             })
             .await
             .map_err(|error| CallError(error.to_string()))?

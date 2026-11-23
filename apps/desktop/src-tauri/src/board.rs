@@ -374,7 +374,12 @@ fn slots_json(list: &SlotList) -> Value {
 
 fn stage_json(stage: &Stage, file: &str) -> Value {
     let (word, percent, detail, done): (&str, Option<f64>, String, bool) = match stage {
-        Stage::Preparing => ("preparing", None, "making the slot bundle".into(), false),
+        Stage::Preparing => (
+            "preparing",
+            None,
+            "reading the slot out of the image".into(),
+            false,
+        ),
         Stage::WaitingForBoard { reason } => ("waiting", None, reason.clone(), false),
         Stage::Sending { sent, total } => (
             "sending",
@@ -821,7 +826,8 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 result.map(|()| String::new()).map_err(|e| slot_words(&e)),
             )
         }
-        // Asks for a slot bundle and installs it as a job. Answers null when no file was chosen.
+        // Asks for the OS image (the same .img.xz a first flash writes) and installs its slot as a job.
+        // Answers null when no file was chosen.
         "board.slots.install" => {
             let OnBoard { id } = args(name, arguments)?;
             let target = target(core, &id)?;
@@ -830,10 +836,11 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             let Some(picker) = picker else {
                 return Err(CallError("this build has no way to choose a file".into()));
             };
-            let chosen =
-                tokio::task::spawn_blocking(move || picker.pick("Install a slot", &["tar"]))
-                    .await
-                    .map_err(|error| CallError(error.to_string()))?;
+            let chosen = tokio::task::spawn_blocking(move || {
+                picker.pick("Choose an OS image to install", &["xz", "img"])
+            })
+            .await
+            .map_err(|error| CallError(error.to_string()))?;
             let Some(path) = chosen else {
                 return Ok(Value::Null);
             };
@@ -856,7 +863,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                     &target.family,
                     offered,
                     InstallRequest {
-                        source: Source::Bundle(path),
+                        source: Source::image(path),
                         starred: false,
                     },
                 )

@@ -1,6 +1,6 @@
 [package]
 name = "atlas-board-slots"
-description = "A board's slots through its Orion node: list, set default, trial, guarded remove, pin, keep, and the install as a job (bundle, accept, push, install_file) that is safe to repeat and resumes across a lost session. Built on the actions, files and session crates; works on any node that offers the slot contract."
+description = "A board's slots through its Orion node: list, set default, trial, guarded remove, pin, keep, and the install as a job (the slot out of the OS image, accept, push, install_file) that is safe to repeat and resumes across a lost session. Built on the actions, files and session crates; works on any node that offers the slot contract."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,6 +12,8 @@ atlas-actions = { path = "../../board/actions" }
 atlas-bundle = { path = "../../core/bundle" }
 atlas-driver = { path = "../../core/driver" }
 atlas-files = { path = "../../board/files" }
+# Reads which slot a first-flash image holds, for an install that names the image only.
+atlas-image = { path = "../../flash/image" }
 atlas-jobs = { path = "../../core/jobs" }
 atlas-session = { path = "../../board/session" }
 atlas-slots = { path = "../../core/slots" }
@@ -26,10 +28,17 @@ tar = { version = "0.4", default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync", "time", "rt"] }
 
+[features]
+# `Source::Bundle`: an install from the board-side form already made. For tests only: no program enables it, and
+# scripts/gate.sh builds the programs without it. A person installs from the one OS image.
+bundle-source = []
+
 [dev-dependencies]
-atlas-image = { path = "../../flash/image" }
+# This crate's own tests install what the simulated node builds in memory.
+atlas-board-slots = { path = ".", features = ["bundle-source"] }
 atlas-inventory = { path = "../../core/inventory" }
 atlas-sim-node = { path = "../../testing/sim-node" }
+ed25519-dalek = "2"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
 

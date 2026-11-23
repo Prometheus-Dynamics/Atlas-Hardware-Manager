@@ -120,6 +120,11 @@ if compgen -G "crates/*/*/Cargo.toml" > /dev/null || compgen -G "apps/*/src-taur
   # Cargo.lock is committed. --locked fails the gate when it is stale: run
   # `cargo update -w` (or just build once without --locked) and commit it.
   step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
+  # The two programs, built alone. A workspace build turns on every feature some member asks for, a test-only one
+  # included (atlas-board-slots' bundle-source, which its own tests enable): alone, the programs get none of them,
+  # as a release build does. So a program that reaches for a test-only source (an install from anything but the one
+  # OS image) fails here.
+  step "programs alone (no test-only feature)" cargo check --locked -p atlas-next -p atlas-app
   # cargo-nextest runs every test as its own process, all binaries at once (cargo test runs one binary at a time):
   # the same cases (it skips the #[ignore]d ones as cargo test does), but not doctests, which run after it. Tests that
   # share something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock). CI installs

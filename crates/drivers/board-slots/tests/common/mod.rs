@@ -286,7 +286,8 @@ pub async fn open_installs(dir: &Path, sessions: Arc<Sessions>) -> SlotInstalls 
         },
         DeviceHolds::new(),
         BOARD,
-        jobs,
+        // Not made here: a program that has installed nothing yet has no scratch directory either.
+        dir.join("scratch"),
     )
     .await
     .expect("the job list opens")
@@ -307,7 +308,7 @@ pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
     if let Some(board) = board {
         manifest["board"] = serde_json::Value::String(board.into());
     }
-    atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot)
+    atlas_sim_node::bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 /// Writes a bundle to a file in `dir` and returns its path.

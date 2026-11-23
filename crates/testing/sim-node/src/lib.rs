@@ -40,6 +40,7 @@ pub mod access;
 pub mod bridge;
 pub mod bundle;
 pub mod describe;
+pub mod image;
 mod lease;
 pub mod model;
 pub mod names;

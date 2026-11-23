@@ -34,11 +34,9 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     ];
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
     let signature = key.map(|key| bundle::sign(&manifest, key));
-    let key_id = key.map(bundle::key_id);
     bundle::build(
         &manifest,
         signature.as_ref().map(|signature| &signature[..]),
-        key_id.as_deref(),
         &rootfs,
         &boot,
     )
@@ -469,12 +467,10 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_le
     let rootfs = b"rootfs of bad-sig\n".repeat(64);
     let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
     let manifest = bundle::manifest("bad-sig", "2.0.0", &rootfs, &boot);
-    let key_id = bundle::key_id(&trusted);
-
-    // A signature by the trusted key that does not verify (one byte changed).
+    // A signature by the trusted key that does not verify (its last byte changed).
     let mut bad = bundle::sign(&manifest, &trusted);
-    bad[0] ^= 0xff;
-    let forged = bundle::build(&manifest, Some(&bad[..]), Some(&key_id), &rootfs, &boot);
+    *bad.last_mut().expect("a record") ^= 0xff;
+    let forged = bundle::build(&manifest, Some(&bad[..]), &rootfs, &boot);
     let refusal = install(&orion, &forged, false, false);
     assert_eq!(refusal.outcome, Outcome::Rejected, "{}", refusal.detail);
     assert!(refusal.detail.starts_with("-1:"), "{}", refusal.detail);
@@ -485,19 +481,43 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_le
     );
     assert_eq!(slot_count(&list(&orion)), 1, "nothing installed");
 
-    // A signature that is not 64 bytes is malformed.
-    let short = bundle::build(&manifest, Some(&bad[..63]), Some(&key_id), &rootfs, &boot);
-    let finished = install(&orion, &short, false, false);
-    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    assert!(finished.detail.contains("64 bytes"), "{}", finished.detail);
+    // A record that is short, one with another magic, and a bare 64-byte signature (the form
+    // before the record) are each malformed.
+    let good = bundle::sign(&manifest, &trusted);
+    let mut magic = good.clone();
+    magic[0] ^= 0xff;
+    for wrong in [&good[..107], &magic[..], &good[44..]] {
+        let bytes = bundle::build(&manifest, Some(wrong), &rootfs, &boot);
+        let finished = install(&orion, &bytes, false, false);
+        assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+        assert!(
+            finished.detail.contains("malformed signature record"),
+            "{}",
+            finished.detail
+        );
+    }
 
-    // A signature with no key id, and a key id with no signature, are malformed too.
-    let no_key = bundle::build(&manifest, Some(&bad[..]), None, &rootfs, &boot);
-    let finished = install(&orion, &no_key, false, false);
+    // A `slot.key` member, of the form before the record, is no part of a bundle: refused.
+    let signed = bundle::build(&manifest, Some(&good[..]), &rootfs, &boot);
+    let end = signed.len() - 1024; // a tar ends with two empty 512-byte blocks
+    assert!(signed[end..].iter().all(|byte| *byte == 0));
+    let mut with_key = tar::Builder::new(signed[..end].to_vec());
+    let key_id = bundle::key_id(&trusted);
+    let mut header = tar::Header::new_gnu();
+    header.set_size(key_id.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    with_key
+        .append_data(&mut header, "slot.key", key_id.as_bytes())
+        .expect("a member in memory");
+    let with_key = with_key.into_inner().expect("a tar in memory");
+    let finished = install(&orion, &with_key, false, false);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    let no_sig = bundle::build(&manifest, None, Some(&key_id), &rootfs, &boot);
-    let finished = install(&orion, &no_sig, false, false);
-    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(
+        finished.detail.contains("unknown member slot.key"),
+        "{}",
+        finished.detail
+    );
 
     assert_eq!(
         slot_count(&list(&orion)),
@@ -615,7 +635,7 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
     let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
     let mut manifest = bundle::manifest("slot-2", "2.0.0", &rootfs, &boot);
     manifest["board"] = Value::String("another-board".into());
-    let other = bundle::build(&manifest, None, None, &rootfs, &boot);
+    let other = bundle::build(&manifest, None, &rootfs, &boot);
     let finished = install(&orion, &other, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert_eq!(
@@ -628,29 +648,4 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
         "error",
         "the state carries the refusal"
     );
-}
-
-#[test]
-fn a_signed_bundle_without_slot_key_is_refused_minus_22_and_leaves_nothing() {
-    let node = start("signed-no-key");
-    let orion = node.connect("signed-no-key").expect("a session");
-    let signer = SigningKey::from_bytes(&[7; 32]);
-    node.model()
-        .slots
-        .trusted
-        .push(atlas_sim_node::slots::TrustedKey {
-            public: signer.verifying_key().to_bytes(),
-            owner: "Test Owner".into(),
-        });
-    let rootfs = b"rootfs of no-key\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
-    let manifest = bundle::manifest("no-key", "2.0.0", &rootfs, &boot);
-    let signature = bundle::sign(&manifest, &signer);
-    // The signature is there, and the key id is not.
-    let bytes = bundle::build(&manifest, Some(&signature[..]), None, &rootfs, &boot);
-    let finished = install(&orion, &bytes, false, false);
-    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
-    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    assert!(finished.detail.contains("slot.key"), "{}", finished.detail);
-    assert_eq!(slot_count(&list(&orion)), 1, "nothing is listed");
 }

@@ -425,7 +425,7 @@ pub(crate) fn list_lines(list: &SlotList) -> Vec<String> {
     lines
 }
 
-/// Installs the bundle at `path` on the board and returns the id it was installed as. Shared with
+/// Installs the slot of the OS image at `path` on the board and returns the id it was installed as. Shared with
 /// `cycle`, which needs the id.
 /// The exit status of an install whose outcome is still unknown after a reconnect at the wait's
 /// bound: not a failure, and not a success. The job stays unknown; running it again is the user's
@@ -443,13 +443,13 @@ pub(crate) async fn install<W: Write>(
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
             1,
-            "this board publishes no family, so a bundle cannot be checked against it",
+            "this board publishes no family, so an image cannot be checked against it",
         ));
     };
     if !path.is_file() {
         return Err(Refusal::new(
             1,
-            format!("no such bundle file: {}", path.display()),
+            format!("no such image file: {}", path.display()),
         ));
     }
     let device = match (&info.family, &info.serial) {
@@ -480,7 +480,7 @@ pub(crate) async fn install<W: Write>(
             &family,
             true,
             InstallRequest {
-                source: Source::Bundle(path.to_owned()),
+                source: Source::image(path),
                 starred: false,
             },
         )

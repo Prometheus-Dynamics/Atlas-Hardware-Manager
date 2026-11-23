@@ -180,29 +180,30 @@ pub async fn until(what: &str, mut check: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
 }
 
-/// A slot bundle for `id` at `version`, for the simulated board. `board` overrides the board id the
-/// bundle claims (the wrong-board case).
-pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
-    let rootfs = format!("rootfs of {id} at {version}\n")
-        .repeat(900)
-        .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [
-        ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
-        ("kernel.img", b"kernel bytes"),
-    ];
-    let mut manifest = atlas_sim_node::bundle::manifest(id, version, &rootfs, &boot);
-    manifest["id"] = serde_json::Value::String(id.into());
-    if let Some(board) = board {
-        manifest["board"] = serde_json::Value::String(board.into());
-    }
-    atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot)
+/// A first-flash image (`.img`) holding one slot, `id` at `version`, for the simulated board. `board`
+/// overrides the board the slot says it is for (the wrong-board case). The image is what a person
+/// installs from; the board-side form is made from it by the install.
+pub fn image_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    atlas_sim_node::image::build(
+        &atlas_sim_node::image::Slot {
+            id,
+            product: "sim",
+            version,
+            board: board.unwrap_or(BOARD),
+            display_name: None,
+            signer: None,
+        },
+        dir.path(),
+    )
+    .expect("the image is made")
 }
 
-/// Writes a bundle file under `dir` and returns its path.
-pub fn write_bundle(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
-    std::fs::create_dir_all(dir).expect("the bundle directory is made");
+/// Writes an image file under `dir` and returns its path.
+pub fn write_image(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+    std::fs::create_dir_all(dir).expect("the image directory is made");
     let path = dir.join(name);
-    let mut file = std::fs::File::create(&path).expect("the bundle file is created");
-    file.write_all(bytes).expect("the bundle is written");
+    let mut file = std::fs::File::create(&path).expect("the image file is created");
+    file.write_all(bytes).expect("the image is written");
     path
 }

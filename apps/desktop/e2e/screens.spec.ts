@@ -234,7 +234,7 @@ export const SCREENS: Screen[] = [
       await page.locator('[data-slot="slot-3"]').getByRole("button", { name: "Trial" }).click();
       await expect(page.locator('[data-slot="slot-3"] .chip.warn')).toBeVisible();
       await bridge.call("sim.node", { hold_installs: true });
-      await bridge.call("sim.pick_bundle", { slot: "slot-5", version: "2026.11.14" });
+      await bridge.call("sim.pick_os_image", { slot: "slot-5", version: "2026.11.14" });
       await page.getByRole("button", { name: "Install…" }).click();
       await expect(page.locator("[data-install]")).toBeVisible();
       await page.locator('[data-slot="slot-1"]').getByRole("button", { name: "Remove" }).click();
@@ -296,7 +296,7 @@ export const SCREENS: Screen[] = [
     hash: BOARD,
     ready: async (page, bridge) => {
       await boardRead(page);
-      await bridge.call("sim.pick_bundle", { slot: "slot-9", version: "2026.12.1", board: "another-board" });
+      await bridge.call("sim.pick_os_image", { slot: "slot-9", version: "2026.12.1", board: "another-board" });
       await page.getByRole("button", { name: "Install…" }).click();
       await expect(page.locator('[data-install="failed"]')).toBeVisible();
     },

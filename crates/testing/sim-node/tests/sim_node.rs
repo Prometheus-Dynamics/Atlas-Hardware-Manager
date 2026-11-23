@@ -61,11 +61,9 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     ];
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
     let signature = key.map(|key| bundle::sign(&manifest, key));
-    let key_id = key.map(bundle::key_id);
     bundle::build(
         &manifest,
         signature.as_ref().map(|signature| &signature[..]),
-        key_id.as_deref(),
         &rootfs,
         &boot,
     )
@@ -121,7 +119,7 @@ fn big_bundle(id: &str) -> Vec<u8> {
         ("blob.bin", &blob[..]),
     ];
     let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
-    bundle::build(&manifest, None, None, &rootfs, &boot)
+    bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 fn list(orion: &Orion) -> Value {
@@ -904,7 +902,7 @@ fn a_layered_manifest_is_refused() {
     let rootfs = b"rootfs bytes".to_vec();
     let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &[("cmdline.txt", b"x")]);
     manifest["layers"] = serde_json::json!([{ "id": "base" }]);
-    let bytes = bundle::build(&manifest, None, None, &rootfs, &[("cmdline.txt", b"x")]);
+    let bytes = bundle::build(&manifest, None, &rootfs, &[("cmdline.txt", b"x")]);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
@@ -1030,7 +1028,7 @@ fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
     let boot = [("cmdline.txt", &b"console=ttyS0\n"[..])];
     let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     change(&mut manifest);
-    bundle::build(&manifest, None, None, &rootfs, &boot)
+    bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 #[test]

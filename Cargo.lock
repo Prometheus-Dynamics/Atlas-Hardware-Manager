@@ -358,6 +358,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-actions",
+ "atlas-board-slots",
  "atlas-bundle",
  "atlas-driver",
  "atlas-files",
@@ -369,6 +370,7 @@ dependencies = [
  "atlas-slots",
  "atlas-trial",
  "atlas-types",
+ "ed25519-dalek 2.2.0",
  "lemnos-slot-store",
  "orion",
  "serde",
@@ -732,13 +734,17 @@ dependencies = [
 name = "atlas-sim-node"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-bundle",
+ "atlas-image",
  "atlas-types",
  "ed25519-dalek 2.2.0",
+ "lemnos-slot-store",
  "orion",
  "orion-stubs",
  "serde_json",
  "sha2 0.10.9",
  "tar",
+ "tempfile",
 ]
 
 [[package]]

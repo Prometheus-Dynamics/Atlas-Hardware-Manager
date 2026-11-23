@@ -5,7 +5,7 @@
 mod common;
 
 use atlas_sim_node::{SimNode, names};
-use common::{Relay, bundle_bytes, env, identity, run, scratch, start_node, until, write_bundle};
+use common::{Relay, env, identity, image_bytes, run, scratch, start_node, until, write_image};
 
 const GOOD: &str = "slot-2";
 const BAD: &str = "slot-3";
@@ -101,15 +101,15 @@ fn rig(dir: &std::path::Path) -> (SimNode, Relay, std::path::PathBuf, std::path:
             .parse()
             .expect("an address"),
     );
-    let good = write_bundle(
-        &dir.join("bundles"),
-        "good.tar",
-        &bundle_bytes(GOOD, "2.0.0", None),
+    let good = write_image(
+        &dir.join("images"),
+        "good.img",
+        &image_bytes(GOOD, "2.0.0", None),
     );
-    let bad = write_bundle(
-        &dir.join("bundles"),
-        "bad.tar",
-        &bundle_bytes(BAD, "3.0.0", None),
+    let bad = write_image(
+        &dir.join("images"),
+        "bad.img",
+        &image_bytes(BAD, "3.0.0", None),
     );
     (node, relay, good, bad)
 }
@@ -326,15 +326,15 @@ async fn an_address_pinned_to_another_key_stops_at_step_3_with_exit_3() {
     let second = identity(&replacement).await;
     assert_ne!(first.public_key, second.public_key);
 
-    let good = write_bundle(
-        &dir.join("bundles"),
-        "good.tar",
-        &bundle_bytes(GOOD, "2.0.0", None),
+    let good = write_image(
+        &dir.join("images"),
+        "good.img",
+        &image_bytes(GOOD, "2.0.0", None),
     );
-    let bad = write_bundle(
-        &dir.join("bundles"),
-        "bad.tar",
-        &bundle_bytes(BAD, "3.0.0", None),
+    let bad = write_image(
+        &dir.join("images"),
+        "bad.img",
+        &image_bytes(BAD, "3.0.0", None),
     );
     let card = dir.join("card.txt");
     let state = dir.join("state").display().to_string();
@@ -385,8 +385,8 @@ async fn a_dry_run_sends_nothing_and_lists_every_step_with_its_return_path() {
     let node = start_node(&dir, None);
     let address = format!("orion+tcp://127.0.0.1:{}", node.network().port());
     let env = env(&dir.join("state"));
-    let good = dir.join("good.tar");
-    let bad = dir.join("bad.tar");
+    let good = dir.join("good.img");
+    let bad = dir.join("bad.img");
     std::fs::create_dir_all(&dir).expect("the directory is made");
     std::fs::write(&good, b"not read by a dry run").expect("the file is written");
     std::fs::write(&bad, b"not read by a dry run").expect("the file is written");

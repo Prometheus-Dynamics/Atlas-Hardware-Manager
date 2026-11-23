@@ -83,8 +83,8 @@ pub const STEPS: [StepInfo; 12] = [
     },
     StepInfo {
         id: "5",
-        title: "install the good bundle",
-        does: "Installs the good bundle, then checks that the board's list shows the slot it installed.",
+        title: "install the good image",
+        does: "Installs the good image's slot, then checks that the board's list shows the slot it installed.",
         if_it_fails: INSTALL_FAILS,
     },
     StepInfo {
@@ -95,8 +95,8 @@ pub const STEPS: [StepInfo; 12] = [
     },
     StepInfo {
         id: "7a",
-        title: "install the bad bundle",
-        does: "Installs the bad bundle: its slot is only ever tried, never made the default.",
+        title: "install the bad image",
+        does: "Installs the bad image's slot: it is only ever tried, never made the default.",
         if_it_fails: INSTALL_FAILS,
     },
     StepInfo {
@@ -213,8 +213,8 @@ struct Ctx<'a> {
     text: String,
     state: PathBuf,
     identity_path: PathBuf,
-    good_bundle: PathBuf,
-    bad_bundle: PathBuf,
+    good_image: PathBuf,
+    bad_image: PathBuf,
     key: [u8; 32],
     pc: String,
     board_key: [u8; 32],
@@ -369,15 +369,15 @@ async fn check_list<W: Write>(
     Ok(())
 }
 
-/// Installs a bundle through the board's install job and checks the board's list shows the slot.
+/// Installs an image's slot through the board's install job and checks the board's list shows the slot.
 async fn install_and_check<W: Write>(
     r: &mut Report<'_, W>,
     ctx: &Ctx<'_>,
-    bundle: &Path,
+    image: &Path,
 ) -> Result<String, Refusal> {
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
-    let id = commands::install(r, &ctx.state, link, &info, bundle, ctx.env.wait).await?;
+    let id = commands::install(r, &ctx.state, link, &info, image, ctx.env.wait).await?;
     let list = ctx.slots()?.list().await?;
     if !list.slots.iter().any(|slot| slot.id == id) {
         return Err(Refusal::new(
@@ -512,8 +512,8 @@ async fn step_list_before(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Res
 }
 
 async fn step_install_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result<(), Refusal> {
-    let bundle = ctx.good_bundle.clone();
-    ctx.good = install_and_check(r, ctx, &bundle).await?;
+    let image = ctx.good_image.clone();
+    ctx.good = install_and_check(r, ctx, &image).await?;
     Ok(())
 }
 
@@ -540,8 +540,8 @@ async fn step_trial_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Resu
 }
 
 async fn step_install_bad(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result<(), Refusal> {
-    let bundle = ctx.bad_bundle.clone();
-    ctx.bad = install_and_check(r, ctx, &bundle).await?;
+    let image = ctx.bad_image.clone();
+    ctx.bad = install_and_check(r, ctx, &image).await?;
     Ok(())
 }
 
@@ -568,8 +568,8 @@ async fn step_install_good_refused(
 ) -> Result<(), Refusal> {
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
-    let bundle = ctx.good_bundle.clone();
-    match commands::install(r, &ctx.state, link, &info, &bundle, ctx.env.wait).await {
+    let image = ctx.good_image.clone();
+    match commands::install(r, &ctx.state, link, &info, &image, ctx.env.wait).await {
         Ok(id) => Err(Refusal::new(
             1,
             format!(
@@ -843,8 +843,8 @@ fn dry_run<W: Write>(args: &CycleArgs, out: &mut W) -> i32 {
         "atlas-next cycle: dry run. Nothing is sent to any board."
     );
     let _ = writeln!(out, "Board address: {}", args.address);
-    let _ = writeln!(out, "Good bundle: {}", args.good.display());
-    let _ = writeln!(out, "Bad bundle: {}", args.bad.display());
+    let _ = writeln!(out, "Good image: {}", args.good.display());
+    let _ = writeln!(out, "Bad image: {}", args.bad.display());
     let _ = writeln!(out, "Scorecard: {}", args.scorecard.display());
     let _ = writeln!(out);
     for info in STEPS.iter() {
@@ -888,9 +888,9 @@ pub async fn run<W: Write>(args: &CycleArgs, env: &Env, out: &mut W) -> i32 {
         let _ = writeln!(out, "atlas-next: no identity file: give --identity <file>");
         return 2;
     };
-    for bundle in [&args.good, &args.bad] {
-        if !bundle.is_file() {
-            let _ = writeln!(out, "atlas-next: no such bundle file: {}", bundle.display());
+    for image in [&args.good, &args.bad] {
+        if !image.is_file() {
+            let _ = writeln!(out, "atlas-next: no such image file: {}", image.display());
             return 2;
         }
     }
@@ -902,8 +902,8 @@ pub async fn run<W: Write>(args: &CycleArgs, env: &Env, out: &mut W) -> i32 {
         text,
         state: state.clone(),
         identity_path,
-        good_bundle: args.good.clone(),
-        bad_bundle: args.bad.clone(),
+        good_image: args.good.clone(),
+        bad_image: args.bad.clone(),
         key: [0; 32],
         pc: String::new(),
         board_key: [0; 32],
