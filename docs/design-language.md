@@ -117,7 +117,9 @@ sparkline across the bottom. Five tiles across the top of the board page.
 underline and bold text. Only the active pane is displayed.
 
 **Logs and terminal.** Monospace, one line per row, with time, level and source. Terminal output is
-plain text with a cursor. Logs are newest first on the board page.
+plain text with a cursor. Logs are newest first on the board page. A shell whose session lapses (the
+board may have dropped it, see `crates/board/session/src/lease.rs`) ends with a line that says so and
+that nothing reopens it; the tab must show that line, not a silent stop.
 
 **Switch and select.** A 30 by 16 px switch, off by default for security. Selects are 22 px.
 

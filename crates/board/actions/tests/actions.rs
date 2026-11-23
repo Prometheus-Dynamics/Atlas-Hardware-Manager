@@ -880,6 +880,7 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
                 period: Duration::from_secs(60),
                 renew: Duration::from_secs(3600),
                 in_force: true,
+                keep_renewing: true,
             })
             .with_clock(clock.clone()),
     );

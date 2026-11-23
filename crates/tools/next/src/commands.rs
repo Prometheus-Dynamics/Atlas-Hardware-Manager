@@ -102,6 +102,9 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
         Verb::Pin => pin(&mut r, &state, &address, &key).await,
         Verb::Repin => repin(&mut r, &state, &address, command.reflashed, &key).await,
         Verb::Enrol => enrol(&mut r, env, &state, &address, &key).await,
+        Verb::Hold(seconds) => {
+            crate::hold::run(&mut r, env, &state, &address, *seconds, &key).await
+        }
         verb => board(&mut r, env, &state, &address, verb, &key).await,
     };
     match outcome {
@@ -110,7 +113,7 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             r.say(refusal.words.clone());
             if !matches!(
                 command.verb,
-                Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol
+                Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol | Verb::Hold(_)
             ) && refusal.denied
             {
                 r.say(format!(
@@ -344,7 +347,7 @@ async fn board<W: Write>(
             .await
             .map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
-        Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
+        Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol | Verb::Hold(_) => {
             Err(Refusal::new(2, "not a board command"))
         }
     }

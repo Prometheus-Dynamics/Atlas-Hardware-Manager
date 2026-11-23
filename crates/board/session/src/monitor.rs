@@ -46,7 +46,7 @@ use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
 use crate::failure::Failure;
-use crate::lease::{self, Clock, Hold, Lease, Shared as LeaseShared};
+use crate::lease::{self, Clock, Hold, Lease, Renewals, Shared as LeaseShared};
 use crate::long::{
     AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
@@ -514,6 +514,14 @@ impl Handle {
     #[must_use]
     pub fn lease_period(&self) -> Duration {
         self.lease.period()
+    }
+
+    /// The renewals this session has made for its holds, as a watch: every attempt counts, the renewed
+    /// and the refused alike, and the last one is kept (see [`Renewals`]). For observers only: product
+    /// code reads nothing from it.
+    #[must_use]
+    pub fn renewals(&self) -> watch::Receiver<Renewals> {
+        self.lease.renewals_watch()
     }
 
     /// The number of lapses this session has recorded: each time it was silent for longer than
@@ -992,6 +1000,10 @@ impl Keeper {
             return Ok(());
         };
         self.check_lapse();
+        // The bench's lapse check renews once, to read the period, and never again (see `Lease::keep_renewing`).
+        if !self.lease.keep_renewing && self.period_read {
+            return Ok(());
+        }
         let silent = self.since(self.last_bridge);
         // After a renewal that did not succeed, the next try comes on the short backoff, not a full period.
         let retry_after = self.renew_wait.unwrap_or(self.lease.renew);
@@ -1011,7 +1023,7 @@ impl Keeper {
         };
         match lease::renew(orion, &name, &device) {
             // Renewed only when the bridge answered it successfully. A refusal or a silence is not renewed,
-            // and is not counted: it is tried again on the backoff.
+            // and is tried again on the backoff. Each attempt is recorded for observers (`Handle::renewals`).
             Ok(lease::Renewal {
                 renewed: true,
                 period,
@@ -1023,15 +1035,18 @@ impl Keeper {
                 }
                 self.period_read = true;
                 self.mark_bridge_at(sent);
+                self.shared.record_renewal(sent, true, period);
                 Ok(())
             }
             Ok(lease::Renewal { renewed: false, .. }) => {
                 self.renew_wait = Some(self.renew_backoff.next_delay());
+                self.shared.record_renewal(sent, false, None);
                 Ok(())
             }
             Err(error) if error.is_lost() => Err(error.to_string()),
             Err(_) => {
                 self.renew_wait = Some(self.renew_backoff.next_delay());
+                self.shared.record_renewal(sent, false, None);
                 Ok(())
             }
         }

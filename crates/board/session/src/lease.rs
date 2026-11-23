@@ -120,6 +120,10 @@ pub struct Lease {
     /// Whether the board keeps a lease for this session. `false` sends nothing, lists nothing and
     /// records no lapse. The locked board is [`LEASE_IN_FORCE`]; a test turns it on.
     pub in_force: bool,
+    /// `false` only for the bench's lapse check (the atlas-next hold command, which sets it from its own
+    /// bench variable): renew ONCE, the first renewal that opens the lease on the board and reads its
+    /// period, then never again. Lapses are still recorded. A product session always keeps renewing.
+    pub keep_renewing: bool,
 }
 
 impl Lease {
@@ -128,7 +132,31 @@ impl Lease {
         period: LEASE,
         renew: LEASE_RENEW,
         in_force: LEASE_IN_FORCE,
+        keep_renewing: true,
     };
+}
+
+/// What the session's renewals came to: how many the bridge renewed, how many failed (a refusal, or
+/// an error that is not a lost session), and the last attempt. For observers (see [`crate::Handle::renewals`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Renewals {
+    /// Renewals the bridge answered successfully.
+    pub renewed: u64,
+    /// Renewal attempts that were refused, or failed for another reason, and are tried again.
+    pub failed: u64,
+    /// The last attempt, if one has been made.
+    pub last: Option<RenewalEvent>,
+}
+
+/// One renewal attempt: when it was sent, on the session clock, and what came of it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenewalEvent {
+    /// When the attempt was sent, on the session's clock (see [`Clock`]).
+    pub at: Duration,
+    /// Whether the bridge renewed the lease.
+    pub renewed: bool,
+    /// The board's lease period its describe reply gave, when the attempt renewed and it gave one.
+    pub period: Option<Duration>,
 }
 
 impl Default for Lease {
@@ -143,6 +171,7 @@ impl Default for Lease {
 pub(crate) struct Shared {
     holds: AtomicUsize,
     lapses: watch::Sender<u64>,
+    renewals: watch::Sender<Renewals>,
     /// The board's lease period in milliseconds; 0 until a describe reply gave one.
     period_ms: AtomicU64,
     /// The period kept until the board gives its own (see [`Lease::period`]).
@@ -154,6 +183,7 @@ impl Shared {
         Self {
             holds: AtomicUsize::new(0),
             lapses: watch::channel(0).0,
+            renewals: watch::channel(Renewals::default()).0,
             period_ms: AtomicU64::new(0),
             fallback,
         }
@@ -186,9 +216,30 @@ impl Shared {
         *self.lapses.borrow()
     }
 
+    /// Records one renewal attempt: sent at `at`, renewed or not, with the board's period when it gave one.
+    pub(crate) fn record_renewal(&self, at: Duration, renewed: bool, period: Option<Duration>) {
+        self.renewals.send_modify(|counts| {
+            if renewed {
+                counts.renewed += 1;
+            } else {
+                counts.failed += 1;
+            }
+            counts.last = Some(RenewalEvent {
+                at,
+                renewed,
+                period,
+            });
+        });
+    }
+
     /// A receiver of the lapse count, for a holder that waits on the board.
     pub(crate) fn lapses_watch(&self) -> watch::Receiver<u64> {
         self.lapses.subscribe()
+    }
+
+    /// A receiver of the renewal record (see [`Renewals`]).
+    pub(crate) fn renewals_watch(&self) -> watch::Receiver<Renewals> {
+        self.renewals.subscribe()
     }
 }
 

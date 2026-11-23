@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_session::{Handle, PROGRAM, Presence, Sessions};
+use atlas_session::{Handle, Lease, PROGRAM, Presence, Sessions};
 use orion::node::Enrollment;
 use orion::node::Node;
 use orion::{Address, Identity, Options, Orion, Patience};
@@ -129,6 +129,19 @@ pub async fn pinned(
     address: &Address,
     key: &[u8; 32],
 ) -> Result<Link, Refusal> {
+    pinned_with(env, pins, text, address, key, Lease::DEFAULT).await
+}
+
+/// As [`pinned`], with the lease the session keeps for its holds. Only the bench's `hold` gives another
+/// lease (see `hold`); every other command keeps [`Lease::DEFAULT`].
+pub async fn pinned_with(
+    env: &Env,
+    pins: &Pins,
+    text: &str,
+    address: &Address,
+    key: &[u8; 32],
+    lease: Lease,
+) -> Result<Link, Refusal> {
     let Some(pin) = pins.get(text) else {
         let node = probe(env, address, key)
             .await
@@ -141,7 +154,7 @@ pub async fn pinned(
             ),
         ));
     };
-    let sessions = Arc::new(Sessions::with_identity(env.pause.clone(), *key));
+    let sessions = Arc::new(Sessions::with_identity(env.pause.clone(), *key).with_lease(lease));
     let handle = sessions
         .handle_pinned(address, pin.key)
         .ok_or_else(|| Refusal::new(1, format!("the address {text} is turned off in Atlas")))?;

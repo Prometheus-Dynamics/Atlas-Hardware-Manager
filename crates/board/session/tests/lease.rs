@@ -66,6 +66,7 @@ fn lease() -> Lease {
         period: PERIOD,
         renew: RENEW,
         in_force: true,
+        keep_renewing: true,
     }
 }
 
@@ -471,6 +472,7 @@ async fn with_the_lease_not_in_force_a_hold_sends_nothing_and_records_no_lapse()
             period: PERIOD,
             renew: RENEW,
             in_force: false,
+            keep_renewing: true,
         },
         &clock,
     );
@@ -607,6 +609,7 @@ async fn the_boards_lease_period_is_read_and_a_silence_past_it_is_a_lapse() {
             period: PERIOD,
             renew: Duration::from_secs(20),
             in_force: true,
+            keep_renewing: true,
         },
         &clock,
     );
@@ -636,4 +639,89 @@ async fn the_boards_lease_period_is_read_and_a_silence_past_it_is_a_lapse() {
         .expect("the silence past the board's period is a lapse")
         .expect("the monitor is running");
     assert!(hold.lapsed(), "the hold sees the lapse");
+}
+
+/// The renewal record: each attempt counts, a renewed one and a refused one alike, and the last one is
+/// kept with its time on the session clock. Observers read it; product code does not.
+#[tokio::test]
+async fn renewals_count_a_renewal_and_a_refused_one() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("renewals-count"), &with_lemnos(), None);
+    let sessions = sessions(lease(), &clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    node.refuse_describe(true);
+    let _hold = handle.hold();
+    renewed(&handle, &node, 1, "the first renewal, refused").await;
+    let counts = *handle.renewals().borrow();
+    assert_eq!(counts.renewed, 0, "a refused renewal is not a renewal");
+    assert_eq!(counts.failed, 1, "the refused renewal is counted as failed");
+    assert_eq!(counts.last.map(|last| last.renewed), Some(false));
+
+    node.refuse_describe(false);
+    clock.advance(Duration::from_secs(1));
+    renewed(&handle, &node, 2, "a second renewal on the backoff").await;
+    let counts = *handle.renewals().borrow();
+    assert_eq!(counts.renewed, 1, "the renewal that the bridge answered");
+    assert_eq!(counts.failed, 1);
+    let last = counts.last.expect("the last renewal is kept");
+    assert!(last.renewed);
+    assert_eq!(
+        last.at,
+        Duration::from_secs(1),
+        "stamped on the session clock, when it was sent"
+    );
+}
+
+/// `keep_renewing` off (the bench's lapse check): exactly one renewal, which reads the board's period;
+/// then nothing is sent however long the clock runs, and a silence past the period is still a lapse.
+#[tokio::test]
+async fn with_keep_renewing_off_one_renewal_is_sent_and_then_a_silence_past_the_period_lapses() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("renew-once"), &with_lemnos(), None);
+    let sessions = sessions(
+        Lease {
+            keep_renewing: false,
+            ..lease()
+        },
+        &clock,
+    );
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let mut hold = handle.hold();
+    renewed(
+        &handle,
+        &node,
+        1,
+        "the one renewal, reading the board's period",
+    )
+    .await;
+
+    // Past the renew period, short of the lease period: nothing more is sent, and no lapse yet.
+    let mut lapses = handle.lapses();
+    clock.advance(RENEW * 3);
+    let_turns_run().await;
+    assert_eq!(renewals(&node), 1, "keep_renewing off: no second renewal");
+    assert!(
+        lapses.has_changed().map(|changed| !changed).unwrap_or(true),
+        "the silence is short of the period: no lapse yet"
+    );
+
+    // Past the period on the clock: the lapse is recorded, and still no renewal is sent.
+    clock.advance(PERIOD);
+    tokio::time::timeout(DEADLINE, lapses.changed())
+        .await
+        .expect("the silence past the period is a lapse")
+        .expect("the monitor is running");
+    assert!(hold.lapsed(), "the hold sees the lapse");
+    hold.acknowledge();
+    let_turns_run().await;
+    assert_eq!(renewals(&node), 1, "still exactly one renewal");
+    assert_eq!(handle.renewals().borrow().renewed, 1);
 }

@@ -64,7 +64,7 @@ pub mod words;
 
 pub use backoff::Backoff;
 pub use failure::{Failure, FailureKind};
-pub use lease::{Clock, Hold, LEASE, LEASE_RENEW, Lease, RENEW_WAIT};
+pub use lease::{Clock, Hold, LEASE, LEASE_RENEW, Lease, RENEW_WAIT, RenewalEvent, Renewals};
 pub use long::{
     AnswerBound, Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };

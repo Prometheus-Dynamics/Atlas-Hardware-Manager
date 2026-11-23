@@ -18,6 +18,7 @@ mod args;
 pub mod bench_key;
 mod commands;
 mod cycle;
+mod hold;
 pub mod identity;
 mod link;
 mod pins;
@@ -76,6 +77,8 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
 
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory
+
+  hold <address> <seconds>    hold: bench check only. Takes the session's hold on a pinned board through the same hold the app's terminal and jobs use, sends nothing else, and prints each lease renewal and any lapse. Exit 0 when the lease was kept, 1 on a lapse or no renewal.
 
 options:
   --state <dir>      where pins and the trial's saved watches live

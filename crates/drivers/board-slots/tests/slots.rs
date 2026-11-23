@@ -239,6 +239,7 @@ async fn a_lapsed_hold_is_no_answer_and_the_run_is_followed_again_when_it_answer
             period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
+            keep_renewing: true,
         }),
         Some(clock.clone()),
     )

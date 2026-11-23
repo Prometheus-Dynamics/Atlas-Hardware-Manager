@@ -678,6 +678,7 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
             period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
+            keep_renewing: true,
         })
         .with_clock(clock.clone());
     let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
