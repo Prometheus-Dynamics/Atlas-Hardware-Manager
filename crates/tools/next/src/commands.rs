@@ -710,6 +710,17 @@ pub(crate) async fn probe_or_refuse(
         .map_err(|why| Refusal::new(1, format!("the board at {text} did not answer: {why}")))
 }
 
+/// The board's reason as the end of a sentence: " The board's reason: <it>", or `none` when the
+/// board recorded none (Lemnos writes no reason for a confirm). An empty reason is never quoted.
+pub(crate) fn reason_words(reason: &str, none: &str) -> String {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        none.to_owned()
+    } else {
+        format!(" The board's reason: {reason}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use atlas_actions::ActionError;
@@ -750,16 +761,5 @@ mod tests {
             "busy",
         )));
         assert!(!Refusal::from(refused).denied);
-    }
-}
-
-/// The board's reason as the end of a sentence: " The board's reason: <it>", or `none` when the
-/// board recorded none (Lemnos writes no reason for a confirm). An empty reason is never quoted.
-pub(crate) fn reason_words(reason: &str, none: &str) -> String {
-    let reason = reason.trim();
-    if reason.is_empty() {
-        none.to_owned()
-    } else {
-        format!(" The board's reason: {reason}")
     }
 }
