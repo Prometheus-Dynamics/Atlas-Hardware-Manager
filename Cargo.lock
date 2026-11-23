@@ -369,6 +369,7 @@ dependencies = [
  "atlas-slots",
  "atlas-trial",
  "atlas-types",
+ "lemnos-slot-store",
  "orion",
  "serde",
  "serde_json",

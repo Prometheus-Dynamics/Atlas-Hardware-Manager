@@ -17,6 +17,8 @@ atlas-session = { path = "../../board/session" }
 atlas-slots = { path = "../../core/slots" }
 atlas-trial = { path = "../../core/trial" }
 atlas-types = { path = "../../core/types" }
+# The slot id rule the board itself uses (the pinned rev; no new rev).
+lemnos-slot-store = { workspace = true }
 orion = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

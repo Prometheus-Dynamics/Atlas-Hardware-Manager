@@ -292,21 +292,17 @@ fn wait_of(error: &ActionError) -> Option<String> {
 /// Why an install is unknown while it checks, as the app and the CLI say it.
 const LOST_REASON: &str = "the session was lost while this ran; checking the board";
 
-/// The kind check for an install's answer: the node answers an install with the new slot's id, a
-/// short name of letters, digits, `-` and `_`. Anything else (a list, a refusal's text, a document)
-/// is refused, and is not read as an id.
+/// The kind check for an install's answer: the node answers an install with the new slot's id, and
+/// an id is what Lemnos's own `valid_id` accepts at the pin (`[a-z0-9._-]`, at most 64, no leading
+/// dot: lemnos-slot-store store.rs:147). Anything else (a list, a refusal's text, a document) is
+/// refused, and is not read as an id.
 fn slot_id_answer(output: &[u8]) -> Result<(), String> {
-    let text = std::str::from_utf8(output).map_err(|_| "answer that is not text".to_owned())?;
-    let is_id = !text.is_empty()
-        && text.len() <= 64
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
-    if is_id {
+    let text = std::str::from_utf8(output).map_err(|_| "an answer that is not text".to_owned())?;
+    if lemnos_slot_store::store::valid_id(text) {
         Ok(())
     } else {
         let preview: String = text.chars().take(60).collect();
-        Err(format!("`{preview}`, which is not a slot id"))
+        Err(format!("`{preview}`"))
     }
 }
 
@@ -1437,9 +1433,13 @@ mod answer_tests {
     #[test]
     fn a_list_answer_is_refused_as_a_slot_id_and_a_slot_id_is_accepted() {
         assert!(slot_id_answer(b"slot-2").is_ok());
+        // The id a real board answered with (bar run 11, 2026-11-23): a version carries dots.
+        assert!(slot_id_answer(b"raze-base-2026.1.0-dev.1328-c349ab5d").is_ok());
         let listing = br#"{"error":"","slots":[{"id":"slot-1"}]}"#;
         let refused = slot_id_answer(listing).expect_err("a list is not a slot id");
-        assert!(refused.contains("not a slot id"), "{refused}");
+        assert!(refused.starts_with("`{"), "{refused}");
+        assert!(slot_id_answer(b".hidden").is_err());
+        assert!(slot_id_answer(b"Slot-2").is_err());
         assert!(slot_id_answer(b"").is_err());
         assert!(slot_id_answer(&[0xff, 0xfe]).is_err());
     }
