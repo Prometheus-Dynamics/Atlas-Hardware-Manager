@@ -46,3 +46,25 @@ The move's PR names each step's result.
 ## After
 
 14. Report the landed head, the revs, and `ATLAS_SCRATCH_ROOT` to the coordinator.
+15. **Every marker.** At each pin move, before step 14 is sent:
+    - List every `LOCK`, `PROVISIONAL` and "to be checked" marker in the tree (`grep -rn` over the tracked files, not
+      `docs/prs/`, which is PR history and is not checked).
+    - Re-verify each marker that names Lemnos or Orion against the new revs, at the board's file:line. Then update the
+      marker to the truth at the new rev, or remove it. A marker that names a rev names the new one.
+    - Every board-facing string constant either imports the board's exported item, or carries a citation on one of the
+      3 lines above it. The citation form is a comment that names the repo, the pinned rev, and the board's file:line:
+
+          // board: Lemnos bbb3c420 service/orion/src/files.rs:38 (DESTINATION_PREFIX)
+          // board: Orion 2f52e457 crates/client/files/src/push.rs:392
+
+      The rev is a prefix of the pinned rev (at least seven hex digits). A citation may not name a rev the pin does not
+      carry, and neither may a `LOCK` block.
+    - Run `scripts/check-board-names.sh` and `scripts/check-board-names.sh --self-test`. The script fails when:
+      (a) a `LOCK` line that names Lemnos or Orion has no rev in its comment block, or names one the pin does not carry;
+      (b) a `board:` citation names no rev, or a rev the pin does not carry;
+      (c) a board-facing string constant has no citation within 3 lines above it (its value starts with `lemnos.`,
+          `lemnos/`, `system.`, `/data/`, `/etc/lemnos`, `/run/orion` or `/etc/board`, or is a contract tag `x.y/N`);
+      (d) `ATLAS_BENCH_NO_RENEW` appears outside `crates/tools/next/src/hold.rs` and the docs.
+      The pinned revs are read from the workspace `Cargo.toml` and from `devices/components/*/component.toml`, so a
+      component on another Lemnos rev (a flasher's) is pinned too.
+    - The script must flag zero before the move is reported.

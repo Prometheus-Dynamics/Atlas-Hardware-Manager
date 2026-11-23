@@ -116,6 +116,8 @@ if [[ $devices -eq 1 ]]; then
     [[ -f scripts/$py.py ]] && devices_lane+=("python3 scripts/$py.py")
   done
 fi
+# The board names at the pin (docs/pin-move-checklist.md, step 15): a whole-tree read, cheap, run for any change.
+devices_lane+=("scripts/check-board-names.sh")
 [[ $config_only -eq 1 ]] && devices_lane+=("scripts/check-config-only.sh")
 if [[ $all_kernels -eq 1 ]]; then
   kernel_lane+=("scripts/check-kernel-fragments.sh")

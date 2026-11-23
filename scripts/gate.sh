@@ -160,7 +160,14 @@ if [ -f scripts/check-wired-ethernet.py ]; then
   step "wired ethernet self-test" python3 scripts/check-wired-ethernet.py --self-test
 fi
 
-# The Raze's console follows the board's security switch (LOCK: Lemnos S2): the getty's ExecCondition reads the view.
+# Every board name and marker at the pinned revs (docs/pin-move-checklist.md, step 15): the LOCK markers name the pin, the
+# board: citations name it, and the board-facing constants are cited. Its own fixtures run first.
+if [ -f scripts/check-board-names.sh ]; then
+  step "board names at the pin" scripts/check-board-names.sh
+  step "board names self-test" scripts/check-board-names.sh --self-test
+fi
+
+# The Raze's console follows the board's security switch (LOCK: Lemnos bbb3c420 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
 if [ -f scripts/check-console-gate.py ]; then
   step "console follows the security view" python3 scripts/check-console-gate.py
 fi
