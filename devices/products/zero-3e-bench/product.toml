@@ -26,7 +26,6 @@ lemnos = "components/lemnos/component.toml"
 lemnosd = "components/lemnosd/component.toml"
 lemnos-ctl = "components/lemnos-ctl/component.toml"
 lemnos-orion = "components/lemnos-orion/component.toml"
-lemnos-orion-slots-files = "../../components/lemnos-orion-slots-files/component.toml"
 lemnos-slot-init = "components/lemnos-slot-init/component.toml"
 orion = "../../components/orion/component.toml"
 zero-3e-slot-board = "components/zero-3e-slot-board/component.toml"
@@ -39,7 +38,7 @@ bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
 [[images]]
 name = "zero-3e-bench"
 board = "../../boards/radxa-zero-3e/board.toml"
-components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "lemnos-orion-slots-files", "orion", "zero-3e-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
+components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "zero-3e-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
 # The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
@@ -70,3 +69,11 @@ ztailpacking = true
 sign_key_env = "ATLAS_BENCH_SEED_FILE"
 sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
 sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"
+
+# /etc/lemnos/lemnos-orion.env, assembled: Lemnos's own example first (the bridge's user and groups), then the lines
+# the generator writes from the board file (the USB link and the file-taking devices). rule_key 0 compares whole lines:
+# a setting given twice fails the build.
+[[images.assembled]]
+path = "/etc/lemnos/lemnos-orion.env"
+order = ["lemnos", "zero-3e-slot-board"]
+rule_key = 0

@@ -1,10 +1,10 @@
 # Orion's board image: package orion-bin (binary orion), run as Orion's packaging runs it (C52, in the pin since
 # 19be7e04): orion comm as orion-comm (uid 902, group orion, CAP_SYS_TIME and CAP_NET_BIND_SERVICE only), orion node as
 # orion, and the login helper (orion-login.socket, root, socket-activated), the one process that becomes another user. Board-neutral. Built from Orion at
-# 2f52e457cb0e42a6bd32d683d432d30ffec555a5 (Orion next, I59-I65, I69, I70, I71 and I73 on I58: its shm crates pinned at Lemnos bbb3c420, the image's own Lemnos; pin move 12). The
+# b029f602d8d26024ec1a82f12b7ad1f328cdefb0 (Orion next: its shm crates pinned at Lemnos 6c8568d0, the image's own Lemnos; I72, the files service, mDNS, I80, I81, I85, I86; pin move 13). The
 # workspace pins the same rev (Cargo.toml), so the board's Orion and the PC's speak one ring layout.
 # The shm exception of pin moves 2-9 is closed (pin move 10): Orion's shm crates and the rest of the image are on one
-# Lemnos rev, bbb3c420 (pin move 12).
+# Lemnos rev, 6c8568d0 (pin move 13).
 #
 # Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
 # 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
@@ -20,7 +20,7 @@ description = "Orion: the orion binary as the board's comm core and node logic (
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "2f52e457cb0e42a6bd32d683d432d30ffec555a5"  # Orion 2f52e457 (I73: shm pins at Lemnos bbb3c420; I70: a full outbox answers Busy; I71: publish and withdraw retryable; on 30d0bc02: I69 push window 6; level 6, no wire change), coordinator 2026-11-22, pin move 12; before: 30d0bc02
+ref = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0"  # Orion b029f602 (next: shm pins at Lemnos 6c8568d0; I72 interface lists, the files service, mDNS, escaped names with 255-byte paths, I80/I81 operator time and clock state, I85, I86 group-writable directories and is_busy / is_held; level 6), coordinator 2026-11-23, pin move 13; before: 2f52e457
 
 # The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
 # lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).

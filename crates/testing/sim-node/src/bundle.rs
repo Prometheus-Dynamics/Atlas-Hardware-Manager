@@ -47,7 +47,7 @@ pub struct Verified {
 /// Signed bundles need both `slot.sig` and `slot.key`; a malformed signature or key id is refused
 /// (-22). A key id on the board's list must verify, or the bundle is refused by name (-1). A key id
 /// the board does not hold, or a board with no list, is not checked.
-// `slot.key` is the signer's key id (board: Lemnos bbb3c420 drivers/slot-store/src/signing.rs:502-507, whose
+// `slot.key` is the signer's key id (board: Lemnos 6c8568d0 drivers/slot-store/src/signing.rs:502-507, whose
 // refusal words for a malformed key id these are).
 fn signature_of(
     members: &BTreeMap<String, Vec<u8>>,

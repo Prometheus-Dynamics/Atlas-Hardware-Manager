@@ -7,8 +7,11 @@
 //!   [`BusyWait`], which the page a person is looking at shows ("the board is busy; trying
 //!   again", with how long). A person can end every such wait ([`crate::Handle::stop_busy`]).
 //! - **Bounded.** A call still refused busy after [`BOUND`] with no success is handed back as the
-//!   refusal it is, with the board's own words. Orion also says busy for things that are not
-//!   load (a lease another holds, a file prefix another offers), and those never clear by waiting.
+//!   refusal it is, with the board's own words.
+//!
+//! Only want of room is waited out ([`crate::FailureKind::Busy`], Orion's `is_busy`). What another
+//! holds (a lease, a file prefix another offers: [`crate::FailureKind::Held`], Orion's `is_held`)
+//! never clears by waiting and is never sent again: it comes back at once with its words.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};

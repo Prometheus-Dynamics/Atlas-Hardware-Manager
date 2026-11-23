@@ -9,14 +9,15 @@ description = "ZERO 3E slot board: the Lemnos board file (U-Boot record), the ge
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "bbb3c42085a5a9afacde7f3c18692a5462c1300f"  # Lemnos bbb3c420 (next: FLASH-TARGET-GRANT, FLASH-BRIDGE-PUMP, FLASH-INFO-NOTFOUND, FLASH-DATA-OFF-CALL, KEEP-SIG, T233 deadline lines naming the call and caller), coordinator 2026-11-22, pin move 12; before: a6251ecf
+ref = "6c8568d073e9953833b75fbf5e9b4f530214cb91"  # Lemnos 6c8568d0 (next, CSI2-STOP-CONFIRMED; since bbb3c420: GADGET-CONTROL-OFF-CALL part two, NCM-REBIND-GUARD, SLOTS-INCOMING-DOC, GADGET-REBIND-KEEPS-LINK (three fds for the link), REFUSAL-WORDS, PACKAGING-FILES-SINK (the status topic's `pushes`, lemnos-ctl --bridge-env / --bridge-dropin), the camera stop fix), coordinator 2026-11-23, pin move 13; before: bbb3c420
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
-# The Rust release the generator tool is built with (Gaia 08e71181): rustc, cargo and the build host's std, pinned by the
-# lock. The tool runs on the build machine, so its target is the host's. The build machine's rustup is never read.
+# The Rust release the generator tool is built with (Gaia 08e71181): rustc, cargo and std, pinned by the lock. The tool
+# runs on the build machine, and Gaia always gives a build the host's own std, so no further target is named
+# (`targets = []`, Gaia a0fd2cb1). The build machine's rustup is never read.
 [sources.toolchain]
 rust = "1.99.0"
-targets = ["x86_64-unknown-linux-gnu"]
+targets = []
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
@@ -37,8 +38,10 @@ args = [
   "--cmdline", "@out@/cmdline.words",
   "--cmdline-slot", "@out@/cmdline-slot.words", "--slot", "@slot@",
   "--security-unit", "@out@/security.service",
+  "--bridge-env", "@out@/lemnos-orion.env",
+  "--bridge-dropin", "@out@/bridge-files.conf",
 ]
-outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words", "security.service"]
+outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words", "security.service", "lemnos-orion.env", "bridge-files.conf"]
 
 [generate.provides]
 board-overlay = "overlay.dts"
@@ -130,3 +133,19 @@ mode = "0644"
 [[services]]
 unit = "lemnos-board-security.service"
 enable = true
+
+# The bridge's settings and its unit's grant, both written by the generator from the board file (Lemnos 6c8568d0,
+# `lemnos-ctl tree --bridge-env` and `--bridge-dropin`): the USB link's line (LEMNOS_ORION_LINKS=<gadget>=<link>), each
+# file-taking device's directory (LEMNOS_ORION_FILES=slots=<data>/slots/.incoming) and ReadWritePaths=-<dir> for each.
+# The env lines are this component's part of /etc/lemnos/lemnos-orion.env (after Lemnos's own example: the product's
+# [[images.assembled]]); the drop-in is installed where Lemnos's packaging puts its own (packaging/files.txt). They
+# replace the two hand-written drop-ins (10-raze-links.conf, 20-slots-files.conf), so the image cannot name a device
+# or a link the board file does not have.
+[[fragments]]
+from = { generated = "lemnos-orion.env" }
+to = "/etc/lemnos/lemnos-orion.env"
+
+[[install]]
+from = { generated = "bridge-files.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/files.conf"
+mode = "0644"

@@ -19,10 +19,10 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 /// The lease period of the locked bridge.
-// board: Lemnos bbb3c420 service/orion/src/config.rs:220 (LEASE, the default when LEMNOS_ORION_LEASE is unset).
+// board: Lemnos 6c8568d0 service/orion/src/config.rs:220 (LEASE, the default when LEMNOS_ORION_LEASE is unset).
 pub const PERIOD: Duration = Duration::from_secs(60);
 /// The stall time of the locked bridge's transfers.
-// board: Lemnos bbb3c420 service/orion/src/files.rs:40 (IDLE, 600 s: a file with no traffic is given up).
+// board: Lemnos 6c8568d0 service/orion/src/files.rs:40 (IDLE, 600 s: a file with no traffic is given up).
 pub const STALL: Duration = Duration::from_secs(600);
 
 /// What the node must end, as a drop the lease decided.
@@ -170,7 +170,7 @@ impl Leases {
 /// The note a caller's first reply after its lease ended carries, at the start of its detail (the
 /// bridge's `LEASE_ENDED_NOTE`, Lemnos M39-TCP). Matched by its prefix `lease-ended:`; the rest is
 /// free text. A typed reply field replaces the prefix later (M40).
-// board: Lemnos bbb3c420 service/orion/src/calls.rs:473 (LEASE_ENDED_NOTE, the same text).
+// board: Lemnos 6c8568d0 service/orion/src/calls.rs:473 (LEASE_ENDED_NOTE, the same text).
 pub const LEASE_ENDED_NOTE: &str = "lease-ended: holds released";
 
 /// A reply's detail with the note in front: the note alone when the detail is empty, else the note,

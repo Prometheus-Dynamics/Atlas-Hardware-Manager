@@ -14,16 +14,16 @@ homepage = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager"
 
 [workspace.dependencies]
 # Locked by commit. Moving a lock is its own PR.
-# Orion 2f52e457 (I73: shm pins at Lemnos bbb3c420; I70: a full outbox answers Busy, with ClientError::is_busy; I71: publish and withdraw retryable; on 30d0bc02: I69), coordinator 2026-11-22, pin move 12; before: 30d0bc02.
-orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "2f52e457cb0e42a6bd32d683d432d30ffec555a5", default-features = false }
+# Orion b029f602 (shm pins at Lemnos 6c8568d0; I72 interface lists, the files service, mDNS, I80/I81 time, I86 is_busy / is_held; level 6), coordinator 2026-11-23, pin move 13; before: 2f52e457
+orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b029f602d8d26024ec1a82f12b7ad1f328cdefb0", default-features = false }
 # Lemnos's slot-bundle format: the signing record, the signed message, the manifest's bytes and the bundle rules.
 # Its rev is the image's Lemnos pin (devices/); scripts/check-devices.sh holds the two equal. Moving it is its own PR.
-lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "bbb3c42085a5a9afacde7f3c18692a5462c1300f", default-features = false }
+lemnos-slot-store = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "6c8568d073e9953833b75fbf5e9b4f530214cb91", default-features = false }
 # The contract crates Atlas reads a method's tag and names from (the same rev, no new rev): `lemnos-core` is their trait.
-lemnos-core = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "bbb3c42085a5a9afacde7f3c18692a5462c1300f", default-features = false }
-lemnos-contract-system-slots = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "bbb3c42085a5a9afacde7f3c18692a5462c1300f", default-features = false }
-lemnos-contract-system-reboot = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "bbb3c42085a5a9afacde7f3c18692a5462c1300f", default-features = false }
-lemnos-contract-system-flash = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "bbb3c42085a5a9afacde7f3c18692a5462c1300f", default-features = false }
+lemnos-core = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "6c8568d073e9953833b75fbf5e9b4f530214cb91", default-features = false }
+lemnos-contract-system-slots = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "6c8568d073e9953833b75fbf5e9b4f530214cb91", default-features = false }
+lemnos-contract-system-reboot = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "6c8568d073e9953833b75fbf5e9b4f530214cb91", default-features = false }
+lemnos-contract-system-flash = { git = "https://github.com/Prometheus-Dynamics/Lemnos.git", rev = "6c8568d073e9953833b75fbf5e9b4f530214cb91", default-features = false }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

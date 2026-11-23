@@ -18,7 +18,7 @@ description = "lemnos.ko, built against the image's kernel by Gaia's kernel-modu
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "bbb3c42085a5a9afacde7f3c18692a5462c1300f"  # Lemnos bbb3c420 (next: FLASH-TARGET-GRANT, FLASH-BRIDGE-PUMP, FLASH-INFO-NOTFOUND, FLASH-DATA-OFF-CALL, KEEP-SIG, T233 deadline lines naming the call and caller), coordinator 2026-11-22, pin move 12; before: a6251ecf
+ref = "6c8568d073e9953833b75fbf5e9b4f530214cb91"  # Lemnos 6c8568d0 (next, CSI2-STOP-CONFIRMED; since bbb3c420: GADGET-CONTROL-OFF-CALL part two, NCM-REBIND-GUARD, SLOTS-INCOMING-DOC, GADGET-REBIND-KEEPS-LINK (three fds for the link), REFUSAL-WORDS, PACKAGING-FILES-SINK (the status topic's `pushes`, lemnos-ctl --bridge-env / --bridge-dropin), the camera stop fix), coordinator 2026-11-23, pin move 13; before: bbb3c420
 subdir = "kernel"
 
 [build]

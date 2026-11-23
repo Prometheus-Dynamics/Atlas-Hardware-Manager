@@ -190,8 +190,8 @@ impl Live {
             }
             // The topics are subscribed before the description is asked for, so a change made
             // during the ask is seen by the next read.
-            // LOCK: Lemnos bbb3c420 publishes the per-device generation topic (`lemnos.<device>.description`, field
-            // `generation`: publish.rs:198 and :240), and it is followed here. The device-set topic (`lemnos.devices`) is not
+            // LOCK: Lemnos 6c8568d0 publishes the per-device generation topic (`lemnos.<device>.description`, field
+            // `generation`: publish.rs:200 and :242), and it is followed here. The device-set topic (`lemnos.devices`) is not
             // subscribed: the resource list is read on every snapshot, so an appearing or leaving
             // device is seen there, and its description is asked once when it first shows.
             let description = self.description_of(

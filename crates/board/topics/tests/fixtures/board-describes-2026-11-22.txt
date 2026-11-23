@@ -1,4 +1,4 @@
-# Every device description one real board (raze-base dev.1376, Lemnos bbb3c420) answered on 2026-11-22,
+# Every device description one real board (raze-base dev.1376, Lemnos 6c8568d0) answered on 2026-11-22,
 # as `atlas-next offers` recorded them. One section per device: a line `=== <resource>`, then its describe text.
 === lemnos.cam0-fe
 describe 1

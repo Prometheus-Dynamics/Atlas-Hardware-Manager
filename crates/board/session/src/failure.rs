@@ -18,9 +18,14 @@ pub enum FailureKind {
     OtherKey,
     /// The comm core refused the request with a code other than `denied`. The code is kept.
     Refused,
-    /// The comm core said it is busy (`busy`, code 11): a bounded queue or resource is full, and
-    /// asking again later may find it free. Orion's own BUSY only; a Lemnos BUSY is [`FailureKind::Lemnos`].
+    /// The comm core had no room for the request yet (`busy`, code 11, with no words of its own:
+    /// Orion's `is_busy`): a bounded queue is full, and asking again later may find room. Orion's own
+    /// BUSY only; a Lemnos BUSY is [`FailureKind::Lemnos`].
     Busy,
+    /// The comm core refused because another holds what was asked for (code 11 too, with words that
+    /// name the holder: Orion's `is_held`): a resource under another's lease, a file prefix another
+    /// offers. Waiting does not clear it, so it is never asked again; the words are shown.
+    Held,
     /// The board's Lemnos program refused the action with its own status code, as a rejected run
     /// (Lemnos BUSY is 16). Its code is kept. Orion's codes are never this kind.
     Lemnos,
@@ -79,14 +84,22 @@ impl Failure {
         }
     }
 
-    /// A refusal the comm core made with `core`. `denied` is its own kind, `busy` is [`FailureKind::Busy`],
-    /// and any other code is [`FailureKind::Refused`] with the code. The code is never read as a Lemnos
-    /// status: Orion's `DigestMismatch` is 16 too, and it is only a refusal.
+    /// A refusal the comm core made with `core` and the words `text`. `denied` is its own kind; `busy`
+    /// is [`FailureKind::Busy`] when it is want of room and [`FailureKind::Held`] when another holds
+    /// what was asked for; any other code is [`FailureKind::Refused`] with the code. The code is never
+    /// read as a Lemnos status: Orion's `DigestMismatch` is 16 too, and it is only a refusal.
+    ///
+    /// Want of room and held share code 11 and are told apart as Orion tells them apart: a refusal for
+    /// want of room has no words of its own, so its detail is exactly the code's text.
+    // board: Orion b029f602 crates/client/connect/src/error.rs:256 (is_busy: detail == "busy"; is_held: any other detail)
     #[must_use]
     pub fn of_core(core: CoreError, text: String) -> Self {
         let kind = match core {
             CoreError::Denied => FailureKind::Denied,
-            CoreError::Busy => FailureKind::Busy,
+            CoreError::Busy if text.is_empty() || text == CoreError::Busy.as_str() => {
+                FailureKind::Busy
+            }
+            CoreError::Busy => FailureKind::Held,
             _ => FailureKind::Refused,
         };
         Self::new(kind, Some(core.code()), text)
@@ -237,5 +250,25 @@ mod tests {
         )));
         assert!(failure.is_denied());
         assert_eq!(failure.text(), detail);
+    }
+
+    #[test]
+    fn busy_with_the_holders_words_is_held_and_want_of_room_is_busy() {
+        // Orion sends a want-of-room refusal with the code's own text and nothing more.
+        let room = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Busy,
+            "busy",
+        )));
+        assert_eq!(room.kind(), FailureKind::Busy);
+        let held = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Busy,
+            "slots is held by operator:bench since 1200 ms: an install",
+        )));
+        assert_eq!(held.kind(), FailureKind::Held);
+        assert_eq!(held.code(), Some(CoreError::Busy.code()));
+        assert_eq!(
+            held.text(),
+            "slots is held by operator:bench since 1200 ms: an install"
+        );
     }
 }

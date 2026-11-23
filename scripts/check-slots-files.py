@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Every device that takes files through the Orion bridge is given its directory, and no other name is.
 
-The bridge registers a file sink only for the devices LEMNOS_ORION_FILES names (board: Lemnos bbb3c420
+The bridge registers a file sink only for the devices LEMNOS_ORION_FILES names (board: Lemnos 6c8568d0
 service/orion/src/files.rs:3-5, config.rs:78); unset, no device takes files, and a slot bundle pushed to
 lemnos/<device>/<name> never reaches the device's inbox, so every live install is refused NOT_FOUND (bar run 10,
 2026-11-23). Under ProtectSystem=strict the inbox must also be writable through a drop-in
@@ -10,6 +10,12 @@ lemnos/<device>/<name> never reaches the device's inbox, so every live install i
 For each product image whose components install lemnos-orion.service, and whose board's Lemnos file has a
 `system-slots` device: some installed lemnos-orion drop-in sets LEMNOS_ORION_FILES with `<device id>=<data>/slots/.incoming`
 (`data` from the device's config, default /data) and lists that directory in ReadWritePaths.
+
+Two ways to satisfy it. An image whose board component has the generator write both (Lemnos 6c8568d0,
+`lemnos-ctl tree --bridge-env FILE --bridge-dropin FILE`, from the same board file lemnosd reads) and places them (the
+env as an install or a fragment of /etc/lemnos/lemnos-orion.env, the drop-in under lemnos-orion.service.d/) names every
+file-taking device by construction: the declarations are checked, and no hand-written file may also set
+LEMNOS_ORION_FILES. An image with no such step (the flasher, on an older Lemnos) is checked by its files' text.
 
 Run from the repository root. `--self-test` checks the rule on fixtures.
 """
@@ -24,7 +30,7 @@ ENVFILE = "/etc/lemnos/lemnos-orion.env"
 UNIT = "/usr/lib/systemd/system/lemnos-orion.service"
 BOARD = "/etc/lemnos/board.toml"
 # The drivers that take files through the bridge: system-slots (`install_file`, from <data>/slots/.incoming:
-# board: Lemnos bbb3c420 packaging/systemd/lemnos-orion.env.example:23) and system-flash (the first-flash stream,
+# board: Lemnos 6c8568d0 packaging/systemd/lemnos-orion.env.example:23) and system-flash (the first-flash stream,
 # docs/slots.md:3309). None other has an accept or a file method at the pin.
 TAKES_FILES = ("system-slots", "system-flash")
 
@@ -88,6 +94,38 @@ def check(image_name, devices, has_bridge, systemd_unit, texts):
     return errors
 
 
+def generated(component, board_key):
+    """Problems of a component's generated bridge files, or None when it generates none.
+
+    The step must describe the board file the image installs (`board_key`), pass both flags, and place both outputs.
+    """
+    step = component.get("generate") or {}
+    args = step.get("args", [])
+    if "--bridge-env" not in args and "--bridge-dropin" not in args:
+        return None
+    problems = []
+    def out_of(flag):
+        if flag not in args or args.index(flag) + 1 >= len(args):
+            return None
+        return args[args.index(flag) + 1].removeprefix("@out@/")
+    env, dropin = out_of("--bridge-env"), out_of("--bridge-dropin")
+    if env is None or dropin is None:
+        return ["the generator is given only one of --bridge-env and --bridge-dropin: the settings and the unit's grant must come from the same run"]
+    if step.get("description") != board_key:
+        problems.append(f"the generator describes {step.get('description')!r}, and the image installs the board file {board_key!r}")
+    for name in (env, dropin):
+        if name not in step.get("outputs", []):
+            problems.append(f"{name} is written by the generator but is not a declared output")
+    placed_env = [i.get("to") for i in component.get("install", []) + component.get("fragments", [])
+                  if i.get("from", {}).get("generated") == env]
+    placed_dropin = [i.get("to") for i in component.get("install", []) if i.get("from", {}).get("generated") == dropin]
+    if placed_env != [ENVFILE]:
+        problems.append(f"the generated settings ({env}) must be placed at {ENVFILE} and nowhere else, not {placed_env}")
+    if len(placed_dropin) != 1 or not DROPIN.match(placed_dropin[0] or ""):
+        problems.append(f"the generated drop-in ({dropin}) must be installed once under lemnos-orion.service.d/, not {placed_dropin}")
+    return problems
+
+
 def load(path):
     with open(path, "rb") as handle:
         return tomllib.load(handle)
@@ -105,14 +143,18 @@ def run_tree():
             board_path = os.path.normpath(os.path.join(base, image.get("board", "")))
             board = load(board_path) if os.path.isfile(board_path) else {}
             devices, has_bridge, systemd_unit, texts = {}, False, False, []
+            board_key, steps = None, []
             for comp in image.get("components", []):
                 cpath = os.path.normpath(os.path.join(base, product["components"][comp]))
-                for item in load(cpath).get("install", []):
+                component = load(cpath)
+                steps.append((comp, component))
+                for item in component.get("install", []):
                     to, src = item.get("to", ""), item.get("from", {})
                     has_bridge |= "lemnos-orion" in to
                     systemd_unit |= to == UNIT
                     if to == BOARD:
                         key = src.get("description")
+                        board_key = key
                         path = board.get("descriptions", {}).get(key) if key else None
                         if path:
                             devices = file_devices(load(os.path.join(os.path.dirname(board_path), path)))
@@ -123,7 +165,21 @@ def run_tree():
                             texts.append(f.read())
             if has_bridge:
                 checked += 1
-            errors += check(f"{product_dir}/{image.get('name', '?')}", devices, has_bridge, systemd_unit, texts)
+            name = f"{product_dir}/{image.get('name', '?')}"
+            made = [(comp, generated(component, board_key)) for comp, component in steps]
+            made = [(comp, problems) for comp, problems in made if problems is not None]
+            if has_bridge and made:
+                # The generator names the devices: its declarations are checked, and no hand-written file may also name any.
+                for comp, problems in made:
+                    errors += [f"{name}: {comp}: {problem}" for problem in problems]
+                if len(made) > 1:
+                    errors.append(f"{name}: {', '.join(comp for comp, _ in made)} each generate the bridge's settings: one board file, one generator run")
+                for text in texts:
+                    files, streams, _ = gives(text)
+                    if files or streams:
+                        errors.append(f"{name}: a hand-written file also sets LEMNOS_ORION_FILES or _STREAMS ({sorted(set(files) | streams)}): the generated settings are the only ones")
+                continue
+            errors += check(name, devices, has_bridge, systemd_unit, texts)
     return errors, checked
 
 
@@ -154,6 +210,17 @@ def self_test():
     assert file_devices({"devices": [{"id": "s", "driver": "system-slots", "config": {"data": "/var/d/"}},
                                      {"id": "f", "driver": "system-flash"}, {"id": "g", "driver": "usb-gadget"}]}) \
         == {"s": "/var/d/slots/.incoming", "f": None}
+    # The generated form: both flags, both outputs declared and placed, for the board file the image installs.
+    gen = {"generate": {"description": "lemnos", "args": ["tree", "@description@", "--bridge-env", "@out@/e.env", "--bridge-dropin", "@out@/d.conf"],
+                        "outputs": ["e.env", "d.conf"]},
+           "fragments": [{"from": {"generated": "e.env"}, "to": ENVFILE}],
+           "install": [{"from": {"generated": "d.conf"}, "to": "/etc/systemd/system/lemnos-orion.service.d/files.conf"}]}
+    assert generated(gen, "lemnos") == [] and generated({"generate": {"args": ["tree"]}}, "lemnos") is None
+    assert any("describes" in e for e in generated(gen, "flasher-lemnos"))
+    one = {**gen, "generate": {**gen["generate"], "args": ["tree", "--bridge-env", "@out@/e.env"]}}
+    assert any("only one of" in e for e in generated(one, "lemnos"))
+    assert any("must be installed once" in e for e in generated({**gen, "install": []}, "lemnos"))
+    assert any("must be placed at" in e for e in generated({**gen, "fragments": []}, "lemnos"))
     print("check-slots-files self-test: ok")
 
 

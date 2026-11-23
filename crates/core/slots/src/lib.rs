@@ -32,7 +32,7 @@ pub use stage::Stage;
 
 /// The Lemnos contract name a board offers for slots. Read from `hello.offers`, which lists
 /// contract ids separated by spaces.
-// board: Lemnos bbb3c420 contracts/system-slots/src/lib.rs:12 (the contract tag)
+// board: Lemnos 6c8568d0 contracts/system-slots/src/lib.rs:84 (the contract tag)
 pub const SUPPORTED_CONTRACT: &str = "system.slots/1";
 
 /// Whether a board's `offers` text includes the slot contract. An absent offers text is "no".

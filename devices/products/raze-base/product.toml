@@ -33,7 +33,6 @@ lemnosd = "../../components/lemnosd/component.toml"
 lemnos-restart = "../../components/lemnos-restart/component.toml"
 lemnos-ctl = "../../components/lemnos-ctl/component.toml"
 lemnos-orion = "../../components/lemnos-orion/component.toml"
-lemnos-orion-slots-files = "../../components/lemnos-orion-slots-files/component.toml"
 lemnos-slot-init = "../../components/lemnos-slot-init/component.toml"
 raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
 raze-base-files = "../../components/raze-base-files/component.toml"
@@ -53,7 +52,7 @@ bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "lemnos-orion-slots-files", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "wired-ethernet", "orion", "orion-node-name", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
+components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "wired-ethernet", "orion", "orion-node-name", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"
@@ -125,3 +124,19 @@ ztailpacking = true
 sign_key_env = "ATLAS_BENCH_SEED_FILE"
 sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
 sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"
+
+# A library the OS builds that nothing in the image links (Gaia 7b9d6379, row 41; the coordinator's ruling 2026-11-23,
+# in place of an `rm` in a product script). With it gone nothing links libstdc++ either, and Gaia takes the toolchain's
+# unlinked runtime libraries out by itself (libstdc++, libgfortran, libgomp, libatomic); the build prints each one.
+# Measured on dev.1376's root: libgpiodcxx 206,648 B was the only user of libstdc++ (2,440,144 B).
+[[images.prune_libs]]
+lib = "libgpiodcxx"
+reason = "libgpiod2.mk builds the C++ binding whenever the toolchain has C++; nothing in the image links it"
+
+# /etc/lemnos/lemnos-orion.env, assembled: Lemnos's own example first (the bridge's user and groups), then the lines
+# the generator writes from the board file (the USB link and the file-taking devices). rule_key 0 compares whole lines:
+# a setting given twice fails the build.
+[[images.assembled]]
+path = "/etc/lemnos/lemnos-orion.env"
+order = ["lemnos", "raze-lemnos-board"]
+rule_key = 0

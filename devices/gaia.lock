@@ -1,6 +1,16 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 7b9d6379 (pin move 13, 2026-11-23, the coordinator's rev): Gaia next row 41 on row 42 (a0fd2cb1, below): the
+# toolchain's runtime libraries that nothing in the root links leave it, and a product names a library the OS builds
+# but nothing links with `[[images.prune_libs]]` (raze-base: libgpiodcxx, which was what kept libstdc++). The build
+# prints what it removed and why. Gaia measured this tree: the Raze slot erofs 18,436,096 -> 17,145,856 B, the flasher
+# initramfs 26,127,832 -> 21,647,112 B. Before: a0fd2cb1 (never gated here; its words stay as the record of row 42).
+# Moved to a0fd2cb1 (pin move 13, 2026-11-23, the coordinator's rev): Gaia next row 42 on rows 39-40: the OS root is
+# stripped by Gaia's own base config (a product opts out with `# BR2_STRIP_strip is not set`), so no product here states
+# BR2_STRIP_strip or BR2_BINFMT_ELF any more (Gaia measured the flasher's initramfs 29,047,440 -> 26,127,832 B); Gaia
+# gives the strip to the root's build only, never the kernel's, so modules ship as the kernel build makes them. A
+# generator tool that runs on the build host takes `targets = []`. Before: a42c7ae9.
 # Moved to a42c7ae9 (move 13, 2026-11-23, the coordinator's rev): Gaia next row 40 on row 39 (08e71181, the pinned
 # toolchain, unchanged): the board QEMU profile's USB relay and stock host re-attach after a gadget goes and comes back,
 # the relay log (boot-N.usb-relay.log) names why each pair ended, the runner cleans up its QEMUs on TERM, usbip-vudc
@@ -50,4 +60,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "a42c7ae9ceab134cc7f054d7ba86aa97a81bb70e"
+commit = "7b9d637947f5a84b0b8cb6dd67f4c599cc259f50"

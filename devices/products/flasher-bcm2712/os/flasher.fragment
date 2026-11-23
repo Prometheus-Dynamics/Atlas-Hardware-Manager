@@ -57,13 +57,8 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # FunctionFS link is a device link only. No ifupdown: the one interface is set by S39flasher-net.
 
 # -- Stripping ----------------------------------------------------------------------------------------
-# The same pair as raze-base (products/raze-base/os/raze.fragment, PR B16), for the same reason: Gaia's OS config starts
-# from allnoconfig, where a bool's default does not apply, so Buildroot's BR2_STRIP_strip (default y, depends on
-# BR2_BINFMT_ELF) is OFF unless set here. Without it every binary and library in this initramfs went in unstripped
-# (2026-11-22 build: libstdc++ 3,213,136 B here against 2,440,144 B in raze-base). BR2_BINFMT_ELF is written out: the
-# format is a choice whose default follows the MMU. If Gaia's base comes to strip by default, this pair comes out.
-BR2_BINFMT_ELF=y
-BR2_STRIP_strip=y
+# Nothing here: Gaia's base config strips the OS root (Gaia a0fd2cb1, row 42). The pair this fragment carried for one
+# move (BR2_BINFMT_ELF, BR2_STRIP_strip) is gone with it.
 
 # -- Host tools ---------------------------------------------------------------------------------------
 # dtc and fdtoverlay for the host, built by this image's Buildroot: Gaia's gaia.devicetree.overlay compiles the

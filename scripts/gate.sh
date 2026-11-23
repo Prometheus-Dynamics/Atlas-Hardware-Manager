@@ -86,6 +86,14 @@ devices_then_config_only() {
     step "config-only build (every product)" scripts/check-config-only.sh
   fi
 }
+# One target directory, one worktree. A target another worktree built in is refused: cargo decides "fresh" by file
+# times, so a crate built there from NEWER files is taken as up to date for this tree's OLDER (different) sources, and
+# the gate then passes or fails on code that is not in this tree (2026-11-23: pr/move13 failed to compile
+# atlas-board-slots against pr/p1's atlas-bundle, with CARGO_TARGET_DIR shared between the two worktrees).
+if [ -f "${CARGO_TARGET_DIR:-target}/.atlas-worktree" ] && [ "$(cat "${CARGO_TARGET_DIR:-target}/.atlas-worktree")" != "$(pwd)" ]; then
+  echo "gate: ${CARGO_TARGET_DIR:-target} was built in by $(cat "${CARGO_TARGET_DIR:-target}/.atlas-worktree"), not by $(pwd): give this worktree its own target directory" >&2
+  exit 1
+fi
 # A fresh worktree's empty target starts from a seed (scripts/cargo-seed.sh; only with ATLAS_CARGO_SEED_DIR set).
 scripts/cargo-seed.sh restore
 # The target records its worktree, so scripts/prune-targets.sh can tell whose cache it is.
@@ -176,7 +184,7 @@ if [ -f scripts/check-board-names.sh ]; then
   step "board names self-test" scripts/check-board-names.sh --self-test
 fi
 
-# The Raze's console follows the board's security switch (LOCK: Lemnos bbb3c420 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
+# The Raze's console follows the board's security switch (LOCK: Lemnos 6c8568d0 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
 if [ -f scripts/check-console-gate.py ]; then
   step "console follows the security view" python3 scripts/check-console-gate.py
 fi

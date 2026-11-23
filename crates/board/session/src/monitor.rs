@@ -522,11 +522,11 @@ impl Handle {
     }
 
     /// Sends `call` and waits for its answer. A board that answers Busy had no room for the call
-    /// yet and did not take it (Orion 2f52e457, `is_busy`: "never a final no"), so the call is sent
+    /// yet and did not take it (Orion b029f602, `is_busy`: "never a final no"), so the call is sent
     /// again after the failure rule's next delay ([`Backoff`]). The wait is listed for the page once
     /// it will have lasted [`busy::SHOWN_AFTER`], and it ends as the refusal it is when the next try
-    /// would come after the handle's bound ([`busy::BOUND`]) or a person stops it: Orion says busy
-    /// for more than load, and what is not load never clears by waiting.
+    /// would come after the handle's bound ([`busy::BOUND`]) or a person stops it. A refusal because
+    /// another holds what was asked for ([`FailureKind::Held`]) is not this: it is returned at once.
     async fn send_call<T, F>(&self, call: F, bridge: bool) -> Result<T, SessionError>
     where
         T: Send + 'static,

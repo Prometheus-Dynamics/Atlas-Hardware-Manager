@@ -182,11 +182,47 @@ async fn a_busy_board_is_asked_again_on_the_backoff_and_the_caller_never_sees_th
     }
 }
 
+/// Orion's refusal for want of room: code busy, with no words of its own.
 fn busy() -> orion::Error {
-    orion::Error::Client(ClientError::refused(
-        orion::types::Error::Busy,
-        "held by another",
-    ))
+    orion::Error::Client(ClientError::refused(orion::types::Error::Busy, ""))
+}
+
+#[tokio::test]
+async fn what_another_holds_is_refused_at_once_with_the_holders_words_never_waited_out() {
+    let dir = scratch("busy-held");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let mut asked = 0_u32;
+    let started = Instant::now();
+    let refused = handle
+        .with_client(move |_| -> Result<(), orion::Error> {
+            asked += 1;
+            assert_eq!(asked, 1, "a held refusal is never asked again");
+            Err(orion::Error::Client(ClientError::refused(
+                orion::types::Error::Busy,
+                "slots is held by operator:bench since 1200 ms: an install",
+            )))
+        })
+        .await;
+    match refused {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Held);
+            assert_eq!(
+                failure.text(),
+                "slots is held by operator:bench since 1200 ms: an install"
+            );
+        }
+        other => panic!("expected the held refusal, got {other:?}"),
+    }
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(*handle.busy_wait().borrow(), None);
 }
 
 #[tokio::test]
@@ -229,7 +265,7 @@ async fn a_board_busy_past_the_bound_is_a_refusal_with_its_words_and_the_wait_wa
     match refused {
         Err(SessionError::Failed(failure)) => {
             assert_eq!(failure.kind(), FailureKind::Busy);
-            assert_eq!(failure.text(), "held by another");
+            assert_eq!(failure.text(), "busy");
         }
         other => panic!("expected the busy refusal, got {other:?}"),
     }

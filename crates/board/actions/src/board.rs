@@ -448,9 +448,11 @@ impl BoardActions {
                 name: name.to_owned(),
                 reason,
             }),
-            // Busy past the session's bound, or stopped by a person: the board never took the
-            // start, so it is a refusal, with the board's words.
-            Err(SessionError::Failed(reason)) if reason.kind() == FailureKind::Busy => {
+            // Busy past the session's bound, or stopped by a person, or held by another: the board
+            // never took the start, so it is a refusal, with the board's words.
+            Err(SessionError::Failed(reason))
+                if matches!(reason.kind(), FailureKind::Busy | FailureKind::Held) =>
+            {
                 Err(ActionError::Refused(reason))
             }
             Err(SessionError::Failed(reason)) => Err(ActionError::Failed(reason)),
@@ -731,9 +733,11 @@ impl BoardActions {
                 name: name.to_owned(),
                 reason: Failure::other(reason),
             }),
-            // Busy past the session's bound, or stopped by a person: the board never took the
-            // run, so it is a refusal with the board's words, not an outcome nobody knows.
-            Err(SessionError::Failed(reason)) if reason.kind() == FailureKind::Busy => {
+            // Busy past the session's bound, or stopped by a person, or held by another: the board
+            // never took the run, so it is a refusal with the board's words, not an outcome nobody knows.
+            Err(SessionError::Failed(reason))
+                if matches!(reason.kind(), FailureKind::Busy | FailureKind::Held) =>
+            {
                 Err(ActionError::Refused(reason))
             }
             Err(SessionError::Failed(reason)) => Err(ActionError::Unknown {

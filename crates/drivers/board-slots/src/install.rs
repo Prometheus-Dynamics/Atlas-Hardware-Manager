@@ -421,7 +421,7 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
-                    // LOCK: Lemnos bbb3c420 docs/slots.md:169-178: the image keeps the bundle's slot.json and slot.sig byte for
+                    // LOCK: Lemnos 6c8568d0 docs/slots.md:169-178: the image keeps the bundle's slot.json and slot.sig byte for
                     // byte, and a tar of the two first, then rootfs.erofs and boot/, verifies as the bundle did.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));

@@ -16,10 +16,10 @@ use crate::wire;
 /// (see [`VERIFY`] and [`REBOOT`]), never by this id.
 pub const FLASH_DEVICE: &str = "flash";
 /// `system.flash/1`'s `verify`: the job that checks the written image (Lemnos's contract method).
-// board: Lemnos bbb3c420 contracts/system-flash/src/lib.rs:63 (verify)
+// board: Lemnos 6c8568d0 contracts/system-flash/src/lib.rs:63 (verify)
 pub const VERIFY: &str = "system.flash.verify";
 /// `system.reboot/1`'s `reboot`: the restart after the write.
-// board: Lemnos bbb3c420 contracts/system-reboot/src/lib.rs:12 (reboot)
+// board: Lemnos 6c8568d0 contracts/system-reboot/src/lib.rs:12 (reboot)
 pub const REBOOT: &str = "system.reboot.reboot";
 
 /// How a call to the board went wrong.

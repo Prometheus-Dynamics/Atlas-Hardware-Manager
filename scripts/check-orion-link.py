@@ -5,7 +5,9 @@ The comm core declares the USB link by `links.usb = <name>` in its settings (Ori
 The Lemnos bridge offers the gadget's endpoints under `LEMNOS_ORION_LINKS=<device id>=<name>`. Both must give the
 SAME <name>, and <device id> must be a usb-gadget device of the Raze's board file. Checked here:
   - devices/components/orion/files/orion.conf: `links.usb` is exactly one name, and it is the one the bridge offers;
-  - devices/components/lemnos/files/lemnos-orion-links.conf: `LEMNOS_ORION_LINKS` is `<device id>=<name>` with one pair;
+  - the bridge's `LEMNOS_ORION_LINKS=<device id>=<name>`, which the generator writes from the board file since pin move
+    13 (`lemnos-ctl tree --bridge-env`, Lemnos 6c8568d0): the usb-gadget device's id, and the name on the first
+    `interface` line of its composition (`orion-link` for the default composition). Worked out here by the same rule;
   - the device id is a `usb-gadget` device in devices/boards/raze/lemnos-board.toml;
   - the gadget's `interfaces` text, if it gives one, puts <name> on interface 0 (the link must be first);
   - devices/components/orion/files/orion-comm-peer.conf reads its address file with `EnvironmentFile=-` (a missing file
@@ -27,7 +29,9 @@ import sys
 import tomllib
 
 ORION_CONF = "devices/components/orion/files/orion.conf"
-BRIDGE_CONF = "devices/components/lemnos/files/lemnos-orion-links.conf"
+BRIDGE_CONF = "the generated lemnos-orion.env (lemnos-ctl tree --bridge-env)"
+# board: Lemnos 6c8568d0 drivers/usb-gadget/src/lib.rs:130 (DEFAULT_INTERFACES: `interface 0xff 0 0 orion-link`)
+DEFAULT_LINK = "orion-link"
 PEER_DROP_IN = "devices/components/orion/files/orion-comm-peer.conf"
 BOARD = "devices/boards/raze/lemnos-board.toml"
 # The products with a gadget link that give the comm core's ways in themselves, as a drop-in for orion-comm.
@@ -119,6 +123,20 @@ def check(orion_text, bridge_text, peer_text, board):
     return problems
 
 
+def bridge_line(board):
+    """The LEMNOS_ORION_LINKS line the generator writes for `board`, as a drop-in line; empty when it has no gadget."""
+    for device in board.get("devices", []):
+        if device.get("driver") != "usb-gadget":
+            continue
+        text = device.get("config", {}).get("interfaces")
+        name = DEFAULT_LINK
+        if text is not None:
+            first = next((line.split() for line in text.splitlines() if line.strip().startswith("interface")), None)
+            name = first[-1] if first else ""
+        return f"Environment=LEMNOS_ORION_LINKS={device['id']}={name}\n"
+    return ""
+
+
 def read(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -126,7 +144,7 @@ def read(path):
 
 def self_test():
     board = tomllib.loads(read(BOARD))
-    orion, bridge, peer = read(ORION_CONF), read(BRIDGE_CONF), read(PEER_DROP_IN)
+    orion, bridge, peer = read(ORION_CONF), bridge_line(board), read(PEER_DROP_IN)
     cases = {
         "the names agree and the device is a gadget": (orion, bridge, peer, board, True),
         "a name mismatch is refused": (orion.replace("links.usb = orion-link", "links.usb = orion-other"), bridge, peer, board, False),
@@ -162,7 +180,7 @@ def main():
     if "--self-test" in sys.argv:
         return self_test()
     board = tomllib.loads(read(BOARD))
-    problems = check(read(ORION_CONF), read(BRIDGE_CONF), read(PEER_DROP_IN), board)
+    problems = check(read(ORION_CONF), bridge_line(board), read(PEER_DROP_IN), board)
     for path in WAYS_IN:
         problems += ways_in(path, read(path))
     for problem in problems:

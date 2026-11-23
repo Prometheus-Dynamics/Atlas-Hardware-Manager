@@ -26,7 +26,7 @@ mode = "0644"
 unit = "serial-getty@ttyGS0.service"
 enable = true
 
-# The console follows the board's security switch (LOCK: Lemnos bbb3c420 drivers/system-security/src/flow.rs:499 renders the view; the Raze runs that driver): the view /etc/board/security says on (or is
+# The console follows the board's security switch (LOCK: Lemnos 6c8568d0 drivers/system-security/src/flow.rs:499 renders the view; the Raze runs that driver): the view /etc/board/security says on (or is
 # malformed) and no login is offered; off or absent and the getty runs as before. ExecCondition in the three template
 # drop-ins (serial-getty for ttyGS0, getty for the other VTs' getty@ units, autovt for the on-demand VTs) runs the check.
 [[install]]
