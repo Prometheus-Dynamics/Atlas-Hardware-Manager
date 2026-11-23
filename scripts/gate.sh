@@ -155,6 +155,10 @@ if [ -f scripts/check-lemnos0-address.py ]; then
 fi
 
 # The Raze's wired Ethernet: one network file by type, the USB gadget's link matched by none.
+if [ -f scripts/check-slots-files.py ]; then
+  step "bridge files (every file-taking device is given its directory)" python3 -I scripts/check-slots-files.py
+  step "bridge files self-test" python3 -I scripts/check-slots-files.py --self-test
+fi
 if [ -f scripts/check-wired-ethernet.py ]; then
   step "wired ethernet (not the gadget's link)" python3 scripts/check-wired-ethernet.py
   step "wired ethernet self-test" python3 scripts/check-wired-ethernet.py --self-test

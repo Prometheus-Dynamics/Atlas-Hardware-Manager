@@ -1,0 +1,12 @@
+# The bridge's file sink for the slots device: without it no pushed slot bundle reaches the device's inbox and every
+# live install is refused NOT_FOUND (bar run 10, 2026-11-23). One file for every image whose board file has a
+# system-slots device with data = "/data" (raze, radxa-zero-3e); scripts/check-slots-files.py checks each image.
+# MOVES: to Lemnos's own packaging (a lemnos-orion.service.d drop-in beside lemnosd's slots.conf) once it ships one.
+version = 1
+name = "lemnos-orion-slots-files"
+description = "the Lemnos bridge's file sink for the slots device: LEMNOS_ORION_FILES=slots=/data/slots/.incoming and its writable inbox"
+
+[[install]]
+from = { file = "files/slots-files.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/20-slots-files.conf"
+mode = "0644"
