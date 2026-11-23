@@ -258,6 +258,65 @@ async fn a_failed_trial_says_the_board_came_back_in_the_previous_slot() {
     );
 }
 
+/// Raze #2, 2026-11-23: the board took the trial and restarted into it before its bridge answered;
+/// node logic ended the run as failed ("the program that runs it went away"), and the command
+/// exited 1 within a second. The board's records decide instead: the command follows the board
+/// through its restart and reports the trial's real outcome, with the board's time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_trial_whose_answer_the_restart_takes_is_followed_and_reported_as_the_board_decided() {
+    let dir = scratch("answer-lost");
+    let node = start_node(&dir, None);
+    node.slot_follow_boot(true);
+    let relay = Relay::start(
+        format!("127.0.0.1:{}", node.network().port())
+            .parse()
+            .expect("an address"),
+    );
+    let address = relay.address();
+    let env = env(&dir.join("state"));
+    let (code, out) = run(&env, &["slots", &address, "pin"]).await;
+    assert_eq!(code, 0, "{out}");
+    let bundle = write_bundle(
+        &dir.join("bundles"),
+        "slot-2.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let bundle = bundle.to_str().expect("a UTF-8 path").to_owned();
+    let (code, out) = run(&env, &["slots", &address, "install", &bundle]).await;
+    assert_eq!(code, 0, "{out}");
+
+    node.script()
+        .push_action(names::SLOTS_TRIAL, atlas_sim_node::Behaviour::AnswerLost);
+    let trial_args = ["slots", &address, "trial", "slot-2"];
+    let trial = run(&env, &trial_args);
+    let board_restarts_and_confirms = async {
+        until("the trial to start on the board", || {
+            node.model().slots.trial.is_some()
+        })
+        .await;
+        // The restart: the board goes away and comes back in the trial slot.
+        relay.away(true);
+        relay.cut();
+        node.slot_clock_advance(30);
+        until("the board to confirm the trial", || {
+            node.model().slots.resolved.is_some()
+        })
+        .await;
+        relay.away(false);
+    };
+    let ((code, out), ()) = tokio::join!(trial, board_restarts_and_confirms);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("the board's answer to the start was lost"),
+        "{out}"
+    );
+    assert!(
+        out.contains("came back in the trial slot slot-2: the trial held"),
+        "{out}"
+    );
+    assert!(!out.contains("error"), "{out}");
+}
+
 /// Proof 5: the address forms Orion reads. Bare forms (no `orion+tcp://`) are refused by Orion as
 /// written; nothing is added to them here.
 #[test]

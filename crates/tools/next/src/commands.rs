@@ -604,8 +604,8 @@ pub(crate) async fn trial_outcome<W: Write>(
     match state {
         TrialState::Held(decided) => {
             r.say(format!(
-                "came back in the trial slot {}: the trial held, confirmed by the board ({}). The board's reason: {}",
-                decided.slot, decided.by, decided.reason
+                "came back in the trial slot {}: the trial held, confirmed by the board ({}) at {}. The board's reason: {}",
+                decided.slot, decided.by, decided.time, decided.reason
             ));
             r.field("outcome", "held");
             Ok(())
@@ -615,7 +615,8 @@ pub(crate) async fn trial_outcome<W: Write>(
             Err(Refusal::new(
                 1,
                 format!(
-                    "came back in the previous slot: the trial failed. It runs {}. The board's reason: {}",
+                    "came back in the previous slot: the trial failed at {}. It runs {}. The board's reason: {}",
+                    decided.time,
                     running_words(&decided.running),
                     decided.reason
                 ),

@@ -584,3 +584,87 @@ async fn the_session_reports_a_replacement_as_replaced() {
     .expect("the session reports the replacement")
     .expect("the monitor runs");
 }
+
+/// The start of the trial of slot-2, once, through the follower: its own answer, not retried.
+async fn start_once(
+    rig: &Rig,
+    follower: &Follower,
+) -> Result<Option<String>, atlas_board_slots::SlotError> {
+    follower
+        .start_trial(
+            &rig.slots,
+            &rig.handle,
+            TrialStart {
+                id: "slot-2",
+                keep_default: false,
+                keep_old: false,
+                force: false,
+                now_ms: 1,
+            },
+        )
+        .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_trial_whose_start_answer_the_restart_takes_is_followed_to_its_outcome() {
+    // Raze #2, 2026-11-23: the board took the trial and restarted into it, and its bridge stopped
+    // before it answered; node logic ended the run as failed, "the program that runs it went away".
+    // That is not the trial's outcome: the board's records are.
+    let rig = start_board("answer-lost").await;
+    install(&rig, "slot-2", "2.0.0").await;
+    rig.node
+        .script()
+        .push_action(names::SLOTS_TRIAL, atlas_sim_node::Behaviour::AnswerLost);
+    let follower = follower(&rig, SHORT);
+    let note = start_once(&rig, &follower)
+        .await
+        .expect("a start whose answer was lost is followed, not failed")
+        .expect("the person is told what the start's answer was");
+    assert!(
+        note.contains(atlas_sim_node::script::PROVIDER_GONE),
+        "{note}"
+    );
+    assert!(
+        note.contains("followed through the board's restart"),
+        "{note}"
+    );
+
+    let task = spawn_follow(&follower, &rig);
+    until_state(&follower, "the trial to settle", settling_with(1)).await;
+    leave(&rig);
+    until_state(&follower, "the board to be away", |state| {
+        matches!(state, TrialState::NotBackYet { .. })
+    })
+    .await;
+    power_cycle_model(&rig);
+    identity_says(&rig, "slot-2").await;
+    come_back(&rig);
+    until_state(&follower, "the board to settle again", settling_with(2)).await;
+    rig.node.slot_clock_advance(30);
+    let state = ended_state(task.await.expect("the follow task ends"));
+    let TrialState::Held(decided) = state else {
+        panic!("expected held, got {state:?}");
+    };
+    assert_eq!(decided.by, "auto");
+    assert_eq!(decided.running, Running::Trial);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_trial_start_that_failed_and_left_no_trial_is_its_failure_and_nothing_is_followed() {
+    let rig = start_board("failed-start").await;
+    install(&rig, "slot-2", "2.0.0").await;
+    rig.node.script().push_action(
+        names::SLOTS_TRIAL,
+        atlas_sim_node::Behaviour::Fail("the job ended with status 5".into()),
+    );
+    let follower = follower(&rig, SHORT);
+    let error = start_once(&rig, &follower)
+        .await
+        .expect_err("the board answers that no trial started");
+    assert!(
+        error.to_string().contains("the job ended with status 5"),
+        "{error}"
+    );
+    assert!(follower.states().is_empty(), "nothing is followed");
+    assert!(list(&rig).await.trial.is_none());
+}

@@ -718,6 +718,8 @@ struct Run {
     left: u32,
     total: u32,
     stalled: bool,
+    /// The run takes effect, and its answer is lost ([`Behaviour::AnswerLost`]).
+    answer_lost: bool,
 }
 
 /// The slot install in progress: the bundle file it works on, and how far it has got.
@@ -1072,6 +1074,7 @@ impl Node {
                     left: 1,
                     total: 1,
                     stalled: true,
+                    answer_lost: false,
                 });
             }
             Behaviour::RestartDaemon => {
@@ -1082,7 +1085,7 @@ impl Node {
             Behaviour::Answer if name == names::SLOTS_INSTALL_FILE => {
                 self.install_start(call, caller, device, &args);
             }
-            behaviour @ (Behaviour::Answer | Behaviour::Slow(_)) => {
+            behaviour @ (Behaviour::Answer | Behaviour::Slow(_) | Behaviour::AnswerLost) => {
                 // One tick, or as many as the test asked this run to take (it says how far it is on
                 // each one).
                 let total = match behaviour {
@@ -1097,6 +1100,7 @@ impl Node {
                     left: total,
                     total,
                     stalled: false,
+                    answer_lost: behaviour == Behaviour::AnswerLost,
                 });
             }
         }
@@ -1408,6 +1412,10 @@ impl Node {
                 apply(&mut model, &run.name, &run.args, &run.caller)
             };
             match outcome {
+                // It took effect; node logic ended it before its answer came.
+                _ if run.answer_lost => {
+                    self.finish(run.call, Outcome::Failed, &[], crate::script::PROVIDER_GONE);
+                }
                 Ok(output) => self.finish(run.call, Outcome::Succeeded, &output, ""),
                 Err(status) => self.finish_status(run.call, &status),
             }

@@ -253,13 +253,20 @@ impl Follower {
     }
 
     /// Starts a trial on the board and begins following it. The trial is never retried here (see
-    /// [`BoardSlots::start_trial`]). A call that did not come back may still have started it, so the
-    /// board's list is read and a pending trial of `id` is followed; the error is still returned.
+    /// [`BoardSlots::start_trial`]).
+    ///
+    /// The board restarts into the trial, and a restart can take the start's answer with it: the
+    /// bridge stops before it answers, and node logic ends the run as failed ("the program that runs
+    /// it went away", Raze #2, 2026-11-23), or the session ends first. A start whose answer is in
+    /// doubt ([`in_doubt`]) is therefore decided by the board, not by the answer: its list is read
+    /// once, and the trial is followed unless the board answers that it has no trial of `id`. The
+    /// note then says what the start's answer was. A refusal is the board's no, and is returned.
     ///
     /// # Errors
     ///
-    /// [`SlotError`] from the call. [`SlotError::Board`] with `NotConnected` when the board is not
-    /// connected: nothing was sent.
+    /// [`SlotError`] from the call when the board refused it, or answers that no trial of `id`
+    /// started. [`SlotError::Board`] with `NotConnected` when the board is not connected: nothing was
+    /// sent.
     pub async fn start_trial(
         &self,
         slots: &BoardSlots,
@@ -280,17 +287,22 @@ impl Follower {
         })?;
         match slots.start_trial(id, keep_default, keep_old, force).await {
             Ok(()) => Ok(self.begin(board, id, now_ms)),
-            Err(error) => {
-                if matches!(
-                    error,
-                    SlotError::Board(ActionError::Unknown { .. } | ActionError::NotFinished { .. })
-                ) && let Ok(list) = slots.list().await
-                    && list.trial.as_ref().is_some_and(|trial| trial.slot == id)
+            Err(error) if in_doubt(&error) => {
+                // The board answers that no trial of `id` is pending: it did not start.
+                if let Ok(list) = slots.list().await
+                    && !list.trial.as_ref().is_some_and(|trial| trial.slot == id)
                 {
-                    self.begin(board, id, now_ms);
+                    return Err(error);
                 }
-                Err(error)
+                let started = format!(
+                    "the board's answer to the start was lost ({error}); the trial of {id} is followed through the board's restart"
+                );
+                Ok(Some(match self.begin(board, id, now_ms) {
+                    Some(note) => format!("{started}; {note}"),
+                    None => started,
+                }))
             }
+            Err(error) => Err(error),
         }
     }
 
@@ -453,6 +465,27 @@ fn read_of(answer: Result<SlotList, SlotError>) -> Read {
         ) => Read::Gone(error.to_string()),
         Err(error) => Read::Refused(error.to_string()),
     }
+}
+
+/// Whether a start's error leaves it open whether the board acted: the call may have run and its
+/// answer was lost, or it ended as failed after it was sent (a restart ends the run that asked for
+/// it). Lemnos ends its own failures as `Failed` with code 0 too, so a failure is never read as
+/// "did not run" from its words or code: the board's state decides. A refusal, and anything that
+/// was not sent, is not in doubt.
+fn in_doubt(error: &SlotError) -> bool {
+    matches!(
+        error,
+        SlotError::Board(
+            ActionError::Failed(_)
+                | ActionError::Unknown { .. }
+                | ActionError::NotFinished { .. }
+                | ActionError::Lost { .. }
+                | ActionError::StartInDoubt { .. }
+                | ActionError::Unconfirmed { .. }
+                | ActionError::NotAnswering(_)
+                | ActionError::HoldLapsed { .. }
+        )
+    )
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

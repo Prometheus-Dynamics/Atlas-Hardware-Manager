@@ -25,7 +25,16 @@ pub enum Behaviour {
     /// The service restarts as this run starts: every running job is lost (`-4`), and this
     /// run is answered as lost too. Nothing resumes.
     RestartDaemon,
+    /// Runs and takes effect, but the program that runs it goes away before it answers: node logic
+    /// ends the run as `Failed` with code 0, no output and [`PROVIDER_GONE`] (Orion 2f52e457
+    /// crates/node/action-list/src/lib.rs:735). A real board does this when it restarts into a
+    /// trial or reboots: the bridge stops before the run's answer is sent.
+    AnswerLost,
 }
+
+/// Node logic's words for a run whose program went away (Orion 2f52e457
+/// crates/node/action-list/src/lib.rs:735).
+pub const PROVIDER_GONE: &str = "the program that runs it went away";
 
 /// What happens to one connection through the node's link.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
