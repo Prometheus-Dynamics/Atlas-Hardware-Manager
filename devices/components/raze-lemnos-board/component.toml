@@ -24,6 +24,12 @@ ref = "bbb3c42085a5a9afacde7f3c18692a5462c1300f"  # Lemnos bbb3c420 (next: FLASH
 
 # The image lemnos-ctl is built in, and the generator runs in (Gaia #100: a [generate] tool is built for the build
 # machine and run in the image its component's `root` source names). The same image lemnos-ctl's own component uses.
+# The Rust release the generator tool is built with (Gaia 08e71181): rustc, cargo and the build host's std, pinned by the
+# lock. The tool runs on the build machine, so its target is the host's. The build machine's rustup is never read.
+[sources.toolchain]
+rust = "1.99.0"
+targets = ["x86_64-unknown-linux-gnu"]
+
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"

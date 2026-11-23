@@ -12,6 +12,12 @@ git = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "bbb3c42085a5a9afacde7f3c18692a5462c1300f"  # Lemnos bbb3c420 (next: FLASH-TARGET-GRANT, FLASH-BRIDGE-PUMP, FLASH-INFO-NOTFOUND, FLASH-DATA-OFF-CALL, KEEP-SIG, T233 deadline lines naming the call and caller), coordinator 2026-11-22, pin move 12; before: a6251ecf
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
+# The Rust release the generator tool is built with (Gaia 08e71181): rustc, cargo and the build host's std, pinned by the
+# lock. The tool runs on the build machine, so its target is the host's. The build machine's rustup is never read.
+[sources.toolchain]
+rust = "1.99.0"
+targets = ["x86_64-unknown-linux-gnu"]
+
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"

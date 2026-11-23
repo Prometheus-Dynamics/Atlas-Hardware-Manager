@@ -24,6 +24,26 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
+[source."flasher-lemnos-orion.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."flasher-lemnos-orion.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."flasher-lemnos-orion.toolchain.std.aarch64-unknown-linux-musl"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-aarch64-unknown-linux-musl.tar.xz"
+digest = "sha256:ea8fd309578a09c9e12401621a470e6d6b1047f25933207fb8a39d66647d4561"
+
+[source."flasher-lemnos-orion.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
+
 [source."flasher-lemnos-restart.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
@@ -34,6 +54,26 @@ kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
+
+[source."flasher-lemnos-restart.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."flasher-lemnos-restart.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."flasher-lemnos-restart.toolchain.std.aarch64-unknown-linux-musl"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-aarch64-unknown-linux-musl.tar.xz"
+digest = "sha256:ea8fd309578a09c9e12401621a470e6d6b1047f25933207fb8a39d66647d4561"
+
+[source."flasher-lemnos-restart.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
 
 [source."flasher-lemnos-way-back.root"]
 kind = "image"
@@ -46,6 +86,26 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "a6251ecfb815752880f399e4e137634d022d4a2d"
 commit = "a6251ecfb815752880f399e4e137634d022d4a2d"
 
+[source."flasher-lemnos-way-back.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."flasher-lemnos-way-back.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."flasher-lemnos-way-back.toolchain.std.aarch64-unknown-linux-musl"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-aarch64-unknown-linux-musl.tar.xz"
+digest = "sha256:ea8fd309578a09c9e12401621a470e6d6b1047f25933207fb8a39d66647d4561"
+
+[source."flasher-lemnos-way-back.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
+
 [source."flasher-lemnosd.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
@@ -57,6 +117,26 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 
+[source."flasher-lemnosd.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."flasher-lemnosd.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."flasher-lemnosd.toolchain.std.aarch64-unknown-linux-musl"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-aarch64-unknown-linux-musl.tar.xz"
+digest = "sha256:ea8fd309578a09c9e12401621a470e6d6b1047f25933207fb8a39d66647d4561"
+
+[source."flasher-lemnosd.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
+
 [source."flasher-orion.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
@@ -67,6 +147,26 @@ kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
 ref = "3f60576c45ab49222b4eea095432469da6ca193d"
 commit = "3f60576c45ab49222b4eea095432469da6ca193d"
+
+[source."flasher-orion.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."flasher-orion.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."flasher-orion.toolchain.std.aarch64-unknown-linux-musl"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-aarch64-unknown-linux-musl.tar.xz"
+digest = "sha256:ea8fd309578a09c9e12401621a470e6d6b1047f25933207fb8a39d66647d4561"
+
+[source."flasher-orion.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
 
 [source."flasher-orion.tools"]
 kind = "download"
@@ -83,6 +183,21 @@ commit = "da86d0b38903853cdd40093da1ab1618ac4b5e55"
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
 digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."raze-flasher-board.toolchain.cargo"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/cargo-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:d7674918d28093097614cd9728b6ca60db9ea3038f640f0bd1e9a4188c7568ce"
+
+[source."raze-flasher-board.toolchain.rustc"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rustc-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:77171ba2a0345fdf2abc4fedda55d6de078dae7a68527c28be8c77dcc9604bd5"
+
+[source."raze-flasher-board.toolchain.std.x86_64-unknown-linux-gnu"]
+kind = "download"
+url = "https://static.rust-lang.org/dist/rust-std-1.99.0-x86_64-unknown-linux-gnu.tar.xz"
+digest = "sha256:3e58dff2d0b72196b5ea4e90536e174d400de88564a52694686b81e091169933"
 
 [source."raze.linux"]
 kind = "git"

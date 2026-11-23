@@ -1,6 +1,10 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 08e71181 (move 13, 2026-11-22, the coordinator's rev): Gaia next where a Rust build's toolchain is a pinned
+# source ([sources.toolchain] rust 1.99.0 + targets, rustc/cargo/std by digest from static.rust-lang.org laid out as
+# one sysroot in the store), never the host's rustup; a Rust build without one is refused. Every builder = "rust"
+# component gets the source in the same commit. Before: b5d7b99f.
 # Moved to b5d7b99f (pin move 11, 2026-11-22, the coordinator's rev): Gaia next with the board QEMU profile's firmware
 # mailbox stand-in (dfff04f0: /dev/vcio takes the RPIBOOT order 0x0003808b and the boot count set/get) and the ROCK 5C
 # example (b5d7b99f; no node raze-base uses changed). Before: 1ae21b98.
@@ -41,4 +45,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "b5d7b99fba2be2889e87590ec3a36ea7187b68ca"
+commit = "08e71181244945e02a1295e6b2c640374d3f69f8"

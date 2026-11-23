@@ -17,6 +17,12 @@ description = "the bcm2712 flasher's lemnos-way-back (Lemnos a6251ecf, service p
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "a6251ecfb815752880f399e4e137634d022d4a2d"  # Lemnos next: WAY-BACK-TOOL, BOOTFILES-OWNER, TICK-BOUND, TRIAL-COUNT; coordinator 2026-11-22, pin move 11
 
+# The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
+# lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).
+[sources.toolchain]
+rust = "1.99.0"
+targets = ["aarch64-unknown-linux-musl"]
+
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"

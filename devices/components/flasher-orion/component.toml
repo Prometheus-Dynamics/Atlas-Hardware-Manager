@@ -15,6 +15,12 @@ description = "Orion for the bcm2712 flasher: orion-bin as comm core and node lo
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
 ref = "3f60576c45ab49222b4eea095432469da6ca193d"  # Orion next, wire level 6
 
+# The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
+# lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).
+[sources.toolchain]
+rust = "1.99.0"
+targets = ["aarch64-unknown-linux-musl"]
+
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"

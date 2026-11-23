@@ -9,6 +9,12 @@ description = "Example Rust component (fixture)"
 [sources.src]
 path = "src"
 
+# The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
+# lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).
+[sources.toolchain]
+rust = "1.99.0"
+targets = ["aarch64-unknown-linux-musl"]
+
 [sources.root]
 image = "docker.io/library/debian:trixie-slim"
 platform = "host"
