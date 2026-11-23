@@ -1,0 +1,31 @@
+# This board's Orion name from its serial: <prefix>-<last 8 serial digits>, so every board of a product answers with its
+# own name (Atlas shows it; before this every Raze answered "board"). The script, its unit, and a drop-in on each of
+# Orion's two units. The prefix is the product's: a product installs /etc/orion/node-name.conf (prefix=<word>).
+# The serial is read as lemnos0-address reads it. scripts/check-orion-node-name.sh tests the script off the board.
+version = 1
+name = "orion-node-name"
+description = "This board's Orion name from its serial (ORION_NODE_NAME at boot): the script, its unit, and drop-ins on orion-comm and orion-node"
+
+[[install]]
+from = { file = "files/orion-node-name" }
+to = "/usr/lib/orion/orion-node-name"
+mode = "0755"
+
+[[install]]
+from = { file = "files/orion-node-name.service" }
+to = "/etc/systemd/system/orion-node-name.service"
+mode = "0644"
+
+[[install]]
+from = { file = "files/30-node-name.conf" }
+to = "/etc/systemd/system/orion-comm.service.d/30-node-name.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/30-node-name.conf" }
+to = "/etc/systemd/system/orion-node.service.d/30-node-name.conf"
+mode = "0644"
+
+[[services]]
+unit = "orion-node-name.service"
+enable = true

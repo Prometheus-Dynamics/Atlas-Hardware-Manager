@@ -42,6 +42,7 @@ wired-ethernet = "../../components/wired-ethernet/component.toml"
 # rpi-dtmerge: a host tool for boot-partition --verify (M38); not built until a run names it (its component.toml).
 rpi-dtmerge = "../../components/rpi-dtmerge/component.toml"
 orion = "../../components/orion/component.toml"
+orion-node-name = "../../components/orion-node-name/component.toml"
 orion-recovery = "../../components/orion-recovery/component.toml"
 # The way in over SSH (Orion's, on lemnos0) and the bench's root comm core (bench only: a product image leaves it out).
 raze-orion-ssh = "../../components/raze-orion-ssh/component.toml"
@@ -52,7 +53,7 @@ bench-trial-deadman = "../../components/bench-trial-deadman/component.toml"
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "lemnos-orion-slots-files", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "wired-ethernet", "orion", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
+components = ["lemnos", "lemnos-module", "lemnosd", "lemnos-restart", "lemnos-ctl", "lemnos-orion", "lemnos-orion-slots-files", "raze-lemnos-board", "raze-base-files", "lemnos0-addressing", "wired-ethernet", "orion", "orion-node-name", "raze-orion-ssh", "bench-comm-root", "bench-trial-deadman"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot-disk"

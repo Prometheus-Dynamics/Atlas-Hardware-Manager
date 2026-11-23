@@ -48,3 +48,24 @@ mode = "0644"
 from = { file = "files/30-security-console.conf" }
 to = "/etc/systemd/system/autovt@.service.d/30-security-console.conf"
 mode = "0644"
+
+# The product's Orion name prefix (orion-node-name): every Raze answers as raze-<last 8 serial digits>.
+[[install]]
+from = { file = "files/orion-node-name.conf" }
+to = "/etc/orion/node-name.conf"
+mode = "0644"
+
+# The journal on the data partition: the bind of /data/journal onto /var/log/journal, before the flush.
+[[install]]
+from = { file = "files/board-journal" }
+to = "/usr/lib/lemnos/board-journal"
+mode = "0755"
+
+[[install]]
+from = { file = "files/board-journal.service" }
+to = "/etc/systemd/system/board-journal.service"
+mode = "0644"
+
+[[services]]
+unit = "board-journal.service"
+enable = true

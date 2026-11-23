@@ -1,0 +1,15 @@
+# This board's Orion name from its serial (orion-node-name): written once at boot, before the comm core and the node
+# logic start. If it fails the unit shows failed with its reason, and Orion keeps orion.conf's name.
+[Unit]
+Description=Orion: this board's name from its serial
+DefaultDependencies=no
+After=local-fs.target
+Before=orion-comm.service orion-node.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/lib/orion/orion-node-name
+
+[Install]
+WantedBy=multi-user.target

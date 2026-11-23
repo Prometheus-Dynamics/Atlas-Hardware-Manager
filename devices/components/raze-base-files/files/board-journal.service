@@ -1,0 +1,17 @@
+# The journal on the data partition (board-journal): /var/log/journal is a bind of /data/journal, made before
+# systemd-journal-flush moves the boot's journal out of /run. Only with the board's stable machine id (the script
+# checks /etc/machine-id is slot-init's bind and says so when it is not; the condition below skips the unit then).
+[Unit]
+Description=Board: the journal on the data partition
+DefaultDependencies=no
+After=local-fs.target
+Before=systemd-journal-flush.service
+ConditionPathIsMountPoint=/etc/machine-id
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/lemnos/board-journal
+
+[Install]
+WantedBy=sysinit.target

@@ -164,6 +164,11 @@ if [ -f scripts/check-wired-ethernet.py ]; then
   step "wired ethernet self-test" python3 scripts/check-wired-ethernet.py --self-test
 fi
 
+# The board's small boot scripts (the Orion name from the serial, the journal's bind), run against made-up inputs.
+if [ -f scripts/check-boot-scripts.sh ]; then
+  step "boot scripts" scripts/check-boot-scripts.sh
+fi
+
 # Every board name and marker at the pinned revs (docs/pin-move-checklist.md, step 15): the LOCK markers name the pin, the
 # board: citations name it, and the board-facing constants are cited. Its own fixtures run first.
 if [ -f scripts/check-board-names.sh ]; then

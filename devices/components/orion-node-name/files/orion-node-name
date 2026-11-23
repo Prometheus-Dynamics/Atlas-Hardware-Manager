@@ -1,0 +1,50 @@
+#!/bin/sh
+# orion-node-name: this board's Orion name, from its serial, so two boards of one product never answer with the same
+# name. Runs at boot before the comm core and the node logic (orion-node-name.service) and writes
+# /run/orion-node-name/node-name.env with ORION_NODE_NAME=<prefix>-<last 8 serial digits>. Both units read it through
+# EnvironmentFile=- (drop-ins 30-node-name.conf); Orion takes ORION_* over orion.conf, whose node.name stays the
+# fallback. The prefix is the product's (/etc/orion/node-name.conf, prefix=<word>).
+# If the serial cannot be read it writes NOTHING (and removes any old file), says why in one sentence and exits 1, so
+# the unit shows failed and the board keeps orion.conf's name. No name is invented.
+# The serial is read as lemnos0-address reads it (the scheme Atlas uses): NUL and surrounding whitespace dropped, all
+# hex, at least 8 digits, the last 8 lowercased. Overrides for the off-board check (scripts/check-orion-node-name.sh):
+# ORION_NODE_NAME_CONF, ORION_NODE_NAME_SERIAL, ORION_NODE_NAME_DIR.
+set -u
+
+CONF=${ORION_NODE_NAME_CONF:-/etc/orion/node-name.conf}
+SERIAL=${ORION_NODE_NAME_SERIAL:-/proc/device-tree/serial-number}
+DIR=${ORION_NODE_NAME_DIR:-/run/orion-node-name}
+
+fail() {
+	echo "orion-node-name: $*" >&2
+	rm -f "$DIR/node-name.env"
+	exit 1
+}
+
+[ -r "$CONF" ] || fail "the name file $CONF cannot be read: orion.conf's name is kept"
+prefix=
+while IFS='=' read -r key value || [ -n "$key" ]; do
+	case "$key" in prefix) prefix=$value ;; esac
+done < "$CONF"
+# Orion's name rule (orion_types names.rs): letters, digits and . _ - : only, at most 63 bytes. The prefix keeps to
+# letters, digits and -, and at most 54 bytes, so the whole name always passes.
+case "$prefix" in '' | *[!0-9A-Za-z-]*) fail "the name file gives no usable prefix (letters, digits and - only): orion.conf's name is kept" ;; esac
+[ "${#prefix}" -le 54 ] || fail "the name file's prefix is longer than 54 bytes: orion.conf's name is kept"
+
+[ -r "$SERIAL" ] || fail "the board serial $SERIAL cannot be read: orion.conf's name is kept"
+s=$(tr -d '\000' < "$SERIAL") || fail "the board serial $SERIAL cannot be read: orion.conf's name is kept"
+while :; do
+	case "$s" in
+	[[:space:]]*) s=${s#?} ;;
+	*[[:space:]]) s=${s%?} ;;
+	*) break ;;
+	esac
+done
+case "$s" in '' | *[!0-9A-Fa-f]*) fail "the board serial is not hex: orion.conf's name is kept" ;; esac
+[ "${#s}" -ge 8 ] || fail "the board serial has fewer than 8 hex digits: orion.conf's name is kept"
+s8=$(printf '%s' "$s" | tr 'A-F' 'a-f')
+s8=${s8#"${s8%????????}"}
+
+mkdir -p "$DIR" || fail "$DIR cannot be made: orion.conf's name is kept"
+printf 'ORION_NODE_NAME=%s-%s\n' "$prefix" "$s8" > "$DIR/node-name.env.tmp" &&
+	mv "$DIR/node-name.env.tmp" "$DIR/node-name.env" || fail "$DIR/node-name.env cannot be written: orion.conf's name is kept"

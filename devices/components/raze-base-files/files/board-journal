@@ -1,0 +1,53 @@
+#!/bin/sh
+# board-journal: the journal on the data partition, so it outlives a reboot. Runs at boot after local-fs.target and
+# before systemd-journal-flush.service (board-journal.service), which moves /run's journal to /var/log/journal.
+# /var is RAM and the root read-only, so /var/log/journal is a bind of /data/journal.
+# The journal's directory is named by the machine id, so the bind is made only when slot-init has bound the board's
+# stable id over /etc/machine-id; with a transient id each boot would start a new directory on /data. Then nothing is
+# bound, the journal stays in /run for this boot, and this says so.
+# It refuses a /data/journal that is a symlink (a link could point the journal anywhere on the board), says why, and
+# binds nothing. Overrides for the off-board check: BOARD_JOURNAL_DATA, BOARD_JOURNAL_VAR, BOARD_JOURNAL_ID,
+# BOARD_JOURNAL_MOUNTINFO.
+set -u
+
+DATA=${BOARD_JOURNAL_DATA:-/data/journal}
+VAR=${BOARD_JOURNAL_VAR:-/var/log/journal}
+ID=${BOARD_JOURNAL_ID:-/etc/machine-id}
+
+MOUNTINFO=${BOARD_JOURNAL_MOUNTINFO:-/proc/self/mountinfo}
+
+say() { echo "board-journal: $*" >&2; }
+
+# Whether a path is a mount point: its own line in mountinfo (field 5). The image has no mountpoint program.
+is_mount() {
+	while read -r _id _parent _dev _root point _rest; do
+		[ "$point" = "$1" ] && return 0
+	done < "$MOUNTINFO"
+	return 1
+}
+
+if ! is_mount "$ID"; then
+	say "the machine id is not the board's (slot-init did not bind $ID): nothing is bound, the journal stays in RAM for this boot"
+	exit 0
+fi
+if [ -L "$DATA" ]; then
+	say "$DATA is a symlink: refused, nothing is bound, the journal stays in RAM for this boot"
+	exit 1
+fi
+if is_mount "$VAR"; then
+	say "$VAR is already a mount: left as it is"
+	exit 0
+fi
+install -d -m 2755 -o root -g systemd-journal "$DATA" || { say "$DATA cannot be made: nothing is bound"; exit 1; }
+# install -d leaves an existing directory's owner and mode alone on some versions: set both every boot.
+chown root:systemd-journal "$DATA" && chmod 2755 "$DATA" || { say "$DATA cannot be set to root:systemd-journal 2755: nothing is bound"; exit 1; }
+[ -L "$DATA" ] && { say "$DATA became a symlink: refused, nothing is bound"; exit 1; }
+mkdir -p "$VAR" || { say "$VAR cannot be made: nothing is bound"; exit 1; }
+mount --bind "$DATA" "$VAR" || { say "$DATA cannot be bound onto $VAR: the journal stays in RAM for this boot"; exit 1; }
+# One id, one directory: another id's directory means a boot ran with a different id. Said, not removed.
+id=$(cat "$ID")
+for d in "$DATA"/*; do
+	[ -d "$d" ] || continue
+	case "${d##*/}" in "$id") ;; *) say "another machine id's journal is in $DATA (${d##*/}): kept, not read by this boot" ;; esac
+done
+say "the journal is kept on the data partition ($DATA on $VAR, machine id $id)"
