@@ -91,7 +91,7 @@ mod tests {
         head[510] = 0x55;
         head[511] = 0xAA;
         head[54..62].copy_from_slice(b"FAT16   ");
-        // The real Raze boot partition: eleven NUL bytes, no label.
+        // A real boot partition as a board's build writes it today: eleven NUL bytes, no label.
         assert_eq!(
             probe(&head),
             Found {

@@ -10,7 +10,7 @@
 //! soon as the data partition is spooled and every other partition has been looked at: the tail
 //! of the disk is not decoded. What protects an install does not depend on the tail: the slot's
 //! file and boot files are checked against the manifest's digests here, the manifest is signed,
-//! and the board verifies it. A product image is a whole disk (15.6 GB for the Raze, nearly all
+//! and the board verifies it. A product image is a whole disk (15.6 GB for one board's, nearly all
 //! of it the unwritten rest of the data partition), so decoding the tail took about a minute.
 //!
 //! The data partition is kept: the slot files are read from it with random access

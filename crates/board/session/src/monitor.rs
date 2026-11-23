@@ -962,7 +962,7 @@ impl Keeper {
             self.refuse_waiting(down);
             // A session that stays down past the board's lease has lapsed, whether or not the
             // board ever answers again: a holder that waits must hear it now, not at a reconnect
-            // that may never come (Raze #2, 2026-11-23: a 300 s hold over a link that went after
+            // that may never come (seen on a board, 2026-11-23: a 300 s hold over a link that went after
             // 40 s ended "0 lapses"). Only for a board whose bridge this session has seen.
             if self.device.is_some() {
                 self.check_lapse();
