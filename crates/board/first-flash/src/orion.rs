@@ -68,6 +68,7 @@ fn sort(error: ActionError) -> CallError {
         | ActionError::Unknown { .. }
         | ActionError::NotFinished { .. }
         | ActionError::Unconfirmed { .. } => CallError::Lost(words),
+        ActionError::Failed(_) => CallError::Ended(words),
         _ => CallError::Refused(words),
     }
 }
@@ -321,6 +322,24 @@ mod tests {
         ));
         assert!(matches!(
             sort(ActionError::BadArguments("x".into())),
+            CallError::Refused(_)
+        ));
+    }
+
+    #[test]
+    fn a_run_that_ended_as_failed_is_told_apart_from_a_refusal() {
+        use atlas_session::{Failure, FailureKind};
+        let gone = Failure::new(
+            FailureKind::Lemnos,
+            Some(0),
+            "the program that runs it went away",
+        );
+        assert!(matches!(
+            sort(ActionError::Failed(gone.clone())),
+            CallError::Ended(_)
+        ));
+        assert!(matches!(
+            sort(ActionError::Refused(gone)),
             CallError::Refused(_)
         ));
     }

@@ -26,6 +26,7 @@ mod board;
 mod catalog;
 mod error;
 mod jobs;
+mod restart;
 
 pub use board::{
     BoardActions, DIRECT_WAIT, Done, Followed, Issued, LEASE_ENDED_PREFIX, POLL, Progress,
@@ -34,3 +35,4 @@ pub use board::{
 pub use catalog::{Action, Arg, ArgKind, Catalog, Reported, Route};
 pub use error::{ActionError, BUSY_CODE};
 pub use jobs::{ActionJobs, CANCEL_CONFIRM, CancelState, KIND};
+pub use restart::{Restart, follow_restart, restart_in_doubt};

@@ -31,13 +31,16 @@ pub enum CallError {
     Lost(String),
     /// The board answered no, or its answer is not one Atlas reads. It will not change by itself.
     Refused(String),
+    /// It was sent and ended as failed on the board. A restart ends the run that asked for it this
+    /// way too ("the program that runs it went away"), so for a restart the board's state decides.
+    Ended(String),
 }
 
 impl CallError {
     fn into_step(self) -> StepError {
         match self {
             Self::NotSent(words) | Self::Lost(words) => StepError::Again(words),
-            Self::Refused(words) => StepError::Refused(words),
+            Self::Refused(words) | Self::Ended(words) => StepError::Refused(words),
         }
     }
 }
@@ -176,9 +179,13 @@ impl<B: FlasherBoard> FirstFlash for BridgeFlash<B> {
     async fn reboot(&self, say: &Say<'_>) -> Result<(), StepError> {
         match self.board.call(REBOOT, &[], false, &|_, _| {}).await {
             Ok(_) => Ok(()),
-            // A restart takes the session with it: an answer lost after the request went is the restart.
-            Err(CallError::Lost(words)) => {
-                say(format!("the board went away, as a restart does: {words}"));
+            // A restart takes the session, and the program that ran it, with it: an answer lost or
+            // ended as failed after the request went is the restart. It is not asked again (that
+            // would restart the new system); the watch of the boot that follows decides.
+            Err(CallError::Lost(words) | CallError::Ended(words)) => {
+                say(format!(
+                    "the board's answer went with the restart ({words}); its boot is watched"
+                ));
                 Ok(())
             }
             Err(error) => Err(error.into_step()),

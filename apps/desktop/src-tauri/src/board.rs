@@ -17,11 +17,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use atlas_actions::{Action, ActionError, BoardActions, Reported as ActionReported, Route};
+use atlas_actions::{
+    Action, ActionError, BoardActions, Reported as ActionReported, Restart, Route, follow_restart,
+    restart_in_doubt,
+};
 use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
 use atlas_jobs::{JobId, JobTiming};
+use atlas_session::lemnos::actions::REBOOT_REBOOT as REBOOT_ACTION;
 use atlas_session::{Handle, Presence};
 use atlas_slots::{Resolution, SlotList, Stage, TrialLast};
 use atlas_topics::description::DescriptionState;
@@ -673,10 +677,26 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 let entry = catalog
                     .get(&action)
                     .ok_or_else(|| format!("this board does not offer {action}"))?;
-                let done = actions
-                    .run(entry, &[])
-                    .await
-                    .map_err(|e| action_words(&e))?;
+                let asked = (actions.handle().session(), Instant::now());
+                let done = match actions.run(entry, &[]).await {
+                    Ok(done) => done,
+                    // A restart takes its own answer with it: the board's state decides.
+                    Err(error) if action == REBOOT_ACTION && restart_in_doubt(&error) => {
+                        let handle = actions.handle();
+                        let restart =
+                            follow_restart(handle, asked.0, asked.1, handle.lease_period()).await;
+                        let words = format!(
+                            "{} (its answer went with the restart: {})",
+                            restart.words(),
+                            action_words(&error)
+                        );
+                        return match restart {
+                            Restart::Back { .. } => Ok(words),
+                            Restart::Stayed(_) | Restart::Unwatched => Err(words),
+                        };
+                    }
+                    Err(error) => return Err(action_words(&error)),
+                };
                 let output = String::from_utf8_lossy(&done.output).trim().to_owned();
                 Ok(if output.is_empty() {
                     done.detail

@@ -217,6 +217,12 @@ async fn a_restart_that_takes_the_session_is_the_restart() {
     for (answer, ok) in [
         (Ok(Vec::new()), true),
         (Err(CallError::Lost("the session ended".into())), true),
+        (
+            Err(CallError::Ended(
+                "the program that runs it went away".into(),
+            )),
+            true,
+        ),
         (Err(CallError::NotSent("not connected".into())), false),
         (Err(CallError::Refused("NOT_SUPPORTED".into())), false),
     ] {
