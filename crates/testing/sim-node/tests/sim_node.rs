@@ -74,9 +74,12 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
 /// The name a test pushes its bundle under.
 const BUNDLE: &str = "bundle.tar";
 
-/// Pushes `bytes` as a file into the incoming directory, as a sender does over Orion.
+/// The device whose inbox a bundle is pushed into: the one that carries the slots.
+const SLOTS_DEVICE: &str = "slots";
+
+/// Pushes `bytes` as a file into the slots device's inbox, as a sender does over Orion.
 fn push(orion: &Orion, name: &str, bytes: &[u8]) {
-    let destination = format!("{}{name}", names::INCOMING);
+    let destination = format!("{}{name}", names::inbox(SLOTS_DEVICE));
     orion
         .files()
         .push(&destination, &mut Cursor::new(bytes), |_, _| {})
@@ -458,7 +461,7 @@ fn cancel_discards_the_pushed_file_and_the_install() {
             .committed
             .lock()
             .expect("the shelf")
-            .contains_key(&format!("{}{BUNDLE}", names::INCOMING)),
+            .contains_key(&format!("{}{BUNDLE}", names::inbox(SLOTS_DEVICE))),
         "the pushed file is removed when the job ends"
     );
 }
@@ -1391,5 +1394,49 @@ fn a_node_started_without_a_port_listens_outside_the_ephemeral_range() {
     assert!(
         port < range.0 || port > range.1,
         "the node listens on {port}, inside the ephemeral range {range:?}"
+    );
+}
+
+/// A file pushed outside the bridge's sink (`lemnos/<device>/`) is kept by the node and never reaches
+/// the device: an install of that name is refused NOT_FOUND, with the words lemnosd gives, and nothing
+/// is installed.
+#[test]
+fn a_push_outside_the_bridge_sink_stays_on_the_node_and_its_install_is_not_found() {
+    let node = start("outside");
+    let orion = node.connect("outside").expect("a session");
+    let bundle = bundle_for("slot-2", "2.0.0", None);
+    ok(
+        &orion,
+        names::SLOTS_ACCEPT,
+        bundle.len().to_string().as_bytes(),
+    );
+    let outside = format!("slots/.incoming/{BUNDLE}");
+    orion
+        .files()
+        .push(&outside, &mut Cursor::new(&bundle), |_, _| {})
+        .expect("the file is pushed");
+    assert!(
+        node.shelf()
+            .committed
+            .lock()
+            .expect("the shelf")
+            .contains_key(&outside),
+        "the node keeps the file it was pushed to"
+    );
+    let finished = refused(
+        &orion,
+        names::SLOTS_INSTALL_FILE,
+        format!("{BUNDLE} false false").as_bytes(),
+    );
+    assert_eq!(finished.outcome, Outcome::Rejected);
+    assert!(
+        finished.detail.contains("the job could not be started"),
+        "{}",
+        finished.detail
+    );
+    assert_eq!(node.runs_started(names::SLOTS_INSTALL_FILE), 1);
+    assert!(
+        slot_missing(&list(&orion), "slot-2"),
+        "nothing was installed"
     );
 }

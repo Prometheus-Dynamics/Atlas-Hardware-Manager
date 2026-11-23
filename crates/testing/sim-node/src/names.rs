@@ -133,7 +133,7 @@ pub const HELLO: &[&str] = &[
 // system.slots/1. Arguments are UTF-8 words, separated by spaces, as Lemnos's bridge takes them
 // (`lemnos_wire::text::encode_args`): numbers in decimal, bools as true/false (or on/off, 1/0),
 // strings as one word. A bundle never goes as an argument: `accept <size>` checks there is room,
-// the bundle is pushed as a file (Orion's `Files::push`) into `INCOMING`, and
+// the bundle is pushed as a file (Orion's `Files::push`) into the device's inbox (`inbox`), and
 // `install_file <name> <pin> <keep_old>` installs it as a long job. Direct socket callers
 // (`install` + `write`) are not on the Orion surface.
 pub const SLOTS_LIST: &str = "system.slots.list";
@@ -148,9 +148,18 @@ pub const SLOTS_SET_KEEP: &str = "system.slots.set-keep";
 /// `info` (Lemnos I5k): a JSON text reply with `last_attempt`, whose `boot` is the board's boot id.
 pub const SLOTS_INFO: &str = "system.slots.info";
 
-/// The directory a pushed bundle lands in, relative to the data partition. The driver owns it:
-/// it is cleared when the node starts, and a file is removed when its install job ends.
-pub const INCOMING: &str = "slots/.incoming/";
+/// What every file destination the bridge takes starts with (`lemnos/<device>/<name>`). The bridge
+/// takes a file only under it, into the inbox of the device the destination names: Lemnos
+/// service/orion/src/files.rs:38, `DESTINATION_PREFIX` (the same at a6251ecf). A file pushed anywhere
+/// else is kept by the node and never reaches the device.
+pub const SINK_PREFIX: &str = "lemnos/";
+
+/// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`. The driver
+/// owns it: it is cleared when the node starts, and a file is removed when its install job ends.
+#[must_use]
+pub fn inbox(device: &str) -> String {
+    format!("{SINK_PREFIX}{device}/")
+}
 
 /// Whether `name` is one of Lemnos's own actions (the slot and reboot surface).
 #[must_use]

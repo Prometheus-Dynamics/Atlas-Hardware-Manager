@@ -36,6 +36,26 @@ use orion::types::ResourceName;
 pub const RESOURCE_PREFIX: &str = "lemnos.";
 /// The kind a device resource is written as.
 pub const RESOURCE_KIND: &str = "lemnos.device";
+/// What every file destination the bridge takes starts with: `lemnos/<device>/<name>`. The bridge
+/// takes a file only under this prefix, into the inbox of the device it names; a file pushed anywhere
+/// else is kept by the node and never reaches the device (Lemnos service/orion/src/files.rs:38,
+/// `DESTINATION_PREFIX`; the same at a6251ecf).
+pub const SINK_PREFIX: &str = "lemnos/";
+
+/// The destination of a file pushed into device `device`'s inbox: `lemnos/<device>/`, with the file
+/// name after it.
+#[must_use]
+pub fn inbox(device: &str) -> String {
+    format!("{SINK_PREFIX}{device}/")
+}
+
+/// The device a device resource names: `lemnos.<device>` is `<device>`.
+#[must_use]
+pub fn device_of(resource: &str) -> Option<&str> {
+    resource
+        .strip_prefix(RESOURCE_PREFIX)
+        .filter(|device| !device.is_empty())
+}
 /// The bare word `describe` takes: no arguments, and the device's description comes back as text.
 pub const DESCRIBE: &str = "describe";
 /// How long a describe may take before it is asked to stop. Reason: one round trip to lemnosd.

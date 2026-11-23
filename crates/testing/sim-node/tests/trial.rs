@@ -45,9 +45,11 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
 }
 
 const BUNDLE: &str = "bundle.tar";
+/// The device whose inbox a bundle is pushed into: the one that carries the slots.
+const SLOTS_DEVICE: &str = "slots";
 
 fn push(orion: &Orion, name: &str, bytes: &[u8]) {
-    let destination = format!("{}{name}", names::INCOMING);
+    let destination = format!("{}{name}", names::inbox(SLOTS_DEVICE));
     orion
         .files()
         .push(&destination, &mut Cursor::new(bytes), |_, _| {})

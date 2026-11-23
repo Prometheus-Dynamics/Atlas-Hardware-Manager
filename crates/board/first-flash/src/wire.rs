@@ -8,8 +8,8 @@
 
 use atlas_flash_flow::{ImagePlan, Stream};
 
-/// The bridge's file prefix for a device that takes files.
-pub const SINK_PREFIX: &str = "lemnos/";
+/// The bridge's file prefix for a device that takes files (the session's one, shared with the slot install).
+pub const SINK_PREFIX: &str = atlas_session::lemnos::SINK_PREFIX;
 /// The stream name of an xz image, as the flasher's `LEMNOS_ORION_STREAMS` gives it.
 pub const XZ_NAME: &str = "image.img.xz";
 /// The stream name of a raw image.

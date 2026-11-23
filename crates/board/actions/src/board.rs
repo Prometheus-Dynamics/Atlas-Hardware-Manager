@@ -161,13 +161,15 @@ enum Missing {
     Unanswered(atlas_session::Failure),
 }
 
-/// `Err` when nothing is to be sent: no device carries the contract, or there are no devices.
+/// `Err` when nothing is to be sent: no device carries the contract, or there are no devices. With
+/// `device`, the call goes to that device's resource and the contract is not looked up again.
 fn aim(
     orion: &Orion,
     session: u64,
     name: &str,
     encoded: &[u8],
     node: &NodeName,
+    device: Option<&str>,
 ) -> Result<Result<Aim, Missing>, OrionError> {
     let Some((contract, method)) = lemnos::method_of(name) else {
         return Ok(Ok(Aim {
@@ -176,12 +178,15 @@ fn aim(
             args: encoded.to_vec(),
         }));
     };
-    let resource = match lemnos::resource_cached(orion, session, &contract)? {
-        lemnos::Lookup::Found(resource) => resource,
-        lemnos::Lookup::NoContract => return Ok(Err(Missing::Contract(contract))),
-        lemnos::Lookup::NoDevices => return Ok(Err(Missing::NoDevices)),
-        lemnos::Lookup::NotYet(text) => return Ok(Err(Missing::NotYet(text))),
-        lemnos::Lookup::Unanswered(words) => return Ok(Err(Missing::Unanswered(words))),
+    let resource = match device {
+        Some(device) => format!("{}{device}", lemnos::RESOURCE_PREFIX),
+        None => match lemnos::resource_cached(orion, session, &contract)? {
+            lemnos::Lookup::Found(resource) => resource,
+            lemnos::Lookup::NoContract => return Ok(Err(Missing::Contract(contract))),
+            lemnos::Lookup::NoDevices => return Ok(Err(Missing::NoDevices)),
+            lemnos::Lookup::NotYet(text) => return Ok(Err(Missing::NotYet(text))),
+            lemnos::Lookup::Unanswered(words) => return Ok(Err(Missing::Unanswered(words))),
+        },
     };
     // A resource the node lists under the bridge's prefix is a name the bridge can have.
     let Ok(call) = lemnos::method_call(&resource, &contract, &method, encoded) else {
@@ -295,18 +300,75 @@ impl BoardActions {
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
         refuse_unsplit(action, words)?;
         args::check(action, words)?;
-        self.start_encoded(&action.name, args::encode(words)).await
+        self.start_encoded(&action.name, args::encode(words), None)
+            .await
     }
 
-    /// Starts `name` with `encoded` arguments, detached. The arguments must already be checked.
+    /// As [`BoardActions::start`], on device `device` (the id a [`BoardActions::device`] lookup
+    /// gave): the start goes to that device's resource, so a push and its install name one device.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::start`].
+    pub async fn start_on(
+        &self,
+        action: &Action,
+        words: &[String],
+        device: &str,
+    ) -> Result<Issued, ActionError> {
+        refuse_unsplit(action, words)?;
+        args::check(action, words)?;
+        self.start_encoded(&action.name, args::encode(words), Some(device))
+            .await
+    }
+
+    /// The id of the device that carries `contract` now (the id is the `<device>` of its
+    /// `lemnos.<device>` resource: a push into its inbox is `lemnos/<device>/`). Nothing is sent to
+    /// the device for the lookup beyond the description the session keeps.
+    ///
+    /// # Errors
+    ///
+    /// [`ActionError::NoContract`], [`ActionError::NoDevices`], [`ActionError::NotYet`] or
+    /// [`ActionError::Refused`]/[`ActionError::NotAnswering`] as [`BoardActions::run`] gives them; the
+    /// lookup itself sends nothing that is not counted in [`BoardActions::start`].
+    pub async fn device(&self, contract: &str) -> Result<String, ActionError> {
+        self.node_name()?;
+        let session = self.handle.session();
+        let asked = contract.to_owned();
+        let found = self
+            .handle
+            .with_bridge(move |orion| lemnos::resource_cached(orion, session, &asked))
+            .await
+            .map_err(|error| match error {
+                SessionError::Gone(reason) => ActionError::NotAnswering(reason),
+                SessionError::Failed(failure) => ActionError::NotAnswering(failure.to_string()),
+            })?;
+        let missing = match found {
+            lemnos::Lookup::Found(resource) => {
+                return lemnos::device_of(&resource)
+                    .map(str::to_owned)
+                    .ok_or_else(|| ActionError::NoContract(contract.to_owned()));
+            }
+            lemnos::Lookup::NoContract => Missing::Contract(contract.to_owned()),
+            lemnos::Lookup::NoDevices => Missing::NoDevices,
+            lemnos::Lookup::NotYet(text) => Missing::NotYet(text),
+            lemnos::Lookup::Unanswered(failure) => Missing::Unanswered(failure),
+        };
+        Err(not_sent(missing))
+    }
+
+    /// Starts `name` with `encoded` arguments, detached, on `device` when given (else on the device
+    /// that carries the name's contract). The arguments must already be checked.
     pub(crate) async fn start_encoded(
         &self,
         name: &str,
         encoded: Vec<u8>,
+        device: Option<&str>,
     ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
         let started = name.to_owned();
+        let on = device.map(str::to_owned);
         // Read before the start is sent: a session that changes meanwhile makes the run look
         // older than it is, so a later use treats it as another session's (the safe side).
         let session = self.handle.session();
@@ -314,7 +376,8 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
-                let aimed = match aim(orion, session, &owned, &encoded, &node_name)? {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name, on.as_deref())?
+                {
                     Ok(aimed) => aimed,
                     Err(missing) => return Ok(Started::Missing(missing)),
                 };
@@ -600,7 +663,7 @@ impl BoardActions {
         let answered = self
             .handle
             .with_bridge(move |orion| {
-                let aimed = match aim(orion, session, &owned, &encoded, &node_name)? {
+                let aimed = match aim(orion, session, &owned, &encoded, &node_name, None)? {
                     Ok(aimed) => aimed,
                     Err(missing) => return Ok(Direct::Missing(missing)),
                 };

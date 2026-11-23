@@ -48,7 +48,7 @@ One builder makes all three: `SimNode::start_with(dir, &Kind, port)`. `SimNode::
 - **Slots over Orion** (`src/slots.rs`, `src/bundle.rs`, `src/model.rs`). The I5 rules of Lemnos's slot
   driver. A bundle goes as a file, never as an argument: `system.slots.accept <size>` checks there is room
   (ENOSPC) and that no install runs (BUSY); the sender pushes the bundle with Orion's file delivery into
-  `slots/.incoming/<name>` (the file receiver holds it on the shelf); then `system.slots.install-file
+  `lemnos/slots/<name>` (the bridge's sink for the slots device; the file receiver holds it on the shelf); then `system.slots.install-file
   <name> <pin> <keep_old>` is a long job. Its progress is bundle bytes over verify and unpack. The file is
   removed when the job ends, however it ends. A failed install means pushing again.
   `install` + `write` (direct socket callers in Lemnos) are not on the Orion surface.
@@ -89,7 +89,7 @@ hello topics are `hello.<fact>`.
 | C1 identify, reconnect | hello facts, `orion.node()`, the same port after a stop | the facts above; `start_with` on the port; `a_node_publishes...` test |
 | C2 readings, logs, hardware | topics `readings`, `hardware`, `logs` | readings with units `C`, `V`, `rpm`; description once; log lines |
 | C3 actions | `system.reboot.reboot` | answered through the `reboot` device's `call`; `remove_device("reboot")` is a board without one. `locate`, `self-test`, `set-clock`: not found (no board publishes them) |
-| C4 files, support bundle | file push to `slots/.incoming/...` | push resumes after a cut (`a_file_dropped_mid_transfer...`). `support-bundle`: not found |
+| C4 files, support bundle | file push to `lemnos/slots/...` | push resumes after a cut (`a_file_dropped_mid_transfer...`). `support-bundle`: not found |
 | C5 slots and updates | `system.slots.{list,accept,install-file,set-default,trial,confirm,remove,pin,set-keep}` | the I5 rules; `every_surface_method...` test |
 | C6 trial and confirm | `system.slots.trial`, `confirm`, `system.reboot.reboot` | an unconfirmed trial falls back and marks the slot failed; a confirmed one stays |
 | C7 board data | none | NOT simulated: `data.*` and `fs.*` are not found (no board publishes them) |

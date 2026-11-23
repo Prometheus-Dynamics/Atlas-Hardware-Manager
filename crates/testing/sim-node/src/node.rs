@@ -14,8 +14,8 @@
 //! - a loopback link proxy sits in front of the network port, so a connection can be cut
 //!   mid-transfer or held still. That is the only piece here that is not Orion's.
 //!
-//! A slot install over Orion is `accept <size>`, a file push of the bundle into
-//! [`names::INCOMING`] (the stub's file receiver holds it on the [`Shelf`]), then
+//! A slot install over Orion is `accept <size>`, a file push of the bundle into the device's inbox,
+//! [`names::inbox`] (the stub's file receiver holds it on the [`Shelf`]), then
 //! `install_file <name> <pin> <keep_old>`, a long job. The job's progress is bundle bytes over
 //! verify and unpack. The file is removed when the job ends, however it ends.
 //!
@@ -726,6 +726,8 @@ struct Install {
     call: u64,
     /// The caller that started it: its lease is kept while the install runs.
     caller: String,
+    /// The device whose inbox holds the bundle.
+    device: String,
     name: String,
     size: u64,
     done: u64,
@@ -994,6 +996,8 @@ impl Node {
         // action the node registered under its own name.
         let routed = crate::bridge::route(orion_name, &args);
         let device_run = routed.is_some();
+        // The device the run names (`lemnos.<device>.<verb>`): the inbox an install reads from.
+        let device = crate::bridge::split(orion_name).map_or("", |(id, _)| id);
         let (name, args): (String, Vec<u8>) = match &routed {
             Some(Ok(crate::bridge::Routed::Action { name, args })) => {
                 *lock(&self.shared.runs)
@@ -1074,7 +1078,7 @@ impl Node {
             }
             Behaviour::Answer if name == names::SLOTS_ACCEPT => self.accept(call, &args),
             Behaviour::Answer if name == names::SLOTS_INSTALL_FILE => {
-                self.install_start(call, caller, &args);
+                self.install_start(call, caller, device, &args);
             }
             behaviour @ (Behaviour::Answer | Behaviour::Slow(_)) => {
                 // One tick, or as many as the test asked this run to take (it says how far it is on
@@ -1129,9 +1133,10 @@ impl Node {
         }
     }
 
-    /// `system.slots.install-file <name> <pin> <keep_old>`: starts the long job that installs
-    /// the bundle pushed as `INCOMING/<name>`.
-    fn install_start(&mut self, call: u64, caller: &str, args: &[u8]) {
+    /// `system.slots.install-file <name> <pin> <keep_old>` on device `device`: starts the long job that
+    /// installs the bundle pushed into that device's inbox as `<name>`. A name not there is refused
+    /// NOT_FOUND, the way lemnosd refuses a start with no pushed file.
+    fn install_start(&mut self, call: u64, caller: &str, device: &str, args: &[u8]) {
         if self.install.is_some() {
             self.finish_status(call, &Status::new(code::BUSY, "an install is running"));
             return;
@@ -1157,13 +1162,13 @@ impl Node {
         let size = {
             let committed = lock_shelf(&self.board);
             committed
-                .get(&pushed(&name))
+                .get(&pushed(device, &name))
                 .map(|bytes| bytes.len() as u64)
         };
         let Some(size) = size else {
             self.finish_status(
                 call,
-                &Status::new(code::NOT_FOUND, format!("there is no pushed file {name}")),
+                &Status::new(code::NOT_FOUND, "the job could not be started"),
             );
             return;
         };
@@ -1179,6 +1184,7 @@ impl Node {
                 self.install = Some(Install {
                     caller: caller.to_owned(),
                     call,
+                    device: device.to_owned(),
                     name,
                     size,
                     done: 0,
@@ -1202,7 +1208,7 @@ impl Node {
         let Some(install) = self.install.take() else {
             return;
         };
-        let bytes = lock_shelf(&self.board).remove(&pushed(&install.name));
+        let bytes = lock_shelf(&self.board).remove(&pushed(&install.device, &install.name));
         let result = {
             let mut model = lock(&self.shared.model);
             let outcome = match bytes {
@@ -1243,7 +1249,7 @@ impl Node {
             .is_some_and(|install| install.call == call)
         {
             if let Some(install) = self.install.take() {
-                lock_shelf(&self.board).remove(&pushed(&install.name));
+                lock_shelf(&self.board).remove(&pushed(&install.device, &install.name));
             }
             lock(&self.shared.model).slots.cancelled();
             self.finish(
@@ -1412,18 +1418,18 @@ fn is_device_call(name: &str) -> bool {
     crate::bridge::split(name).is_some()
 }
 
-/// The path a pushed bundle is kept at on the shelf.
-fn pushed(name: &str) -> String {
-    format!("{}{name}", names::INCOMING)
+/// The path a bundle pushed into device `device`'s inbox is kept at on the shelf.
+fn pushed(device: &str, name: &str) -> String {
+    format!("{}{name}", names::inbox(device))
 }
 
 fn lock_shelf(board: &Board) -> MutexGuard<'_, std::collections::BTreeMap<String, Vec<u8>>> {
     lock(&board.shelf().committed)
 }
 
-/// Removes every pushed file the driver keeps.
+/// Removes every file the bridge keeps in a device inbox (the driver clears them when it starts).
 fn clear_incoming(board: &Board) {
-    lock_shelf(board).retain(|path, _| !path.starts_with(names::INCOMING));
+    lock_shelf(board).retain(|path, _| !path.starts_with(names::SINK_PREFIX));
 }
 
 /// The ending a Lemnos status gives a run, with the status's code (Lemnos M39, calls.rs
