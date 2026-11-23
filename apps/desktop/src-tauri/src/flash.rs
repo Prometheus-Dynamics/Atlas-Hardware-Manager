@@ -515,6 +515,8 @@ enum Image {
         raw_bytes: u64,
         /// The board the image was built for, from its slots.
         board: String,
+        /// The slots the image holds, read out of it in the same pass.
+        slots: Vec<String>,
         sha256: String,
         /// The signing record's key, when the file carries one. Atlas does not check it.
         signed_by: Option<String>,
@@ -918,7 +920,7 @@ async fn pick_image(core: &Core) -> CallResult {
     let flashes = core.flashes().clone();
     let picker = core.boards().picker();
     let picked = tokio::task::spawn_blocking(move || {
-        picker.and_then(|picker| picker.pick("Choose a first-flash image", &["xz", "img"]))
+        picker.and_then(|picker| picker.pick("Choose a first-flash image", &["flash", "xz", "img"]))
     })
     .await
     .map_err(|error| CallError(error.to_string()))?;
@@ -970,6 +972,7 @@ async fn pick_image(core: &Core) -> CallResult {
                 bytes,
                 raw_bytes: image.manifest.image_size(),
                 board: image.manifest.board().to_owned(),
+                slots: image.slots.clone(),
                 sha256: image.manifest.image_sha256().to_owned(),
                 signed_by: match &image.signature {
                     SignatureState::Unsigned => None,

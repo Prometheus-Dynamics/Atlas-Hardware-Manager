@@ -21,6 +21,13 @@ export function when(ms: number, now: number): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** `16:20` today, `Nov 12 16:20` before: a date and a time, as the mockup's recent flashes write it. */
+export function dayTime(ms: number, now: number): string {
+  const d = new Date(ms);
+  const hm = `${two(d.getHours())}:${two(d.getMinutes())}`;
+  return d.toDateString() === new Date(now).toDateString() ? hm : `${MONTHS[d.getMonth()]} ${d.getDate()} ${hm}`;
+}
+
 /** The time column of an event line: seconds for today, the day for older lines. */
 export function eventTime(ms: number, now: number): string {
   return new Date(ms).toDateString() === new Date(now).toDateString() ? clock(ms) : when(ms, now);

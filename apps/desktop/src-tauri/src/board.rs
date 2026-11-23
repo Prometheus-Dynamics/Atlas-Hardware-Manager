@@ -837,7 +837,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 return Err(CallError("this build has no way to choose a file".into()));
             };
             let chosen = tokio::task::spawn_blocking(move || {
-                picker.pick("Choose an OS image to install", &["xz", "img"])
+                picker.pick("Choose an OS image to install", &["flash", "xz", "img"])
             })
             .await
             .map_err(|error| CallError(error.to_string()))?;

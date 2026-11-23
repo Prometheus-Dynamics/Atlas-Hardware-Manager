@@ -20,10 +20,12 @@
   const disks = $derived(inventory().devices.filter((d) => d.presence === "online" && d.identity.state === "removable-disk"));
   const chosen = $derived(disks.find((d) => d.id === id) ?? (id === "" && disks.length === 1 ? disks[0] : undefined));
   const dev = (d: (typeof disks)[number]) => kindOf(d) || d.identity.address;
+  /** The disk's own bus: its USB port when it has one (a stick is not a card reader), else the
+   *  link that found it. */
   const bus = (d: (typeof disks)[number]) => {
-    const link = scan()?.links.find((l) => l.id === d.identity.link)?.label ?? "disk";
     const port = d.identity.attributes["usb-port"];
-    return `${link}${port ? ` · USB ${port}` : ""} · removable`;
+    const on = port ? `USB ${port}` : (scan()?.links.find((l) => l.id === d.identity.link)?.label ?? "disk");
+    return `${on} · removable`;
   };
   const writing = $derived(write?.status === "writing");
   /** The folder a chosen file is in, said beside its name. */
@@ -102,10 +104,12 @@
         <div class="empty-box"><div>No removable disk found. Insert a card or plug in a reader; it shows up here by itself.</div></div>
       </div>
     {:else}
-      <div class="pb flush tbl rows">
+      <!-- The header row stays where it is; only the disks scroll. -->
+      <div class="pb flush tbl" style="display:flex;flex-direction:column;flex:1;min-height:0">
         <div class="tr h" style="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px">
           <div></div><div>Disk</div><div>Device</div><div>Bus</div><div>Kind</div>
         </div>
+        <div class="rows">
         {#each disks as disk (disk.id)}
           {@const on = disk.id === chosen?.id}
           <div class="tr link" class:sel={on} role="radio" aria-checked={on} tabindex="0" data-disk={disk.id} style="grid-template-columns:18px minmax(0,1.2fr) 80px minmax(0,1fr) 110px" onclick={() => !writing && go("disk", disk.id)} onkeydown={(e) => e.key === "Enter" && !writing && go("disk", disk.id)}>
@@ -118,6 +122,7 @@
             <div><span class="chip info"><span class="dot info"></span>Removable</span></div>
           </div>
         {/each}
+        </div>
       </div>
     {/if}
     <div style="margin-top:auto;border-top:1px solid var(--hairline);padding:8px 10px;min-height:52px;min-width:0" data-foot={write ? write.status : confirming ? "confirm" : "idle"} data-phase={write?.phase}>

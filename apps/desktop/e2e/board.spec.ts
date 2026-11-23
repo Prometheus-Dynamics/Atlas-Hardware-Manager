@@ -19,7 +19,7 @@ test("the top bar says who the board is, and readings arrive and move", async ({
   const top = app.locator("header.top");
   await expect(top.locator(".crumb")).toHaveText("Devices /");
   await expect(top.locator(".chip.ok")).toHaveText("Running");
-  await expect(top.locator(".chip.neu")).toHaveText(["slot-4", "demo-os 2026.11.2", "USB 1-2", "127.0.0.1"]);
+  await expect(top.locator(".chip.neu")).toHaveText(["Slot 4", "demo-os 2026.11.2", "USB 1-2", "127.0.0.1"]);
   // Both controls keep their place. The board offers a restart, and no board offers a locate.
   await expect(top.getByRole("button")).toHaveText(["Locate", "Reboot"]);
   await expect(top.getByRole("button", { name: "Reboot" })).toBeEnabled();
@@ -28,13 +28,17 @@ test("the top bar says who the board is, and readings arrive and move", async ({
   await expect(tiles).toHaveCount(5);
   await expect(tiles.locator(".lbl")).toHaveText(["pressure", "temperature", "accel x", "accel y", "accel z"]);
   await expect(tiles.first().locator(".val small")).toHaveText("kPa");
+  // Units as a person writes them, and a foot of two facts: the highest value shown, and the limit or range.
+  await expect(tiles.nth(2).locator(".val small")).toHaveText("m/s²");
+  await expect(tiles.nth(1).locator(".foot")).toHaveText(/^max -?\d+\.\d · limit 45$/);
+  await expect(tiles.nth(2).locator(".foot")).toHaveText(/^max -?\d+\.\d · -20 to 20$/);
   // The sparkline grows as samples arrive, one a second, and the value is a number.
   const path = tiles.first().locator("svg.spark path").last();
   await expect(path).toBeVisible();
   const before = await path.getAttribute("d");
   await expect.poll(async () => path.getAttribute("d")).not.toBe(before);
-  await expect(tiles.first().locator(".val")).toHaveText(/^\d+(\.\d+)? kPa$/);
-  await expect(app.locator('[data-panel="readings"] .ph')).toContainText(/updated \d+ s ago/);
+  await expect(tiles.first().locator(".val")).toHaveText(/^\d+(\.\d)? kPa$/);
+  await expect(app.locator('[data-panel="readings"] .ph')).toContainText(/updated \d+\.\d s ago/);
 });
 
 test("log lines the board writes arrive, newest first", async ({ app, bridge }) => {
@@ -168,7 +172,7 @@ test("removing a slot confirms in place, at the same height, and Cancel changes 
   const keepBefore = await app.locator(".keep").boundingBox();
   await row.getByRole("button", { name: "Remove" }).click();
   await expect(row).toHaveClass(/confirm/);
-  await expect(row.locator(".l1 b")).toHaveText("Remove slot-3?");
+  await expect(row.locator(".l1 b")).toHaveText("Remove slot 3?");
   await expect(row.getByRole("button")).toHaveText(["Cancel", "Remove slot"]);
   expect(await row.boundingBox()).toEqual(before);
   expect(await app.locator(".keep").boundingBox()).toEqual(keepBefore);
@@ -205,9 +209,11 @@ test("an install is a job with progress, and ends as a new slot", async ({ app, 
   // While it runs there is one install at a time: the button stays where it is and cannot be pressed.
   await expect(install).toBeDisabled();
   expect(await install.boundingBox()).toEqual(place);
+  // The row being written is counted with the slots kept, as the mockup counts it.
+  await expect(app.locator('[data-panel="slots"] .ph .chip')).toHaveText("5 kept");
   await expect(row.locator(".chip")).toHaveText(/Writing|Installing|Waiting for the board/);
   await bridge.call("sim.node", { hold_installs: false });
-  await expect(slot(app, "slot-5").locator(".l1 b")).toHaveText("slot-5 · 2026.11.14");
+  await expect(slot(app, "slot-5").locator(".l1 b")).toHaveText("Slot 5 · 2026.11.14");
   // The board keeps its last three and what is pinned, default or running: the oldest plain
   // slot went when the new one landed. The board did that, not Atlas.
   await expect(slot(app, "slot-1")).toHaveCount(0);
@@ -244,11 +250,11 @@ test("a trial boot is confirmed by the board, not by Atlas", async ({ app, bridg
   await openBoard(app);
   await slot(app, "slot-3").getByRole("button", { name: "Trial" }).click();
   await expect(slot(app, "slot-3").locator(".chip.warn")).toHaveText("Trial, running");
-  await expect(app.locator("header.top .chip.warn")).toHaveText("slot-3 · trial");
+  await expect(app.locator("header.top .chip.warn")).toHaveText("Slot 3 · trial");
   // Nothing on the row confirms it, and no other trial is offered meanwhile.
   await expect(app.getByRole("button", { name: "Confirm" })).toHaveCount(0);
   await expect(app.getByRole("button", { name: "Trial" })).toHaveCount(0);
-  await expect(app.locator("[data-boots] .tr").first()).toContainText("slot-3");
+  await expect(app.locator("[data-boots] .tr").first()).toContainText("slot 3");
   // The board's own clock passes its confirm time: it confirms itself.
   await bridge.call("sim.node", { clock: 60 });
   await expect(slot(app, "slot-3").locator(".chip")).toHaveText(["Running", "Default"]);

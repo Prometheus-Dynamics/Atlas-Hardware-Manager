@@ -74,6 +74,12 @@
   const refusedSlot = $derived(said && !said.ok ? (list?.slots.find((slot) => said.what.endsWith(` ${slot.id}`))?.id ?? "") : "");
   /** The board is online and its first read has not arrived: its panels show bars, not "none". */
   const reading = $derived(online && (board === undefined || (board.reach === "orion" && (board.hardware?.length ?? 0) === 0 && !board.slots)));
+  /** A slot as the mockup names it: "Slot 4" heading a row or a chip, "slot 4" inside a sentence. An
+   *  id a board gives that is not `slot-N` is shown as the board gives it. */
+  const slotName = (slot: string, heading = false) => {
+    const n = /^slot-(\d+)$/.exec(slot);
+    return n ? `${heading ? "Slot" : "slot"} ${n[1]}` : slot;
+  };
 
   let busy = $state("");
   async function run(what: string, name: string, args: Record<string, unknown>) {
@@ -102,14 +108,21 @@
     return out;
   });
   const stale = $derived(board?.connection && !board.connection.live ? board.connection : undefined);
-  const number = (value: number) => (Math.abs(value) >= 100 ? value.toFixed(0) : Math.abs(value) >= 10 ? value.toFixed(1) : value.toFixed(2));
+  /** A value as the mockup writes it: one decimal ("52.4", "4.1"), whole from 100 and for a percent. */
+  const number = (value: number, unit: string | null = null) => (Math.abs(value) >= 100 || unit === "%" ? value.toFixed(0) : value.toFixed(1));
   const short = (value: number) => String(Number(value.toPrecision(4)));
+  /** A unit as a person writes it: the board's "m/s^2" is "m/s²". */
+  const unitOf = (unit: string | null) => (unit ?? "").replace(/\^2\b/g, "²").replace(/\^3\b/g, "³");
+  /** Two facts about the value (the mockup's "max 58 · limit 85"): the highest it read in the shown
+   *  history, and its limit, or else its range, or else the device it comes from. */
   function foot(tile: Tile): string {
-    const { low, high, warn_high, warn_low } = tile.reading;
-    const parts = [tile.from];
+    const { low, high, warn_high, warn_low, history } = tile.reading;
+    const parts: string[] = [];
+    if (history.length > 0) parts.push(`max ${number(Math.max(...history), tile.reading.unit)}`);
     if (warn_high !== null) parts.push(`limit ${short(warn_high)}`);
     else if (warn_low !== null) parts.push(`limit ${short(warn_low)}`);
     else if (low !== null && high !== null) parts.push(`${short(low)} to ${short(high)}`);
+    else parts.push(tile.from);
     return parts.join(" · ");
   }
   const over = (r: BoardReading) => r.number !== null && ((r.warn_high !== null && r.number > r.warn_high) || (r.warn_low !== null && r.number < r.warn_low));
@@ -120,10 +133,17 @@
     const shown = dev.readings.filter((r) => r.item !== "action" && !(r.item === "control" && r.number === null && r.text === null));
     if (shown.length === 0) return "reads nothing";
     return shown
-      .map((r) => `${r.name.replaceAll("_", " ")} ${r.number !== null ? number(r.number) : (r.text ?? "—")}${r.unit && (r.number !== null || r.text !== null) ? ` ${r.unit}` : ""}`)
+      .map((r) => `${r.name.replaceAll("_", " ")} ${r.number !== null ? number(r.number, r.unit) : (r.text ?? "—")}${r.unit && (r.number !== null || r.text !== null) ? ` ${unitOf(r.unit)}` : ""}`)
       .join(" · ");
   }
-  const updated = $derived(board ? Math.max(0, Math.round((app.now - board.read_ms) / 1000)) : 0);
+  // "updated 0.5 s ago" in tenths: the app's clock moves once a second, so this page keeps its own
+  // while it is shown.
+  let now = $state(Date.now());
+  $effect(() => {
+    const timer = setInterval(() => (now = Date.now()), 100);
+    return () => clearInterval(timer);
+  });
+  const updated = $derived(board ? Math.max(0, (now - board.read_ms) / 1000).toFixed(1) : "0.0");
 
   // ----- slots -----------------------------------------------------------------------------
   let removing = $state("");
@@ -152,7 +172,7 @@
     return install.detail;
   }
   function slotDetail(slot: Slot): string {
-    if (slot.trial && slot.running) return `Not confirmed. The board confirms it, or falls back to ${list?.default || "the default"}.`;
+    if (slot.trial && slot.running) return `Not confirmed. The board confirms it, or falls back to ${list?.default ? slotName(list.default) : "the default"}.`;
     if (slot.trial) return "Trial boot asked for. The board restarts into it.";
     if (slot.failed) return `Did not boot (${slot.failures} ${slot.failures === 1 ? "failure" : "failures"}).`;
     if (slot.running && slot.default) return `Running now. ${size(slot.size)} · ${slot.signed}.`;
@@ -172,13 +192,13 @@
     const out: Boot[] = [];
     if (list?.trial) {
       const t = list.trial;
-      if (t.last) out.push({ time: t.last_time, slot: t.slot, words: `trial: ${t.last}${t.reason ? ` (${t.reason})` : ""}` });
-      for (const attempt of [...t.attempts].reverse()) out.push({ time: attempt.time, slot: t.slot, words: `trial boot, attempt ${attempt.n}` });
+      if (t.last) out.push({ time: t.last_time, slot: slotName(t.slot), words: `trial: ${t.last}${t.reason ? ` (${t.reason})` : ""}` });
+      for (const attempt of [...t.attempts].reverse()) out.push({ time: attempt.time, slot: slotName(t.slot), words: `trial boot, attempt ${attempt.n}` });
     }
     if (list?.resolved) {
       const r = list.resolved;
       const how = r.outcome === "confirmed" ? "trial held, confirmed" : r.outcome === "fell-back" ? "trial did not hold, fell back" : r.outcome;
-      out.push({ time: r.time, slot: r.slot, words: `${how}${r.by ? ` by ${r.by === "auto" ? "the board" : r.by}` : ""}${r.reason ? `: ${r.reason}` : ""}` });
+      out.push({ time: r.time, slot: slotName(r.slot), words: `${how}${r.by ? ` by ${r.by === "auto" ? "the board" : r.by}` : ""}${r.reason ? `: ${r.reason}` : ""}` });
     }
     return out;
   });
@@ -259,7 +279,7 @@
     {#snippet chips()}
       {#if word}<span class="chip {word.tone}"><span class="dot {word.dot}"></span>{word.word}</span>{/if}
       {#if online && runningSlot}
-        <span class="chip {runningSlot.trial ? 'warn' : 'neu'}">{runningSlot.id}{runningSlot.trial ? " · trial" : ""}</span>
+        <span class="chip {runningSlot.trial ? 'warn' : 'neu'}">{slotName(runningSlot.id, true)}{runningSlot.trial ? " · trial" : ""}</span>
       {/if}
       {#if kindOf(device)}<span class="chip neu">{kindOf(device)}</span>{/if}
       {#each reach as word (word)}
@@ -294,7 +314,7 @@
           {#each tiles as tile, i (tile.from + tile.reading.name)}
             <div class="tile" data-reading={tile.reading.name}>
               <div class="lbl">{tile.reading.name.replaceAll("_", " ")}</div>
-              <div class="val" style={over(tile.reading) ? "color:var(--err-fg)" : ""}>{number(tile.reading.number ?? 0)} <small>{tile.reading.unit}</small></div>
+              <div class="val" style={over(tile.reading) ? "color:var(--err-fg)" : ""}>{number(tile.reading.number ?? 0, tile.reading.unit)} <small>{unitOf(tile.reading.unit)}</small></div>
               <div class="foot">{foot(tile)}</div>
               <Spark values={tile.reading.history} series={stale ? "offline" : i + 1} />
             </div>
@@ -322,7 +342,8 @@
     <section class="panel fill" style="min-height:0" data-panel="slots">
       <div class="ph">
         <h2>Slots</h2>
-        {#if list && online}<span class="chip neu">{list.slots.length} kept</span>{/if}
+        <!-- The row being written counts: it is kept once it is written (the mockup's "5 kept" with five rows). -->
+        {#if list && online}<span class="chip neu">{list.slots.length + (installing ? 1 : 0)} kept</span>{/if}
         <span class="grow"></span>
         <!-- Always in its place; it can be pressed when the board's slots are read and nothing is being installed. -->
         <button class="btn sm pri" disabled={!list || !online || installing} onclick={() => run("install", "board.slots.install", {})}><Icon name="plus" />Install…</button>
@@ -363,7 +384,7 @@
                 <div class="slot tall confirm" data-slot={slot.id}>
                   <div style="min-width:0">
                     <div class="l1">
-                      <b>Remove {slot.id}?</b>
+                      <b>Remove {slotName(slot.id)}?</b>
                       {#if list.keep > 0 && list.slots.length > list.keep}<span class="chip err"><span class="dot err"></span>Over keep-last-{list.keep}</span>{/if}
                     </div>
                     <div class="l2">{slot.version} · this cannot be undone</div>
@@ -383,7 +404,7 @@
                 <div class="slot tall {slot.trial ? 'trial' : slot.default && !fallback(slot) ? 'dflt' : ''}" data-slot={slot.id}>
                   <div style="min-width:0">
                     <div class="l1">
-                      <b class="ell">{slot.id} · {slot.version}</b>
+                      <b class="ell">{slotName(slot.id, true)} · {slot.version}</b>
                       {#if slot.trial}
                         <span class="chip warn"><span class="dot warn"></span>{slot.running ? "Trial, running" : "Trial"}</span>
                       {:else if slot.running}
@@ -494,6 +515,10 @@
                   <!-- What was asked of the board and how it ended, in full; it stays until newer results push it out. -->
                   <div class="ln" style="white-space:normal;overflow:visible" data-result={line.kind === "action" ? "ok" : "refused"}><span class="t">{clock(line.at_ms)}</span><span class="lv-{line.level === "err" ? "err" : "ok"}">{line.level === "err" ? "err" : "ok"}</span><span style="overflow:visible">{line.message}</span></div>
                 {/each}
+                {#if online && (board?.logs_missed ?? 0) > 0}
+                  <!-- Lines the board logged that never reached Atlas are said, not silently skipped. -->
+                  <div class="ln" style="white-space:normal" data-logs-missed><span class="t">·</span><span class="lv-warn">warn</span><span>{board?.logs_missed} {board?.logs_missed === 1 ? "line was" : "lines were"} lost before Atlas read them.</span></div>
+                {/if}
                 {#each online ? logs : [] as line, i (i)}
                   <div class="ln {i >= 10 ? 'more-s' : ''}"><span class="t">{line.time}</span><span class="lv-{line.level}">{line.level}</span><span>{line.text}</span></div>
                 {/each}

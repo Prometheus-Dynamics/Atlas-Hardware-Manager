@@ -22,8 +22,9 @@
 # The items (Orion's six unit-setting checks, and the image's own):
 #   units            no unit failed; the journal is on the data partition (board-journal); no leftover peer file
 #   files-fact       the hello document says `files` (`orion node show`)
-#   files-push       a file pushed into each read-write root arrives with its bytes
-#   files-fetch      a file under the read-only root is fetched with its bytes
+#   files-push       a file pushed into each read-write root (roots/app/, roots/calibrations/) arrives with its bytes
+#   files-fetch      a file under the read-only root is fetched with its bytes (roots/logs/; a root's files are
+#                    named roots/<root>/<path>, Orion 2026-11-23)
 #   files-dirs       the read-write roots are root:appdata 2770
 #   files-two-users  NOT RUN: a second, non-root member of appdata must write beside root; the image has no tool to
 #                    become one (owed with pin move 15)
@@ -99,7 +100,7 @@ if wanted files-push; then
   echo "$stamp" > "$out/pushed.txt"
   why="" told=""
   for root in app calibrations; do
-    if ctl file push "$root/first-boot-check.txt" "$out/pushed.txt" > "$out/push-$root.txt" 2>&1; then
+    if ctl file push "roots/$root/first-boot-check.txt" "$out/pushed.txt" > "$out/push-$root.txt" 2>&1; then
       got=$(board 30 "cat /data/$root/first-boot-check.txt" | grep -F "first-boot-check" | tail -n 1)
       [[ $got == "$stamp" ]] && told="$told $root/" || why="$why $root/: pushed, and /data/$root/first-boot-check.txt holds '$got';"
     else
@@ -112,8 +113,8 @@ fi
 if wanted files-fetch; then
   board 30 "echo '$stamp' > /var/log/first-boot-check.txt; sync" > /dev/null
   rm -f "$out/fetched.txt"
-  if ctl file fetch logs/first-boot-check.txt "$out/fetched.txt" --give-up 30000 > "$out/fetch.txt" 2>&1 && [[ $(cat "$out/fetched.txt" 2>/dev/null) == "$stamp" ]]; then
-    pass files-fetch "logs/first-boot-check.txt came back with its bytes"
+  if ctl file fetch roots/logs/first-boot-check.txt "$out/fetched.txt" --give-up 30000 > "$out/fetch.txt" 2>&1 && [[ $(cat "$out/fetched.txt" 2>/dev/null) == "$stamp" ]]; then
+    pass files-fetch "roots/logs/first-boot-check.txt came back with its bytes"
   else
     fail files-fetch "$(first "$out/fetch.txt" 3)"
   fi

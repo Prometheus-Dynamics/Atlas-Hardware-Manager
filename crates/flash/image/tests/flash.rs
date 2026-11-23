@@ -70,6 +70,10 @@ fn the_manifest_fields_and_bytes_match_values_computed_here() {
         expected
     );
     assert_eq!(made.manifest.to_json(None), made.json);
+    // The slots come out of the same pass, and are the ones a probe names.
+    let probe = atlas_image::probe_board(&xz_path, dir.path()).expect("probe");
+    assert!(!made.slots.is_empty());
+    assert_eq!(made.slots, probe.slots);
 
     // The same image as a plain .img: format raw, the same raw digest.
     let raw_path = image_file(&dir, "image.img", &raw);

@@ -3,7 +3,7 @@
 
 export type FlashImage =
   | { state: "reading"; path: string; file: string; bytes: number }
-  | { state: "ready"; path: string; file: string; bytes: number; raw_bytes: number; board: string; sha256: string; signed_by: string | null }
+  | { state: "ready"; path: string; file: string; bytes: number; raw_bytes: number; board: string; slots: string[]; sha256: string; signed_by: string | null }
   | { state: "refused"; path: string; file: string; bytes: number; words: string };
 
 export type FlashLine = { at_ms: number; level: "info" | "warn" | "err"; text: string };
@@ -69,7 +69,7 @@ export function signatureWords(image: FlashImage | null, security: boolean): str
 export function recentWord(recent: Recent): { tone: "ok" | "warn" | "err" | "off"; word: string } {
   switch (recent.result) {
     case "loaded":
-      return recent.retried ? { tone: "warn", word: "retried" } : { tone: "ok", word: "loader ran" };
+      return recent.retried ? { tone: "err", word: "retried" } : { tone: "ok", word: "loader ran" };
     case "written":
       return { tone: "ok", word: "written" };
     case "cancelled":

@@ -410,6 +410,8 @@ pub struct FlashImage {
     pub json: Vec<u8>,
     /// What the file says about its signature.
     pub signature: SignatureState,
+    /// The slots the image holds, read in the same pass (the one OS image holds one).
+    pub slots: Vec<String>,
     /// The bytes read from the file.
     pub read: u64,
 }
@@ -687,6 +689,7 @@ pub fn flash_manifest(
             ImageError::Layout("the pass did not reach the end of the image".into()).into(),
         );
     };
+    let slots = info.slots;
     let manifest = FlashManifest {
         board: info.board,
         image_size: raw.len,
@@ -704,6 +707,7 @@ pub fn flash_manifest(
         manifest,
         json,
         signature,
+        slots,
         read: pass.read,
     })
 }

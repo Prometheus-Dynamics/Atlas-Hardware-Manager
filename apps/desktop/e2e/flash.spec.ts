@@ -36,6 +36,9 @@ test("a board in its boot ROM: choose an image, send the loader, and the page sa
   await expect(step(app, "image").locator(".sd")).toHaveText("demo-os-2026.11.2.img · 1.6 MB");
   const image = app.locator('[data-panel="image"] dl');
   await expect(image).toContainText("example-board");
+  // The slot is read out of the image by the same reader an install uses.
+  await expect(image.locator("[data-built-for]")).toHaveText("example-board · slots alpha, beta");
+  await expect(image).toContainText("1.6 MB file, 1.6 MB written");
   await expect(image).toContainText("not checked (security is off)");
   await expect(step(app, "loader")).toHaveAttribute("data-state", "cur");
   await expect(step(app, "loader").locator(".sd")).toHaveText("ready to send");
@@ -86,6 +89,11 @@ test("a silent board: the loader is retried, stopped by hand, and runs when Retr
   await failure.getByRole("button", { name: "Stop retrying" }).click();
   await expect(failure).toHaveAttribute("data-status", "stopped");
   await expect(failure.locator(".ph .chip")).toHaveText("Stopped");
+  // Stopped is its own state: its title, its note and its hint say so, and nothing says "failed".
+  await expect(failure.locator(".ph h2")).toHaveText("Loader stopped");
+  await expect(failure.locator(".note")).toContainText("Stopped by hand.");
+  await expect(failure.locator("[data-bundled]")).toHaveText("Nothing starts again until you press Retry.");
+  await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("stopped at loader");
   await expect(failure.locator("dl")).toContainText("not until you press Retry");
   expect(await failure.boundingBox()).toEqual(before);
   const attempts = await failure.locator("dl dd").first().textContent();
@@ -97,6 +105,7 @@ test("a silent board: the loader is retried, stopped by hand, and runs when Retr
   await failure.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(step(app, "loader")).toHaveAttribute("data-state", "done");
   await expect(app.locator('[data-panel="recent"] .chip').first()).toHaveText("retried");
+  await expect(app.locator('[data-panel="recent"] .chip.err').first()).toHaveText("retried");
 });
 
 test("a failing flash says its last error and where its support bundle is, in full", async ({ app, bridge }) => {

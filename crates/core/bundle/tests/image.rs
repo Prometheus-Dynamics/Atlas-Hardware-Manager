@@ -324,6 +324,29 @@ fn a_real_product_image_gives_the_slot_its_build_made() {
     let probe = atlas_image::probe_board(&image, scratch.path()).expect("the image is read");
     println!("board {:?}, slots {:?}", probe.board, probe.slots);
     assert_eq!(probe.slots.len(), 1, "one slot: {:?}", probe.slots);
+    // The one OS image a person downloads (`.flash`, xz) is also what the Flash page reads, with
+    // its own reader: it must name the same board. (Not for the emulator's raw `.disk`: that reader
+    // digests every byte of the declared disk.)
+    let named = image.to_string_lossy();
+    if named.ends_with(".flash") || named.ends_with(".xz") {
+        let flash = atlas_image::flash_manifest(&image, scratch.path(), None)
+            .expect("the Flash page's reader reads the image");
+        assert_eq!(
+            flash.manifest.board(),
+            probe.board,
+            "the two readers name one board"
+        );
+        println!(
+            "the Flash page reads it: board {}, {} bytes written, sha256 {}, {}",
+            flash.manifest.board(),
+            flash.manifest.image_size(),
+            flash.manifest.image_sha256(),
+            match flash.signature {
+                atlas_image::SignatureState::Unsigned => "unsigned",
+                atlas_image::SignatureState::Signed { .. } => "signed",
+            }
+        );
+    }
     let mut out = Vec::new();
     let made = bundle_from_image(&image, scratch.path(), &probe.slots[0], &mut out)
         .expect("the slot is read out of the image");

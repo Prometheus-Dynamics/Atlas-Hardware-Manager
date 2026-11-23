@@ -9,6 +9,9 @@ const open = async (page: Page) => {
   await demoSettled(page);
   await page.locator("aside.side").getByText("Settings").click();
   await expect(page.locator("header.top h1")).toHaveText("Settings");
+  // The support panel's log path is a one-line bar until the core answers, then wraps to its real
+  // height: panels are measured only after that, or a slow answer reads as a moved panel.
+  await expect(page.locator('[data-panel="support"] .ph-skel')).toHaveCount(0);
 };
 const controls = (page: Page) => page.locator("[data-update-controls]");
 const line = (page: Page) => page.locator("[data-update]");

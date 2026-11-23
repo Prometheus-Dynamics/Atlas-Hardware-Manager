@@ -10,7 +10,7 @@
   import { call } from "../api/client";
   import { app, breadcrumb, inventory, settings, topic } from "../stores/app.svelte";
   import { go } from "../stores/route.svelte";
-  import { clock, size, when } from "../ui/format";
+  import { clock, dayTime, size } from "../ui/format";
   import { nameOf } from "../devices/state";
   import { recentWord, signatureWords, type FlashView } from "./types";
 
@@ -71,7 +71,7 @@
     const out: Step[] = [];
     if (image?.state === "ready") out.push({ key: "image", state: "done", title: "Pick image", detail: `${image.file} · ${size(image.bytes)}` });
     else if (image?.state === "refused") out.push({ key: "image", state: "fail", title: "Pick image", detail: "not a first-flash image" });
-    else out.push({ key: "image", state: "cur", title: "Pick image", detail: image ? "reading the image" : "no image chosen yet" });
+    else out.push({ key: "image", state: "cur", title: "Pick image", detail: image ? "reading the slot out of the image" : "no image chosen yet" });
     const imageDone = image?.state === "ready";
 
     if (board) out.push({ key: "board", state: "done", title: "Board in boot ROM", detail: `${rom?.label ?? "Boot ROM"} · USB ${port}` });
@@ -107,6 +107,11 @@
     return `${s >= 10 || Number.isInteger(s) ? Math.round(s) : s.toFixed(1)} s`;
   };
   const lines = $derived(run ? [...run.log].reverse() : []);
+  /** The three newest flashes; the block keeps three rows' height however many there are. */
+  const recent = $derived((flash?.recent ?? []).slice(0, 3));
+  const stopped = $derived(run?.status === "stopped");
+  /** An image packed with xz (the one OS image, `.flash`, or an `.img.xz`): its size is the packed one. */
+  const compressed = (file: string) => /\.(flash|xz)$/i.test(file);
   /** The folder a chosen file is in, said beside its name. */
   const folder = (path: string) => path.replace(/[\\/][^\\/]*$/, "") || "/";
 </script>
@@ -118,7 +123,7 @@
       <span class="chip neu">{board ? nameOf(board) : run?.name}</span>
     {/if}
     {#if run && failing}
-      <span class="chip err" data-flash-chip="failed">{run.status === "stopped" ? "stopped at loader" : "failed at loader"}</span>
+      <span class="chip {stopped ? 'off' : 'err'}" data-flash-chip="failed">{stopped ? "stopped at loader" : "failed at loader"}</span>
     {:else if loaded}
       <span class="chip warn" data-flash-chip="loaded">stops after the loader</span>
     {/if}
@@ -151,10 +156,10 @@
     </div>
     <div class="subhead"><h2 class="up" style="margin:0;color:var(--fg-muted)">Recent flashes here</h2></div>
     <div style="padding:2px 10px;flex:none" data-panel="recent">
-      {#each (flash?.recent ?? []).slice(0, 3) as recent (recent.at_ms + recent.name)}
-        {@const word = recentWord(recent)}
+      {#each recent as done (done.at_ms + done.name)}
+        {@const word = recentWord(done)}
         <div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px">
-          <div><b>{recent.name}</b> <span class="faint">{when(recent.at_ms, app.now)}</span></div>
+          <div><b>{done.name}</b> <span class="faint">{dayTime(done.at_ms, app.now)}</span></div>
           <div><span class="chip {word.tone}">{#if word.tone !== "off"}<span class="dot {word.tone}"></span>{/if}{word.word}</span></div>
         </div>
       {:else}
@@ -164,6 +169,10 @@
           <Skel rows={1} style="min-height:24px;border-bottom:0" />
         {/if}
       {/each}
+      <!-- Rows kept for flashes not made yet, so the block is as tall with one as with three. -->
+      {#each { length: 3 - Math.max(1, recent.length) } as _, i (i)}
+        <div class="tr" style="grid-template-columns:minmax(0,1fr) 88px;min-height:24px;font-size:11px;visibility:hidden;border-bottom:0" aria-hidden="true"><div>·</div></div>
+      {/each}
     </div>
   </section>
 
@@ -171,7 +180,7 @@
     <div style="display:grid;grid-template-rows:auto minmax(0,1fr);gap:8px;min-height:0;min-width:0">
       <section class="panel" data-panel="failure" data-status={run.status}>
         <div class="ph">
-          <h2>Loader failed</h2><span class="grow"></span>
+          <h2>{stopped ? "Loader stopped" : "Loader failed"}</h2><span class="grow"></span>
           {#if run.status === "retrying"}
             <span class="chip err"><span class="dot err"></span>Retrying</span>
           {:else if run.status === "stopped"}
@@ -181,8 +190,10 @@
           {/if}
         </div>
         <div class="pb" style="display:flex;flex-direction:column;gap:8px">
-          <div class="note err ell">
-            {#if run.status === "retrying" || run.status === "stopped"}
+          <div class="note ell" class:err={!stopped}>
+            {#if stopped}
+              Stopped by hand. Nothing was written. The board is still safe to flash.
+            {:else if run.status === "retrying"}
               The board in boot ROM did not answer the loader. Nothing was written. The board is still safe to flash.
             {:else}
               The loader was refused and will not be tried again on its own. Nothing was written.
@@ -216,7 +227,12 @@
           </div>
           <!-- Where the bundle was written, in full. -->
           <div class="faint" style="font-size:11px;white-space:normal;overflow-wrap:anywhere" data-bundled>
-            {bundled || "Stop retrying is a manual off. Nothing starts again until you press Retry."}
+            {bundled ||
+              (run.status === "retrying"
+                ? "Stop retrying is a manual off. Nothing starts again until you press Retry."
+                : stopped
+                  ? "Nothing starts again until you press Retry."
+                  : "Nothing is tried again on its own.")}
           </div>
         </div>
       </section>
@@ -255,9 +271,9 @@
             {:else}
               <dt style="grid-area:2/1">Size</dt>
               <dd style="grid-area:2/2">
-                {#if image?.state === "ready"}{size(image.bytes)} file, {size(image.raw_bytes)} written{:else if image}{size(image.bytes)}{image.state === "reading" ? " · reading" : ""}{:else}·{/if}
+                {#if image?.state === "ready"}{size(image.bytes)} {compressed(image.file) ? "compressed" : "file"}, {size(image.raw_bytes)} written{:else if image}{size(image.bytes)}{image.state === "reading" ? " · reading" : ""}{:else}·{/if}
               </dd>
-              <dt style="grid-area:3/1">Built for</dt><dd style="grid-area:3/2">{image?.state === "ready" ? image.board : "·"}</dd>
+              <dt style="grid-area:3/1">Built for</dt><dd style="grid-area:3/2" data-built-for>{image?.state === "ready" ? `${image.board}${image.slots.length ? ` · ${image.slots.length === 1 ? "slot" : "slots"} ${image.slots.join(", ")}` : ""}` : "·"}</dd>
               <dt style="grid-area:4/1">Signature</dt><dd style="grid-area:4/2">{signatureWords(image, settings()?.security ?? false)}</dd>
             {/if}
           </dl>
