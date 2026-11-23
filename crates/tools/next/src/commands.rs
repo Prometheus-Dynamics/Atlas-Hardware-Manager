@@ -604,8 +604,11 @@ pub(crate) async fn trial_outcome<W: Write>(
     match state {
         TrialState::Held(decided) => {
             r.say(format!(
-                "came back in the trial slot {}: the trial held, confirmed by the board ({}) at {}. The board's reason: {}",
-                decided.slot, decided.by, decided.time, decided.reason
+                "came back in the trial slot {}: the trial held, confirmed by the board ({}) at {}.{}",
+                decided.slot,
+                decided.by,
+                decided.time,
+                reason_words(&decided.reason, "")
             ));
             r.field("outcome", "held");
             Ok(())
@@ -615,10 +618,10 @@ pub(crate) async fn trial_outcome<W: Write>(
             Err(Refusal::new(
                 1,
                 format!(
-                    "came back in the previous slot: the trial failed at {}. It runs {}. The board's reason: {}",
+                    "came back in the previous slot: the trial failed at {}. It runs {}.{}",
                     decided.time,
                     running_words(&decided.running),
-                    decided.reason
+                    reason_words(&decided.reason, " The board gave no reason.")
                 ),
             ))
         }
@@ -747,5 +750,16 @@ mod tests {
             "busy",
         )));
         assert!(!Refusal::from(refused).denied);
+    }
+}
+
+/// The board's reason as the end of a sentence: " The board's reason: <it>", or `none` when the
+/// board recorded none (Lemnos writes no reason for a confirm). An empty reason is never quoted.
+pub(crate) fn reason_words(reason: &str, none: &str) -> String {
+    let reason = reason.trim();
+    if reason.is_empty() {
+        none.to_owned()
+    } else {
+        format!(" The board's reason: {reason}")
     }
 }

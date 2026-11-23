@@ -229,7 +229,8 @@ async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
     };
     assert_eq!(decided.by, "auto");
     assert_eq!(decided.running, Running::Trial);
-    assert!(!decided.reason.is_empty(), "the board's reason is kept");
+    // The board's record is kept as it is: a confirm carries no reason (Lemnos resolve.rs:472).
+    assert_eq!(decided.reason, "", "the board's own (empty) reason is kept");
     assert!(follower.states().is_empty(), "the outcome is released");
 
     // It is not reported again after an Atlas restart, and the board's default is the new slot.

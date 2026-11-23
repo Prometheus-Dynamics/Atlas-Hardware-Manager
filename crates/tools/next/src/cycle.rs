@@ -602,8 +602,9 @@ async fn step_trial_bad_followed(
         TrialState::DidNotHold(decided) if matches!(&decided.running, Running::Other(slot) if *slot == ctx.good) =>
         {
             r.say(format!(
-                "came back in the previous slot {} by itself: the trial of {id} failed. The board's reason: {}",
-                ctx.good, decided.reason
+                "came back in the previous slot {} by itself: the trial of {id} failed.{}",
+                ctx.good,
+                commands::reason_words(&decided.reason, " The board gave no reason.")
             ));
         }
         other => {

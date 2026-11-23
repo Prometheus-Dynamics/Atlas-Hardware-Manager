@@ -314,6 +314,12 @@ async fn a_trial_whose_answer_the_restart_takes_is_followed_and_reported_as_the_
         out.contains("came back in the trial slot slot-2: the trial held"),
         "{out}"
     );
+    // A board that gave no reason is not quoted as having given an empty one (a real
+    // board, 2026-11-22: "... The board's reason: " with nothing after it).
+    assert!(
+        !out.contains("reason: \n") && !out.trim_end().ends_with("reason:"),
+        "{out}"
+    );
     assert!(!out.contains("error"), "{out}");
 }
 

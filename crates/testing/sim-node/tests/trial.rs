@@ -220,12 +220,8 @@ fn a_healthy_trial_confirms_itself_after_the_uptime_on_the_clock() {
     assert_eq!(confirmed["resolved"]["outcome"], "confirmed");
     assert_eq!(confirmed["resolved"]["by"], "auto");
     assert!(confirmed["resolved"]["caller"].is_null());
-    assert!(
-        confirmed["resolved"]["reason"]
-            .as_str()
-            .is_some_and(|reason| reason.contains("healthy")),
-        "{confirmed}"
-    );
+    // A confirm records no reason: null, as the board writes it (Lemnos resolve.rs:472).
+    assert!(confirmed["resolved"]["reason"].is_null(), "{confirmed}");
 }
 
 #[test]

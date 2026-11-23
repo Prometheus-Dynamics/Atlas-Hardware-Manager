@@ -171,10 +171,9 @@ impl Slots {
         let id = trial.id.clone();
         let unmet = self.unmet();
         if uptime >= config.confirm_uptime_s && unmet.is_none() {
-            self.confirm_trial(
-                By::Auto,
-                format!("healthy for {uptime} s since the daemon started"),
-            );
+            // A confirm records no reason (board: Lemnos bbb3c420 drivers/system-slots/src/resolve.rs:472,
+            // `reason: String::new()`; a real board read `"reason":null` on both auto confirms, 2026-11-22).
+            self.confirm_trial(By::Auto, String::new());
             return;
         }
         if uptime < config.confirm_deadline_s {
@@ -299,7 +298,8 @@ impl Slots {
             "outcome": if resolved.confirmed { "confirmed" } else { "fell-back" },
             "by": by,
             "caller": caller,
-            "reason": resolved.reason,
+            // An empty reason is written as null, as the board writes it.
+            "reason": (!resolved.reason.is_empty()).then_some(&resolved.reason),
             "time": stamp(resolved.time_s),
         })
     }
