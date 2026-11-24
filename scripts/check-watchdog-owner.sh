@@ -579,6 +579,7 @@ wd_self_test() {  # <repo>
   local repo=$1 tmp rc=0 out dev b bl raze zbase zbring rz line
   tmp=$(mktemp -d)
   dev=$tmp/devices
+  local base=$dev
   cp -a "$repo/devices" "$dev"
   # A synthetic sd-image product with no owner: the bring-up fixture with its systemd watchdog lines removed (zero-3e-base is deleted in Z2).
   mkdir -p "$dev/products/example-bringup" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/example-bringup/"
@@ -600,131 +601,196 @@ wd_self_test() {  # <repo>
   fail() { echo "watchdog owner self-test: $1" >&2; rc=1; }
   has() { [[ $out == *"$1"* ]]; }
 
-  # The real tree. raze-base: inputs say Lemnos, exactly. The bring-up product: systemd. The base product: an sd-image
-  # with no owner is one NOTE line (not a FINDING), and its U-Boot arming is NOT CHECKED.
-  out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product raze-base: inputs say Lemnos; built config unverified" || fail "raze-base's line is not the exact inputs line: $out"
-  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner" || fail "sd-noowner is not one NOTE line: $out"
-  has "bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || fail "sd-noowner's U-Boot arming was not NOT CHECKED: $out"
-  has "FINDING product sd-noowner" && fail "an sd-image product without an owner failed the gate: $out"
-  has "NOTE product example-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
-  has "rock-4d-base" && fail "rock-4d-base is still in the tree: $out"
-  has "FINDING" && fail "the real tree has a FINDING: $out"
+  # Each case below runs on its own fresh copy of the prepared tree (base), all at once: a case changes its copy and
+  # never another's, and none depends on the one before it. A case's failures are its stderr and its exit status.
+  local pids=() names=() i=0
+  wd_case() {  # <name> <function>
+    local name=$1 fn=$2
+    (
+      dev=$tmp/case-$name; cp -a "$base" "$dev"
+      raze=$dev/products/raze-base; zbase=$dev/products/sd-noowner
+      rboard=$dev/boards/raze/lemnos-board.toml; zboard=$dev/boards/radxa-zero-3e/lemnos-board.toml
+      fam=$dev/families/rk35xx/assets/u-boot.fragment
+      b=$dev.built-boot; bl=$dev.built-raze  # a case's built trees are its own, never another's or an empty path
+      rc=0; "$fn"; exit "$rc"
+    ) >"$tmp/case-$name.err" 2>&1 &
+    pids+=("$!"); names+=("$name")
+  }
+  wd_case_0() {
+    # The real tree. raze-base: inputs say Lemnos, exactly. The bring-up product: systemd. The base product: an sd-image
+    # with no owner is one NOTE line (not a FINDING), and its U-Boot arming is NOT CHECKED.
+    out=$(watchdog_owner_rule "$dev") || true
+    has "NOTE product raze-base: inputs say Lemnos; built config unverified" || fail "raze-base's line is not the exact inputs line: $out"
+    has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner" || fail "sd-noowner is not one NOTE line: $out"
+    has "bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || fail "sd-noowner's U-Boot arming was not NOT CHECKED: $out"
+    has "FINDING product sd-noowner" && fail "an sd-image product without an owner failed the gate: $out"
+    has "NOTE product example-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
+    has "rock-4d-base" && fail "rock-4d-base is still in the tree: $out"
+    has "FINDING" && fail "the real tree has a FINDING: $out"
+  }
+  wd_case 0 wd_case_0
 
-  # Neither (slot): raze-base without its keepalive. Also armed by the slot init: a FINDING for the arm too.
-  cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
-  sed -i '/^keepalive = true$/d' "$rboard"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: no watchdog owner" || fail "neither owner was not refused: $out"
-  has "the boot chain arms the watchdog (Lemnos slot init" || fail "a slot init arm with no owner was not refused: $out"
-  cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  wd_case_1() {
+    # Neither (slot): raze-base without its keepalive. Also armed by the slot init: a FINDING for the arm too.
+    cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+    sed -i '/^keepalive = true$/d' "$rboard"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product raze-base: no watchdog owner" || fail "neither owner was not refused: $out"
+    has "the boot chain arms the watchdog (Lemnos slot init" || fail "a slot init arm with no owner was not refused: $out"
+    cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  }
+  wd_case 1 wd_case_1
 
-  # Both (slot): the Lemnos keepalive and a systemd drop-in in raze-base's overlay.
-  mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
-  printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (products/raze-base/os/overlay/etc/systemd/system.conf.d/10-wd.conf, line 2) — remove one" \
-    || fail "both owners were not refused naming both: $out"
-  rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
+  wd_case_2() {
+    # Both (slot): the Lemnos keepalive and a systemd drop-in in raze-base's overlay.
+    mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
+    printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (products/raze-base/os/overlay/etc/systemd/system.conf.d/10-wd.conf, line 2) — remove one" \
+      || fail "both owners were not refused naming both: $out"
+    rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
+  }
+  wd_case 2 wd_case_2
 
-  # One systemd (slot): the keepalive removed, the drop-in alone.
-  sed -i '/^keepalive = true$/d' "$rboard"
-  mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
-  printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product raze-base: inputs say systemd; built config unverified" || fail "one systemd owner was not accepted: $out"
-  has "bootloader arming: armed (Lemnos slot init" || fail "the arm was not seen with its owner: $out"
-  has "FINDING" && fail "one systemd owner plus the arm was refused: $out"
-  rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
-  cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  wd_case_3() {
+    # One systemd (slot): the keepalive removed, the drop-in alone.
+    sed -i '/^keepalive = true$/d' "$rboard"
+    mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
+    printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "NOTE product raze-base: inputs say systemd; built config unverified" || fail "one systemd owner was not accepted: $out"
+    has "bootloader arming: armed (Lemnos slot init" || fail "the arm was not seen with its owner: $out"
+    has "FINDING" && fail "one systemd owner plus the arm was refused: $out"
+    rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
+    cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  }
+  wd_case 3 wd_case_3
 
-  # RuntimeWatchdogSec=0 is off, not an owner.
-  mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
-  printf '[Manager]\nRuntimeWatchdogSec=0\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product raze-base: inputs say Lemnos; built config unverified" || fail "RuntimeWatchdogSec=0 was counted as an owner: $out"
-  rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
+  wd_case_4() {
+    # RuntimeWatchdogSec=0 is off, not an owner.
+    mkdir -p "$raze/os/overlay/etc/systemd/system.conf.d"
+    printf '[Manager]\nRuntimeWatchdogSec=0\n' > "$raze/os/overlay/etc/systemd/system.conf.d/10-wd.conf"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "NOTE product raze-base: inputs say Lemnos; built config unverified" || fail "RuntimeWatchdogSec=0 was counted as an owner: $out"
+    rm -rf "$raze/os/overlay/etc/systemd/system.conf.d"
+  }
+  wd_case 4 wd_case_4
 
-  # A feeder unit beside the keepalive: a second owner.
-  mkdir -p "$raze/os/overlay/usr/lib/systemd/system"
-  printf '[Service]\nExecStart=/bin/sh -c "echo x > /dev/watchdog0"\n' > "$raze/os/overlay/usr/lib/systemd/system/feed.service"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "another feeder: products/raze-base/os/overlay/usr/lib/systemd/system/feed.service:2 writes /dev/watchdog" || fail "a feeder beside the keepalive was not refused: $out"
-  has "FINDING product raze-base: two owners" || fail "the feeder pair is not two owners: $out"
-  rm -rf "$raze/os/overlay/usr/lib/systemd/system"
+  wd_case_5() {
+    # A feeder unit beside the keepalive: a second owner.
+    mkdir -p "$raze/os/overlay/usr/lib/systemd/system"
+    printf '[Service]\nExecStart=/bin/sh -c "echo x > /dev/watchdog0"\n' > "$raze/os/overlay/usr/lib/systemd/system/feed.service"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "another feeder: products/raze-base/os/overlay/usr/lib/systemd/system/feed.service:2 writes /dev/watchdog" || fail "a feeder beside the keepalive was not refused: $out"
+    has "FINDING product raze-base: two owners" || fail "the feeder pair is not two owners: $out"
+    rm -rf "$raze/os/overlay/usr/lib/systemd/system"
+  }
+  wd_case 5 wd_case_5
 
-  # A keepalive nothing feeds, on an sd-image product: one NOTE line (sd-noowner with a keepalive in its board).
-  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
-  printf '\n[descriptions]\nlemnos = "lemnos-board.toml"\n' >> "$dev/boards/radxa-zero-3e/board.toml"
-  printf '\n[[devices]]\nid = "watchdog"\ndriver = "hw-watchdog"\nkeepalive = true\n\n[[hardware]]\ncontroller = "watchdog"\n' >> "$zboard"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; boards/radxa-zero-3e/lemnos-board.toml keeps a hw-watchdog keepalive (line" || fail "an unfed keepalive on an sd-image product was not on its NOTE line: $out"
-  has "nothing feeds" || fail "the NOTE line does not say nothing feeds the keepalive: $out"
-  cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
-  cp -a "$repo/devices/boards/radxa-zero-3e/lemnos-board.toml" "$zboard"
+  wd_case_6() {
+    # A keepalive nothing feeds, on an sd-image product: one NOTE line (sd-noowner with a keepalive in its board).
+    cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
+    printf '\n[descriptions]\nlemnos = "lemnos-board.toml"\n' >> "$dev/boards/radxa-zero-3e/board.toml"
+    printf '\n[[devices]]\nid = "watchdog"\ndriver = "hw-watchdog"\nkeepalive = true\n\n[[hardware]]\ncontroller = "watchdog"\n' >> "$zboard"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; boards/radxa-zero-3e/lemnos-board.toml keeps a hw-watchdog keepalive (line" || fail "an unfed keepalive on an sd-image product was not on its NOTE line: $out"
+    has "nothing feeds" || fail "the NOTE line does not say nothing feeds the keepalive: $out"
+    cp -a "$repo/devices/boards/radxa-zero-3e/board.toml" "$dev/boards/radxa-zero-3e/board.toml"
+    cp -a "$repo/devices/boards/radxa-zero-3e/lemnos-board.toml" "$zboard"
+  }
+  wd_case 6 wd_case_6
 
-  # A keepalive nothing feeds on a SLOT product: a FINDING (raze-base with lemnosd removed; its arm has no owner either).
-  cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
-  sed -i '/^lemnosd = /d' "$raze/product.toml"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: boards/raze/lemnos-board.toml keeps a hw-watchdog keepalive (line $kline) that nothing feeds" || fail "an unfed keepalive on a slot product was not refused: $out"
-  cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
+  wd_case_7() {
+    # A keepalive nothing feeds on a SLOT product: a FINDING (raze-base with lemnosd removed; its arm has no owner either).
+    cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
+    sed -i '/^lemnosd = /d' "$raze/product.toml"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product raze-base: boards/raze/lemnos-board.toml keeps a hw-watchdog keepalive (line $kline) that nothing feeds" || fail "an unfed keepalive on a slot product was not refused: $out"
+    cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
+  }
+  wd_case 7 wd_case_7
 
-  # A slot-disk product (the recipe is named, the same owner rule applies): neither owner is a FINDING.
-  sed -i 's/^recipe = "slot-boot"$/recipe = "slot-disk"/' "$raze/product.toml"
-  sed -i '/^keepalive = true$/d' "$rboard"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product raze-base: no watchdog owner" || fail "a slot-disk product with no owner was not refused: $out"
-  cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
-  cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  wd_case_8() {
+    # A slot-disk product (the recipe is named, the same owner rule applies): neither owner is a FINDING.
+    sed -i 's/^recipe = "slot-boot"$/recipe = "slot-disk"/' "$raze/product.toml"
+    sed -i '/^keepalive = true$/d' "$rboard"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product raze-base: no watchdog owner" || fail "a slot-disk product with no owner was not refused: $out"
+    cp -a "$repo/devices/products/raze-base/product.toml" "$raze/product.toml"
+    cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$rboard"
+  }
+  wd_case 8 wd_case_8
 
-  # Armed + no owner (any product): U-Boot's autostart line on sd-noowner, which has no owner: a FINDING.
-  cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
-  printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' >> "$fam"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product sd-noowner: the boot chain arms the watchdog (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot" || fail "armed with no owner was not refused: $out"
-  # Armed + one owner: the same line on the bring-up product (its systemd owner feeds it): a pass.
-  has "NOTE product example-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
-  has "FINDING product example-bringup" && fail "armed with an owner was a FINDING: $out"
+  wd_case_9() {
+    # Armed + no owner (any product): U-Boot's autostart line on sd-noowner, which has no owner: a FINDING.
+    cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
+    printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' >> "$fam"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product sd-noowner: the boot chain arms the watchdog (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot" || fail "armed with no owner was not refused: $out"
+    # Armed + one owner: the same line on the bring-up product (its systemd owner feeds it): a pass.
+    has "NOTE product example-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
+    has "FINDING product example-bringup" && fail "armed with an owner was a FINDING: $out"
+  }
+  wd_case 9 wd_case_9
 
-  # A boot script's wdt command arms too (a Lemnos-free product with an owner passes; this one has none: a FINDING).
-  cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
-  printf 'wdt dev 0\nwdt start\n' > "$dev/families/rk35xx/assets/boot.cmd"
-  out=$(watchdog_owner_rule "$dev") || true
-  has "FINDING product sd-noowner: the boot chain arms the watchdog (boot script command \"wdt\"" || fail "a wdt boot-script command was not seen: $out"
-  rm -f "$dev/families/rk35xx/assets/boot.cmd"
+  wd_case_10() {
+    # A boot script's wdt command arms too (a Lemnos-free product with an owner passes; this one has none: a FINDING).
+    cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
+    printf 'wdt dev 0\nwdt start\n' > "$dev/families/rk35xx/assets/boot.cmd"
+    out=$(watchdog_owner_rule "$dev") || true
+    has "FINDING product sd-noowner: the boot chain arms the watchdog (boot script command \"wdt\"" || fail "a wdt boot-script command was not seen: $out"
+    rm -f "$dev/families/rk35xx/assets/boot.cmd"
+  }
+  wd_case 10 wd_case_10
 
-  # A built U-Boot config (the bootloader dir) decides for the owner-less base product: autostart on is a FINDING.
-  b=$tmp/built-boot
-  mkdir -p "$b"
-  printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' > "$b/u-boot.config"
-  out=$(watchdog_owner_rule "$dev" -- "sd-noowner=$b") || true
-  has "FINDING product sd-noowner: the boot chain arms the watchdog (built U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "a built U-Boot autostart was not refused: $out"
-  rm -rf "$b"
-  cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
+  wd_case_11() {
+    # A built U-Boot config (the bootloader dir) decides for the owner-less base product: autostart on is a FINDING.
+    b=$dev.built-boot
+    mkdir -p "$b"
+    printf 'CONFIG_WATCHDOG_AUTOSTART=y\n' > "$b/u-boot.config"
+    out=$(watchdog_owner_rule "$dev" -- "sd-noowner=$b") || true
+    has "FINDING product sd-noowner: the boot chain arms the watchdog (built U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "a built U-Boot autostart was not refused: $out"
+    rm -rf "$b"
+    cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
+  }
+  wd_case 11 wd_case_11
 
-  # No U-Boot autostart line and no build: NOT CHECKED, exactly.
-  out=$(watchdog_owner_rule "$dev") || true
-  has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || true
+  wd_case_12() {
+    # No U-Boot autostart line and no build: NOT CHECKED, exactly.
+    out=$(watchdog_owner_rule "$dev") || true
+    has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner; bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || true
+  }
+  wd_case 12 wd_case_12
 
-  # A built system tree that disagrees with the inputs (inputs say Lemnos only; the built drop-in sets the watchdog).
-  bl=$tmp/built-raze
-  mkdir -p "$bl/etc/systemd/system.conf.d"
-  printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$bl/etc/systemd/system.conf.d/10-image.conf"
-  out=$(watchdog_owner_rule "$dev" "raze-base=$bl") || true
-  has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (" || fail "a built tree against the inputs was not refused: $out"
-  has "built config and its inputs disagree" || fail "the built/inputs disagreement was not named: $out"
-  rm -rf "$bl/etc"
+  wd_case_13() {
+    # A built system tree that disagrees with the inputs (inputs say Lemnos only; the built drop-in sets the watchdog).
+    bl=$dev.built-raze
+    mkdir -p "$bl/etc/systemd/system.conf.d"
+    printf '[Manager]\nRuntimeWatchdogSec=15s\n' > "$bl/etc/systemd/system.conf.d/10-image.conf"
+    out=$(watchdog_owner_rule "$dev" "raze-base=$bl") || true
+    has "FINDING product raze-base: two owners: Lemnos hw-watchdog keepalive (boards/raze/lemnos-board.toml line $kline) and RuntimeWatchdogSec=15s (" || fail "a built tree against the inputs was not refused: $out"
+    has "built config and its inputs disagree" || fail "the built/inputs disagreement was not named: $out"
+    rm -rf "$bl/etc"
+  }
+  wd_case 13 wd_case_13
 
-  # A built system tree that agrees: checked, one owner, no "unverified".
-  mkdir -p "$bl/etc/systemd"
-  printf '[Manager]\nRuntimeWatchdogSec=0\n' > "$bl/etc/systemd/system.conf"
-  out=$(watchdog_owner_rule "$dev" "raze-base=$bl") || true
-  rz=$(grep 'product raze-base' <<<"$out")
-  has "built config checked" || fail "an agreeing built tree was not accepted as checked: $rz"
-  [[ $rz == *unverified* ]] && fail "a built tree was given and still says unverified: $rz"
-  rm -rf "$bl"
+  wd_case_14() {
+    # A built system tree that agrees: checked, one owner, no "unverified".
+    mkdir -p "$bl/etc/systemd"
+    printf '[Manager]\nRuntimeWatchdogSec=0\n' > "$bl/etc/systemd/system.conf"
+    out=$(watchdog_owner_rule "$dev" "raze-base=$bl") || true
+    rz=$(grep 'product raze-base' <<<"$out")
+    has "built config checked" || fail "an agreeing built tree was not accepted as checked: $rz"
+    [[ $rz == *unverified* ]] && fail "a built tree was given and still says unverified: $rz"
+    rm -rf "$bl"
+  }
+  wd_case 14 wd_case_14
 
+  for i in "${!pids[@]}"; do
+    wait "${pids[$i]}" && continue
+    rc=1
+    cat "$tmp/case-${names[$i]}.err" >&2
+  done
   rm -rf "$tmp"
   [[ $rc -eq 0 ]] && echo "watchdog owner self-test: passes the real tree (raze-base: inputs say Lemnos, exactly; the bring-up product: systemd; the sd-image base product: one NOTE line, not a FINDING); refuses neither, both, an unfed keepalive on a slot product, a feeder beside the keepalive, a slot-disk product with no owner, armed with no owner (U-Boot autostart, a wdt script line, a built U-Boot config), and a built system tree that disagrees with the inputs; RuntimeWatchdogSec=0 is off; armed with an owner passes; an unresolved U-Boot is NOT CHECKED"
   return $rc

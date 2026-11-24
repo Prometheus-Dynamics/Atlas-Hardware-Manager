@@ -220,7 +220,10 @@ static_checks() {
   for i in "${!s[@]}"; do
     item=${s[$i]}
     names+=("${item%%|*}"); logs+=("$gate_tmp/static-$i.log")
-    bash -c "${item#*|}" >"$gate_tmp/static-$i.log" 2>&1 &
+    # Each check records its own seconds, so a slow one is named, not guessed.
+    (t0=$EPOCHREALTIME; rc=0; bash -c "${item#*|}" || rc=$?; t1=$EPOCHREALTIME
+     printf '%s\n' "$(( (${t1/./} - ${t0/./}) / 1000000 ))" >"$gate_tmp/static-$i.secs"; exit "$rc") \
+      >"$gate_tmp/static-$i.log" 2>&1 &
     pids+=("$!")
   done
   for i in "${!pids[@]}"; do
@@ -228,7 +231,7 @@ static_checks() {
     if [ "$rc" -ne 0 ]; then
       echo "==> ${names[$i]}: FAILED (exit $rc)"; cat "${logs[$i]}"; failed=1
     else
-      echo "    ${names[$i]}: ok"
+      echo "    ${names[$i]}: ok ($(cat "$gate_tmp/static-$i.secs" 2>/dev/null || echo '?') s)"
     fi
   done
   return "$failed"

@@ -58,29 +58,39 @@ if [[ ${ATLAS_UBOOT_SKIP:-0} == 1 ]]; then
 fi
 
 if [[ $mode == self-test ]]; then
-  # 1. the real check must pass
-  "$0" --devices "$devices" || die "self-test: the real check did not pass (see above)"
+  # The real check and the two broken copies resolve at the same time (each in its own scratch directories); the
+  # results are then read in order. 1: the real check must pass. 2: the RK3588 buffer address removed (the 287e2195
+  # state) must fail, naming the empty symbol. 3: a family line for a symbol this U-Boot does not have must fail,
+  # naming the file and line.
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/atlas-uboot-selftest-XXXXXX")
   trap 'rm -rf "$tmp"' EXIT
-  # 2. the RK3588 buffer address removed: the 287e2195 state must fail, naming the empty symbol
   cp -a "$devices" "$tmp/a"
   soc=$tmp/a/families/rk35xx/assets/u-boot-rk3588.fragment
   [[ -f $soc ]] || die "self-test: no $soc"
   grep -v '^CONFIG_FASTBOOT_BUF_ADDR=' "$soc" > "$soc.new" && mv "$soc.new" "$soc"
+  cp -a "$devices" "$tmp/b"
+  fam=$tmp/b/families/rk35xx/assets/u-boot.fragment
+  printf 'CONFIG_ATLAS_SELF_TEST_NO_SUCH_SYMBOL=y\n' >> "$fam"
+  line=$(wc -l < "$fam")
+  "$0" --devices "$devices" >"$tmp/real.txt" 2>&1 &
+  real_pid=$!
+  "$0" --devices "$tmp/a" --only radxa-rock-5c >"$tmp/a.txt" 2>&1 &
+  a_pid=$!
+  "$0" --devices "$tmp/b" --only radxa-zero-3e >"$tmp/b.txt" 2>&1 &
+  b_pid=$!
   rc=0
-  "$0" --devices "$tmp/a" --only radxa-rock-5c >"$tmp/a.txt" 2>&1 || rc=$?
+  wait "$real_pid" || rc=$?
+  cat "$tmp/real.txt"
+  [[ $rc -eq 0 ]] || die "self-test: the real check did not pass (see above)"
+  rc=0
+  wait "$a_pid" || rc=$?
   if [[ $rc -eq 0 ]]; then
     cat "$tmp/a.txt" >&2; die "self-test: the ROCK 5C without its fastboot buffer address PASSED: the check does not catch an empty hex symbol"
   fi
   grep -q 'FAIL radxa-rock-5c: CONFIG_FASTBOOT_BUF_ADDR resolved empty' "$tmp/a.txt" \
     || { cat "$tmp/a.txt" >&2; die "self-test: the check failed but did not name CONFIG_FASTBOOT_BUF_ADDR as empty"; }
-  # 3. a family line for a symbol this U-Boot does not have must fail, naming the file and line
-  cp -a "$devices" "$tmp/b"
-  fam=$tmp/b/families/rk35xx/assets/u-boot.fragment
-  printf 'CONFIG_ATLAS_SELF_TEST_NO_SUCH_SYMBOL=y\n' >> "$fam"
-  line=$(wc -l < "$fam")
   rc=0
-  "$0" --devices "$tmp/b" --only radxa-zero-3e >"$tmp/b.txt" 2>&1 || rc=$?
+  wait "$b_pid" || rc=$?
   if [[ $rc -eq 0 ]] || ! grep -q "families/rk35xx/assets/u-boot.fragment:$line: CONFIG_ATLAS_SELF_TEST_NO_SUCH_SYMBOL requested y, resolved absent" "$tmp/b.txt"; then
     cat "$tmp/b.txt" >&2; die "self-test: a family line for a symbol U-Boot does not have did not fail naming its file and line"
   fi

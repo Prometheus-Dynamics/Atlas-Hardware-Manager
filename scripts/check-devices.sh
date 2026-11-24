@@ -2603,7 +2603,8 @@ if [[ $root_given -eq 0 ]]; then
   st() {  # <failure message> <command...>
     local n=${#st_names[@]} msg=$1
     shift
-    ( errs=$st_dir/$n.errs; outs=$st_dir/$n.outs; : >"$errs"; : >"$outs"; "$@" || exit $? ) >"$st_dir/$n.out" 2>"$st_dir/$n.err" &
+    ( errs=$st_dir/$n.errs; outs=$st_dir/$n.outs; : >"$errs"; : >"$outs"; t0=$SECONDS; rc=0; "$@" || rc=$?
+      echo "$((SECONDS - t0))" >"$st_dir/$n.secs"; exit "$rc" ) >"$st_dir/$n.out" 2>"$st_dir/$n.err" &
     st_names+=("$*"); st_pids+=("$!"); st_msgs+=("$msg")
   }
   fixture_passes() {  # <fixture>
@@ -2677,6 +2678,9 @@ if [[ $root_given -eq 0 ]]; then
     cat "$st_dir/$i.err" >&2
     [[ ${st_rcs[$i]} -eq 0 ]] || die "${st_msgs[$i]}"
   done
+  # The slowest self-checks are named with their seconds, so the run's length is explained.
+  for i in "${!st_pids[@]}"; do printf '%s %s\n' "$(cat "$st_dir/$i.secs" 2>/dev/null || echo 0)" "${st_names[$i]}"; done \
+    | sort -rn | head -n 3 | while read -r secs what; do echo "check-devices: self-check took $secs s: ${what:0:90}"; done
   rm -rf "$st_dir"
   echo "check-devices: self-check passed (good fixtures pass, broken fixture fails, a wrong or unknown gaia commit is refused)"
 fi
