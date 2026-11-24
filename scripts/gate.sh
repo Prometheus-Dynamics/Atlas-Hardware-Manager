@@ -104,12 +104,18 @@ join_lanes() {  # waits for every lane, reporting each as it ends; the first fai
   done
 }
 
+# A lane runs in `bash -c` without errexit, so step and cached hand on a failure themselves: a step that fails
+# ends its lane with the step's code and records no pass (2026-11-24: a red click test passed g8 when they did not).
 step() {
-  local label="$1" start
+  local label="$1" start rc=0
   shift
   echo "==> $label"
   start=$SECONDS
-  "$@"
+  "$@" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "    $label: FAILED (exit $rc) after $((SECONDS - start)) s"
+    return "$rc"
+  fi
   echo "    $label: $((SECONDS - start)) s"
 }
 
@@ -123,7 +129,7 @@ cached() {
     echo "    $name: nothing it reads changed since it passed ($(gate_known_since "$name" "$key"))"
     return 0
   fi
-  "$@"
+  "$@" || return
   gate_mark "$name" "$key"
 }
 
@@ -167,7 +173,21 @@ no_match_self_test() {
   no_match -rn -i helios -- "$d/a" "$d/missing/*" || { rm -r "$d"; echo "no_match failed a clean tree" >&2; return 1; }
   rm -r "$d"
 }
-export -f no_match socket_room_ok socket_room_self_test no_match_self_test step
+# A failing step fails its lane, as a lane runs it (bash -c, no errexit), and leaves no pass behind; a passing one
+# passes and records its pass.
+lane_failure_self_test() {
+  local d out rc
+  d=$(mktemp -d "${TMPDIR:-/tmp}/gate-lane-fail.XXXXXX")
+  out=$(GATE_TARGET=$d bash -c '. scripts/gate-lib.sh; paths=(scripts/gate.sh); cached selftest paths step "red" false' 2>&1) && rc=0 || rc=$?
+  if [ "$rc" -eq 0 ] || compgen -G "$d/.gate-pass/selftest-*" >/dev/null; then
+    rm -r "${d:?}"; echo "gate self-test: a failing step passed its lane (exit $rc) or recorded a pass: $out" >&2; return 1
+  fi
+  GATE_TARGET=$d bash -c '. scripts/gate-lib.sh; paths=(scripts/gate.sh); cached selftest paths step "green" true' >/dev/null 2>&1 \
+    && compgen -G "$d/.gate-pass/selftest-*" >/dev/null \
+    || { rm -r "${d:?}"; echo "gate self-test: a passing step did not pass or recorded no pass" >&2; return 1; }
+  rm -r "${d:?}"
+}
+export -f no_match socket_room_ok socket_room_self_test no_match_self_test lane_failure_self_test step cached
 export SUN_PATH_BYTES SOCKET_SUFFIX_BYTES
 
 static_checks() {
@@ -213,6 +233,7 @@ static_checks() {
   if compgen -G "crates/*/*/src" > /dev/null; then
     s+=("the socket path room check refuses a TMPDIR too long for sun_path|socket_room_self_test")
     s+=("the grep guard refuses a match even with a missing directory|no_match_self_test")
+    s+=("a failing step fails its lane and records no pass|lane_failure_self_test")
     s+=("no board or product names in code|no_match -rn -i -E '\\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\\b' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
     s+=("no shell-outs to ssh for board jobs|no_match -rn -E 'Command::new\\(\"(ssh|scp|sftp)\"\\)' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
   fi
