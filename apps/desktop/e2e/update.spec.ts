@@ -89,7 +89,10 @@ test("a feed that is down is asked again until it is stopped by hand, and answer
   await bridge.call("sim.feed", { state: "down", kind: "deb" });
   await check(app).click();
   await expect(controls(app).locator(".chip")).toHaveText("Retrying");
-  await expect(line(app)).toContainText("(try 2)");
+  // Asked again: any try past the first. Each try is on the page only until the next one (the
+  // second for about a second), and a check that waits for that one try can step over it on a
+  // loaded machine (docs/flakes.md, update-try-2).
+  await expect(line(app)).toContainText(/\(try ([2-9]|\d{2,})\)/);
   await expect(line(app)).toContainText("connection refused");
   // Back while it is still asking: the next try finds the release with no click.
   await bridge.call("sim.feed", { state: "newer" });
