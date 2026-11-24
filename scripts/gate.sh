@@ -81,7 +81,12 @@ stop_lanes() {
 trap 'stop_lanes; rm -rf "$gate_tmp"' EXIT
 lane() {  # <name> <lane_cmd argument>: starts a lane
   local log="$gate_tmp/lane-$1.log" pid
-  setsid bash -c '. scripts/gate-lib.sh; lane_cmd "$1"' lane "$1" >"$log" 2>&1 &
+  # The lane's last line is its CPU seconds (its own and its children's, user + system), so a cut is judged by the
+  # CPU it removes (bash `times`, written to a file from the lane's own shell: in a pipe it would be a subshell's, with no children).
+  setsid bash -c '. scripts/gate-lib.sh; lane_cmd "$1"; rc=$?
+    times >"$TMPDIR/lane-$1.times"
+    awk '"'"'NR == 2 { split($1, u, /[ms]/); split($2, s, /[ms]/); printf "    %s CPU: %.0f s\n", lane, u[1] * 60 + u[2] + s[1] * 60 + s[2] }'"'"' lane="$1" "$TMPDIR/lane-$1.times"
+    exit "$rc"' lane "$1" >"$log" 2>&1 &
   pid=$!
   lane_pids+=("$pid"); lane_name[$pid]=$1; lane_log[$pid]=$log; lane_t0[$pid]=$SECONDS
 }
