@@ -187,7 +187,28 @@ lane_failure_self_test() {
     || { rm -r "${d:?}"; echo "gate self-test: a passing step did not pass or recorded no pass" >&2; return 1; }
   rm -r "${d:?}"
 }
-export -f no_match socket_room_ok socket_room_self_test no_match_self_test lane_failure_self_test step cached
+# The devices lane fails when either of its checks fails, run beside each other or one after the other: stand-in
+# scripts in a scratch tree, the lane's own function read from this file.
+devices_lane_self_test() {
+  local d body dv co rc want
+  body=$(awk '/^step\(\) \{/,/^}/; /^devices_then_config_only\(\) \{/,/^}/' scripts/gate.sh)
+  for dv in 0 1; do
+    for co in 0 1; do
+      d=$(mktemp -d "${TMPDIR:-/tmp}/gate-devices-lane.XXXXXX")
+      mkdir "$d/scripts"
+      printf '#!/bin/bash\nexit %s\n' "$dv" > "$d/scripts/check-devices.sh"
+      printf '#!/bin/bash\n[ "${1:-}" = --ready ] && exit 0\nexit %s\n' "$co" > "$d/scripts/check-config-only.sh"
+      chmod +x "$d/scripts/check-devices.sh" "$d/scripts/check-config-only.sh"
+      rc=0; (cd "$d" && TMPDIR=$d bash -c "$body"$'\n''devices_then_config_only' >/dev/null 2>&1) || rc=$?
+      rm -r "${d:?}"
+      want=$(( dv || co ))
+      if { [ "$want" -eq 0 ] && [ "$rc" -ne 0 ]; } || { [ "$want" -ne 0 ] && [ "$rc" -eq 0 ]; }; then
+        echo "gate self-test: the devices lane gave exit $rc with descriptions exit $dv and config-only exit $co" >&2; return 1
+      fi
+    done
+  done
+}
+export -f no_match socket_room_ok socket_room_self_test no_match_self_test lane_failure_self_test devices_lane_self_test step cached
 export SUN_PATH_BYTES SOCKET_SUFFIX_BYTES
 
 static_checks() {
@@ -234,6 +255,7 @@ static_checks() {
     s+=("the socket path room check refuses a TMPDIR too long for sun_path|socket_room_self_test")
     s+=("the grep guard refuses a match even with a missing directory|no_match_self_test")
     s+=("a failing step fails its lane and records no pass|lane_failure_self_test")
+    s+=("the devices lane fails when either of its checks fails|devices_lane_self_test")
     s+=("no board or product names in code|no_match -rn -i -E '\\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\\b' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
     s+=("no shell-outs to ssh for board jobs|no_match -rn -E 'Command::new\\(\"(ssh|scp|sftp)\"\\)' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
   fi
