@@ -256,6 +256,19 @@ devices_then_config_only() {
     step "config-only build (every product)" scripts/check-config-only.sh
   fi
 }
+# Doctests: only the crates whose library has a doc example (scripts/doc-crates.py, scanned each run); rustdoc over
+# the other ~40 had nothing to run and cost ~40 s.
+doctests() {
+  local crates args=() c
+  crates=$(cargo metadata --format-version 1 --locked --offline --no-deps | python3 -I scripts/doc-crates.py) || return 1
+  for c in $crates; do args+=(-p "$c"); done
+  if [ ${#args[@]} -eq 0 ]; then
+    echo "    doctests: no crate has a doc example; nothing to run"
+    return 0
+  fi
+  step doctests cargo test --locked "${args[@]}" --doc
+}
+export -f doctests
 export -f devices_then_config_only cached gate_tree_key gate_known gate_mark gate_known_since gate_pass_dir
 
 # Each cargo lane builds in its own target directory under this worktree's target, so the lanes run at once instead
@@ -289,7 +302,7 @@ lane_cmd() {  # the body of a lane, by name
       # cargo-nextest runs every test as its own process, all binaries at once; doctests run after it. Tests that share
       # something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock).
       if cargo nextest --version >/dev/null 2>&1; then
-        CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code bash -c 'step tests cargo nextest run --locked --workspace --no-fail-fast && step doctests cargo test --locked --workspace --doc'
+        CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code bash -c 'step tests cargo nextest run --locked --workspace --no-fail-fast && doctests'
       else
         CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code step tests cargo test --locked --workspace
       fi ;;
