@@ -39,14 +39,14 @@ const TYPED: &str = SLOTS_PIN;
 /// Words that fit [`TYPED`] on the node's first slot.
 const TYPED_WORDS: &str = "slot-1 true";
 
-/// A pause that does not wait: the failure rule is tested on the session's side. It only yields,
-/// so the monitor thread does not spin while the node is gone.
+/// The monitor's wait between tries: 10 ms, not the real delay (the failure rule's delays are
+/// tested on their own). Only yielding spun the monitor while the node was gone.
 #[derive(Debug)]
 struct NoPause;
 
 impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-        std::thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 

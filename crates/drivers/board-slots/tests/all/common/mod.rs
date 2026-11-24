@@ -25,13 +25,16 @@ use tokio::time;
 pub const BOARD: &str = "simulated";
 pub const SERIAL: &str = "0123abcd";
 
-/// A pause that only yields, so the monitor thread does not spin while the node is gone.
+/// A short pause between the monitor's tries while the node is gone: 10 ms, not the real
+/// backoff. Only yielding returned at once on a busy machine, so the monitor retried in a hot
+/// loop: this binary's tests took 30.7 CPU-s for 4.8 s of wall time; with 10 ms, 8-11 CPU-s for
+/// 5.6 s (2026-11-24).
 #[derive(Debug)]
 struct NoPause;
 
 impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-        thread::yield_now();
+        thread::sleep(Duration::from_millis(10));
     }
 }
 

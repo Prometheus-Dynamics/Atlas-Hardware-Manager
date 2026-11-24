@@ -151,13 +151,13 @@ mod tests {
     use super::follow;
     use crate::report::Report;
 
-    /// A session's wait between tries: it only yields, so a node that is gone is not spun on.
+    /// A session's wait between tries: it sleeps 10 ms, so a node that is gone is not spun on.
     #[derive(Debug)]
     struct NoPause;
 
     impl Pause for NoPause {
         fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-            std::thread::yield_now();
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
 

@@ -95,6 +95,11 @@ export CARGO_BUILD_JOBS=$jobs
 export ATLAS_BENCH_SEED_FILE=$key_dir/bench.seed
 export ATLAS_BENCH_PUBKEY_FILE=$key_dir/bench.pub
 EOF
+  # The gate's own build environment (scripts/gate-lib.sh gate_build_env: sccache, mold), so a cargo run by hand in a
+  # lane's target builds with the same flags and does not make the next gate relink every test binary.
+  (cd "$area/wt/$name" && . scripts/gate-lib.sh && gate_build_env &&
+    printf 'export RUSTC_WRAPPER=%q\nexport CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS=%q\n' \
+      "${RUSTC_WRAPPER:-}" "${CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS:-}")
 }
 
 run() {  # <name> <unit> -- <cmd...>
@@ -108,10 +113,13 @@ run() {  # <name> <unit> -- <cmd...>
   envs=$(env_of "$name")
   log=$area/logs/$name/$unit.log
   mkdir -p "$area/logs/$name" "$area/tmp/$name"
-  local setenv=() line
+  local setenv=() line var
   while IFS= read -r line; do
     line=${line#export }
-    setenv+=("--setenv=$line")
+    var=${line%%=*}
+    # The value as a shell reads it (env_of quotes values with spaces), handed to systemd-run unquoted.
+    eval "local $line"
+    setenv+=("--setenv=$var=${!var}")
   done <<<"$envs"
   systemd-run --user --unit="atlas-$name-$unit" --collect -p LimitNOFILE=524288 \
     -p WorkingDirectory="$area/wt/$name" "${setenv[@]}" --setenv=PATH="$PATH" --setenv=HOME="$HOME" --setenv=CPUS="$cpus" \

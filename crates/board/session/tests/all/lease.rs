@@ -23,13 +23,14 @@ use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use common::scratch;
 use orion::{Address, Orion};
 
-/// The monitor's wait between tries: it only yields, so a node that is gone is not spun on.
+/// The monitor's wait between tries: 10 ms, not the real delay (the failure rule's delays are
+/// tested on their own). Only yielding spun the monitor while the node was gone.
 #[derive(Debug)]
 struct NoPause;
 
 impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-        std::thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 

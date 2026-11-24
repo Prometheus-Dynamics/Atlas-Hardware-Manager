@@ -138,13 +138,14 @@ impl Relay {
     }
 }
 
-/// A wait between a connection's tries that only yields: the monitor retries as soon as it can.
+/// A wait between a connection's tries of 10 ms, not the real backoff: only yielding returned at
+/// once on a busy machine and the monitor retried in a hot loop (2026-11-24).
 #[derive(Debug)]
-pub struct YieldPause;
+pub struct ShortPause;
 
-impl Pause for YieldPause {
+impl Pause for ShortPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-        thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 
@@ -153,7 +154,7 @@ pub fn env(state: &Path) -> Env {
     Env {
         state_dir: Some(state.to_path_buf()),
         identity_default: Some(state.join("identity.key")),
-        pause: Arc::new(YieldPause),
+        pause: Arc::new(ShortPause),
         wait: Duration::from_secs(30),
         recheck: Duration::from_millis(20),
         stop: None,

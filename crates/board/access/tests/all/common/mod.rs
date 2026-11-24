@@ -18,14 +18,14 @@ use atlas_sim_node::access::{ACK, DATA, EXIT, HEAD, RESIZE, read_frame, write_fr
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::Address;
 
-/// A pause that does not wait: the failure rule's delays are tested by the session. It only
-/// yields, so the monitor does not spin while the node is gone.
+/// A pause that does not wait: the failure rule's delays are tested by the session. It sleeps 10 ms,
+/// so the monitor does not spin while the node is gone.
 #[derive(Debug)]
 pub struct NoPause;
 
 impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
-        std::thread::yield_now();
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
 

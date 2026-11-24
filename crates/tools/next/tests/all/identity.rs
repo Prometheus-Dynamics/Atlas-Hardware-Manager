@@ -10,7 +10,7 @@ use std::sync::Arc;
 use atlas_next::identity;
 use atlas_session::{Presence, Sessions};
 use atlas_sim_node::SimNode;
-use common::{YieldPause, env, identity as board_identity, run, scratch, start_node};
+use common::{ShortPause, env, identity as board_identity, run, scratch, start_node};
 use orion::Address;
 
 fn direct(node: &SimNode) -> String {
@@ -123,7 +123,7 @@ async fn two_sessions_with_one_identity_connect_to_the_same_node() {
         .secret;
 
     for _ in 0..2 {
-        let sessions = Sessions::with_identity(Arc::new(YieldPause), secret);
+        let sessions = Sessions::with_identity(Arc::new(ShortPause), secret);
         let handle = sessions.handle(&address).expect("the address is watched");
         let mut presence = handle.watch();
         let found = presence
