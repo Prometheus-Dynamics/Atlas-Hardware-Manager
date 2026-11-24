@@ -146,7 +146,7 @@ test("the scan's manual off is one click, changes no layout, and stops finding",
 
   // While it is off a board that is unplugged stays as it was last known.
   await bridge.call("sim.set_online", { id: DEMO.recovery.id, online: false });
-  await app.waitForTimeout(3000); // longer than a scan round
+  await app.waitForTimeout(1000); // four scan rounds of the UI bridge (250 ms each)
   await expect(row(app, DEMO.recovery).locator(".chip.warn")).toHaveText("Recovery");
   await button.click();
   await expect(chip).toHaveText("Scanning USB and network");

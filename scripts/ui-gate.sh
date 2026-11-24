@@ -67,24 +67,35 @@ built=$target/ui-dist
 [ -f "$built/index.html" ] || { echo "ui-gate: the UI build wrote no index.html into $built" >&2; exit 1; }
 mkdir -p $app/dist
 rsync -r --checksum --delete "$built/" "$app/dist/"
-# The type-check reads only the UI sources; it runs beside the cargo steps, and the gate waits
-# for it before the click tests.
+# Two things run beside the steps after them, each in its own process group: the type-check
+# (UI sources only), and the app's Rust side with the simulated devices (clippy, then its tests).
+# The click tests need only the bridge binary, so they start as soon as it is built. A failing step
+# ends the gate; the groups still running go with it (by their recorded PIDs).
+bg_pids=()
+trap 'for p in "${bg_pids[@]}"; do kill -TERM -- "-$p" 2>/dev/null || true; done' EXIT
 check_log=$target/ui-check.log
 setsid bash -c 'cd "$1" && exec bun run check' ui-check "$app" >"$check_log" 2>&1 &
 check_pid=$!
-# A failing cargo step ends the gate; the type-check's process group goes with it (by its PID).
-trap 'kill -TERM -- "-$check_pid" 2>/dev/null || true' EXIT
+bg_pids+=("$check_pid")
 
-echo "==> ui gate: the app's Rust side with the simulated devices"
-cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings
-cargo test --locked -p atlas-app --features sim
+echo "==> ui gate: the UI bridge with the simulated devices"
 cargo build --locked -p atlas-app --features sim --bin atlas-ui-bridge
+# The click tests run a copy: `cargo test` below rebuilds the package's binaries in target/debug while they run.
+mkdir -p "$target/ui-bridge"
+cp -f "$target/debug/atlas-ui-bridge" "$target/ui-bridge/atlas-ui-bridge"
+
+echo "==> ui gate: the app's Rust side with the simulated devices (beside the click tests; log $target/ui-rust.log)"
+rust_log=$target/ui-rust.log
+setsid bash -c 'cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings && cargo test --locked -p atlas-app --features sim' \
+  ui-rust >"$rust_log" 2>&1 &
+rust_pid=$!
+bg_pids+=("$rust_pid")
+
 if ! wait "$check_pid"; then
   cat "$check_log" >&2
   echo "ui-gate: the UI does not type-check (svelte-check, above)" >&2
   exit 1
 fi
-trap - EXIT
 tail -n 3 "$check_log"
 
 echo "==> ui gate: click tests"
@@ -93,8 +104,16 @@ if ! compgen -G "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-*" >/dev/null
   [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium in $PLAYWRIGHT_BROWSERS_PATH" >&2; exit 1; }
   (cd $app && node node_modules/@playwright/test/cli.js install --only-shell chromium)
 fi
-export ATLAS_UI_BRIDGE=$target/debug/atlas-ui-bridge
+export ATLAS_UI_BRIDGE=$target/ui-bridge/atlas-ui-bridge
 export ATLAS_E2E_OUT=$target/ui-gate
 [ -z "$screens" ] || export ATLAS_SCREENS_DIR=$screens
 (cd $app && node node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts "${pw_args[@]+"${pw_args[@]}"}")
+
+if ! wait "$rust_pid"; then
+  cat "$rust_log" >&2
+  echo "ui-gate: the app's Rust side with the simulated devices failed (clippy or its tests, above)" >&2
+  exit 1
+fi
+grep -E '^test result:|Finished' "$rust_log" | tail -n 4
+trap - EXIT
 echo "ui gate passed"

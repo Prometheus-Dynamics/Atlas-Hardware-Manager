@@ -1,6 +1,6 @@
 // F2, the shell: it opens with the last known inventory, state arrives by events, and the tree
 // leads to every screen. Real pointer clicks against the real core and the simulated devices.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, holdSnapshot, startBridge, test } from "./bridge";
@@ -48,7 +48,16 @@ test("it opens with the last known inventory before any scan answers", async ({ 
   const page = await browser.newPage();
   await page.goto(first.url);
   await demoSettled(page);
-  await page.waitForTimeout(2500); // the inventory is saved at most every two seconds
+  // The inventory is saved at most every two seconds: wait until the saved file holds every device.
+  await expect
+    .poll(() => {
+      try {
+        return (JSON.parse(readFileSync(join(dataDir, "data", "inventory.json"), "utf8")) as { devices: unknown[] }).devices.length;
+      } catch {
+        return 0;
+      }
+    }, { timeout: 10_000 })
+    .toBe(7);
   await first.stop();
 
   const second = await startBridge(dataDir);

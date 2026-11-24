@@ -71,6 +71,9 @@ test("Locate is off with its reason on the page, and Reboot runs at once and kee
   // from before the click (the node also counts a device's description runs under that name).
   const reboot = top.getByRole("button", { name: "Reboot" });
   await expect(reboot).toBeEnabled();
+  // The page's own timers run on a clock the test moves (below), so "after the moment has passed" is
+  // checked without waiting it out.
+  await app.clock.install();
   const before = (await bridge.call("sim.node", { runs: "lemnos.reboot.call" })) as number;
   await reboot.click();
   // The result is a line in the log pane, kept in the board's history: no chip in the top bar.
@@ -83,7 +86,7 @@ test("Locate is off with its reason on the page, and Reboot runs at once and kee
   // moment has passed (the old chip went after 8 s).
   await bridge.call("sim.node", { log: "camera: frame loop started" });
   await expect(app.locator('[data-panel="dock"] .lines .ln').nth(1)).toContainText("frame loop started");
-  await app.waitForTimeout(9000);
+  await app.clock.fastForward(9000);
   await expect(result).toContainText("system.reboot.reboot: ");
   // And it is one of Recent events, under the board's name.
   const snapshot = (await bridge.call("snapshot")) as { topics: { inventory: { activity: { device: string; kind: string; message: string }[] } } };
