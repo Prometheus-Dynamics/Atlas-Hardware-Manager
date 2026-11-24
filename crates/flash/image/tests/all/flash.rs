@@ -293,7 +293,9 @@ fn the_early_board_check_reads_only_up_to_the_data_partition() {
         DATA_FIXTURE,
         2048,
     );
-    let file = xz(&raw);
+    // Noise does not compress: preset 0 makes the same size of file in a quarter of
+    // the time, and one thread keeps it one block.
+    let file = xz_with(&raw, &["--check=crc64", "-T1", "-0"]);
     let path = image_file(&dir, "image.img.xz", &file);
     let total = file.len() as u64;
 
@@ -339,7 +341,7 @@ fn a_multi_block_stream_is_read_through_its_index() {
 fn a_dictionary_over_the_limit_is_refused_before_anything_is_decoded() {
     let dir = TestDir::new("dict");
     // 17 MiB of a repeating pattern: xz -7 declares a 16 MiB dictionary for it.
-    let big: Vec<u8> = (0..(17u64 << 20)).map(|i| (i % 251) as u8).collect();
+    let big = periodic(17 << 20);
     let path = image_file(
         &dir,
         "dict.img.xz",

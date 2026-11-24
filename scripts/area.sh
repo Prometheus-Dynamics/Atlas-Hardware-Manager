@@ -7,7 +7,7 @@
 #     wt/<name>        one git worktree per piece of work (branch pr/<name>)
 #     target/<name>    its own CARGO_TARGET_DIR (never shared: cargo's mtime freshness mixes code between worktrees);
 #                      on btrfs its own subvolume, as are tmp/<name> and cache/gaia-store (see make_dir)
-#     tmp/<name>       its TMPDIR and gate scratch root (short, so test socket paths fit)
+#     tmp/<name>       its TMPDIR outside the gate (the gate's own scratch root is on tmpfs, see scratch_fast)
 #     logs/<name>      the logs of its runs, each with the load at start and end
 #     cache/           shared caches: gaia-store (GAIA_STORE), downloads (sccache stays in its own default, shared)
 #
@@ -28,6 +28,10 @@ area=${ATLAS_AREA:-/mnt/nvme-wd/atlas}
 cpus=${ATLAS_CPUS:-6-31}
 jobs=${ATLAS_JOBS:-13}
 key_dir=${ATLAS_BENCH_KEY_DIR:-/mnt/ssd-samsung/atlas-bench-key}
+# The gate's scratch root (its TMPDIR, removed when it exits) is on tmpfs: the tests write hundreds of MiB of images
+# and sparse cards there, and on a busy disk they waited on it (2026-11-24, atlas-image + atlas-disk under nextest at
+# load ~105: 22.7 s with the scratch on nvme-wd btrfs, 7.4 s on /tmp tmpfs; the 256 MiB writes 22 s -> 6.7 s).
+scratch_fast=${ATLAS_SCRATCH_FAST:-/tmp}
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && git rev-parse --show-toplevel)
 
 die() { echo "area: $*" >&2; exit 1; }
@@ -85,7 +89,7 @@ env_of() {  # <name>
   cat <<EOF
 export CARGO_TARGET_DIR=$area/target/$name
 export TMPDIR=$area/tmp/$name
-export ATLAS_SCRATCH_ROOT=$area/tmp/$name/scratch
+export ATLAS_SCRATCH_ROOT=$scratch_fast/atlas-$name-scratch
 export GAIA_STORE=$area/cache/gaia-store
 export CARGO_BUILD_JOBS=$jobs
 export ATLAS_BENCH_SEED_FILE=$key_dir/bench.seed

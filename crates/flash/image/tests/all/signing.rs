@@ -256,7 +256,7 @@ fn a_sha256_check_is_accepted_and_a_bigger_dictionary_is_refused_by_name() {
     let made = flash_manifest(&sha_file, dir.path(), None).expect("SHA-256 check accepted");
     assert_eq!(made.manifest.image_sha256(), hex(&sha256(&raw)));
 
-    let big: Vec<u8> = (0..(17u64 << 20)).map(|i| (i % 251) as u8).collect();
+    let big = periodic(17 << 20);
     let seven = dir.write("seven.img.xz", &xz_with(&big, &["-7", "--check=crc64"]));
     let error = flash_manifest(&seven, dir.path(), None).expect_err("16 MiB dictionary");
     let text = error.to_string();
@@ -375,7 +375,7 @@ fn gaias_builder_command_is_accepted_and_preset_seven_is_refused_naming_the_dict
     let made = flash_manifest(&six, dir.path(), None).expect("-6 -T1 is accepted");
     assert_eq!(made.manifest.image_sha256(), hex(&sha256(&raw)));
 
-    let big: Vec<u8> = (0..(17u64 << 20)).map(|i| (i % 251) as u8).collect();
+    let big = periodic(17 << 20);
     let seven = dir.write(
         "seven.img.xz",
         &xz_with(&big, &["-7", "--check=crc64", "-T1"]),

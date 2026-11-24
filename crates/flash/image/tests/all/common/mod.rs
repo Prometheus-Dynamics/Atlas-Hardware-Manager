@@ -279,6 +279,18 @@ pub fn image_disk() -> Vec<u8> {
     }])
 }
 
+/// `size` bytes of the repeating 0, 1, .., 250 pattern, copied period by period (a
+/// per-byte loop costs seconds in a debug build at tens of MiB).
+pub fn periodic(size: usize) -> Vec<u8> {
+    let period: Vec<u8> = (0..251u8).collect();
+    let mut raw = Vec::with_capacity(size);
+    while raw.len() < size {
+        let n = (size - raw.len()).min(period.len());
+        raw.extend_from_slice(&period[..n]);
+    }
+    raw
+}
+
 /// Bytes with no repeats the compressor can use: a xorshift stream, so a large
 /// one stays large once compressed.
 pub fn noise(n: usize, seed: u64) -> Vec<u8> {

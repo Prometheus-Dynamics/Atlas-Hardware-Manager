@@ -31,7 +31,7 @@ fn a_large_single_block_image_is_read_in_bounded_memory() {
     const SIZE: usize = 64 << 20;
     let dir = TestDir::new("memory");
     // A repeating pattern compresses fast; the stream is still one block.
-    let body: Vec<u8> = (0..SIZE).map(|i| (i % 251) as u8).collect();
+    let body = periodic(SIZE);
     let raw = gpt_disk(&[
         Part {
             name: "data",
@@ -49,7 +49,15 @@ fn a_large_single_block_image_is_read_in_bounded_memory() {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    let path = dir.write("big.img.xz", &xz_with(&raw, &["--check=crc64", "-T1"]));
+    let path = dir.write(
+        "big.img.xz",
+        &xz_with(
+            &raw,
+            // One block with the builder's 8 MiB dictionary (the decoder's memory);
+            // preset 0's fast match finder only shortens the compressing.
+            &["--check=crc64", "-T1", "--lzma2=preset=0,dict=8MiB"],
+        ),
+    );
     let total = raw.len();
     drop(raw);
 

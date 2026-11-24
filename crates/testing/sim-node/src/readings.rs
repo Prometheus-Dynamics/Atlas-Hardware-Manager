@@ -926,8 +926,9 @@ impl Devices {
             }
             // Provider topics declare `FromNow` at Orion ae6eb669 (provider lib.rs:124); see the module note.
             // The status and the generation are written on every tick until they can declare Latest.
-            if let (Some(status), Some((health, reason))) = (&mut listed.status, spec.status) {
-                for (index, text) in ["ready", health, reason, "0"].iter().enumerate() {
+            // Every declared field, `pushes` too: a reader that subscribes after the first write waits for each one.
+            if let (Some(status), Some(values)) = (&mut listed.status, status_values(spec)) {
+                for (index, text) in values.iter().enumerate() {
                     let _ = status.publish(FieldId(index as u16), now, text.as_bytes());
                 }
             }
@@ -1077,6 +1078,18 @@ fn described_item(item: &Item) -> describe::Item {
     }
 }
 
+/// A device's status fields in their declared order (state, health, reason, refusal, pushes); `None` when it
+/// has no status topic. `pushes` is `accepted` for a device whose contract takes files (it has `accept`).
+fn status_values(spec: &Spec) -> Option<[&'static str; 5]> {
+    let (health, reason) = spec.status?;
+    let pushes = if spec.methods.iter().any(|method| method.name == "accept") {
+        "accepted"
+    } else {
+        ""
+    };
+    Some(["ready", health, reason, "0", pushes])
+}
+
 /// The payload of one sample at `tick`, in its field's type.
 fn payload(sample: Sample, tick: u64) -> Vec<u8> {
     match sample {
@@ -1147,8 +1160,8 @@ fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Li
         description
             .publish(FieldId(0), now, &(model.generation as i64).to_le_bytes())
             .map_err(|error| error.to_string())?;
-        let status = match spec.status {
-            Some((health, reason)) => {
+        let status = match status_values(spec) {
+            Some(values) => {
                 // The pin's status fields (Lemnos 214c0ca7 service/orion/src/publish.rs:250-256): `refusal` is
                 // the refusal kind in decimal, 0 for none, which a running device says; `pushes` is empty for a
                 // device that takes no files and `accepted` for one the bridge has a place for (the slots
@@ -1160,15 +1173,10 @@ fn list(orion: &Orion, models: &mut [Model], control: &Control) -> Result<Vec<Li
                     text_field("refusal"),
                     text_field("pushes"),
                 ];
-                let pushes = if spec.methods.iter().any(|method| method.name == "accept") {
-                    "accepted"
-                } else {
-                    ""
-                };
                 let mut status = builder
                     .topic("status", &status_fields, 1, 256)
                     .map_err(|error| error.to_string())?;
-                for (index, text) in ["ready", health, reason, "0", pushes].iter().enumerate() {
+                for (index, text) in values.iter().enumerate() {
                     status
                         .publish(FieldId(index as u16), now, text.as_bytes())
                         .map_err(|error| error.to_string())?;

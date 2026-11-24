@@ -55,6 +55,18 @@ pub fn read_exact_at(file: &fs::File, mut buf: &mut [u8], mut offset: u64) -> io
 }
 
 /// A fresh path in the temporary directory, unique to this process and call.
+/// `size` bytes of the repeating 0, 1, .., 250 pattern, copied period by period (a
+/// per-byte loop costs seconds in a debug build at 256 MiB).
+pub fn periodic(size: usize) -> Vec<u8> {
+    let period: Vec<u8> = (0..251u8).collect();
+    let mut raw = Vec::with_capacity(size);
+    while raw.len() < size {
+        let n = (size - raw.len()).min(period.len());
+        raw.extend_from_slice(&period[..n]);
+    }
+    raw
+}
+
 pub fn temp(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -149,10 +161,17 @@ impl Target for FileTarget {
 /// The xz file of `raw`, made by the `xz` program with its CRC-64 check. Needs
 /// `xz` on the PATH: the tests that call it are unix-only.
 pub fn xz_bytes(raw: &[u8]) -> Vec<u8> {
+    xz_bytes_with(raw, &[])
+}
+
+/// [`xz_bytes`] with more `xz` options, such as `-T1` for one block (xz 5.4 and
+/// later compress with all threads by default, one block per thread's share).
+pub fn xz_bytes_with(raw: &[u8], options: &[&str]) -> Vec<u8> {
     use std::io::Write;
     use std::process::{Command, Stdio};
     let mut child = Command::new("xz")
         .args(["--check=crc64", "--compress", "--stdout"])
+        .args(options)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

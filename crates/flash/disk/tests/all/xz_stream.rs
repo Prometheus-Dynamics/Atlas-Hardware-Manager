@@ -12,7 +12,7 @@ use crate::common;
 use std::sync::atomic::AtomicBool;
 
 use atlas_disk::{ResumePolicy, WriteOptions, write_image};
-use common::{FileTarget, temp, xz_bytes};
+use common::{FileTarget, periodic, temp, xz_bytes, xz_bytes_with};
 
 /// A stand-in signature record: the 108 bytes, as the record stream decodes to.
 fn record() -> Vec<u8> {
@@ -85,10 +85,19 @@ fn status_kib(field: &str) -> u64 {
 #[test]
 fn a_single_block_image_of_256_mib_is_written_in_bounded_memory() {
     const SIZE: usize = 256 << 20;
-    let raw: Vec<u8> = (0..SIZE).map(|i| (i % 251) as u8).collect();
+    let raw = periodic(SIZE);
     let image = temp("big-single-block.img.xz");
-    // One block, as `xz -T1` writes it.
-    std::fs::write(&image, xz_bytes(&raw)).unwrap();
+    // One block, as `xz -T1` writes it, with the largest dictionary the contract
+    // allows (8 MiB: the decoder's memory is the dictionary). The fast match finder
+    // of preset 0 changes only how long compressing takes.
+    let one_block = xz_bytes_with(&raw, &["-T1", "--lzma2=preset=0,dict=8MiB"]);
+    let layout = atlas_xzdec::scan(&mut std::io::Cursor::new(&one_block)).unwrap();
+    assert_eq!(
+        (layout.blocks, layout.dictionary),
+        (1, 8 << 20),
+        "the test image must be one block with an 8 MiB dictionary"
+    );
+    std::fs::write(&image, one_block).unwrap();
     drop(raw);
 
     let mut disk = FileTarget::sparse(SIZE as u64);
@@ -124,8 +133,8 @@ fn a_single_block_image_of_256_mib_is_written_in_bounded_memory() {
 #[test]
 fn a_two_stream_256_mib_image_is_written_in_bounded_memory() {
     const SIZE: usize = 256 << 20;
-    let raw: Vec<u8> = (0..SIZE).map(|i| (i % 251) as u8).collect();
-    let mut file = xz_bytes(&raw);
+    let raw = periodic(SIZE);
+    let mut file = xz_bytes_with(&raw, &["--lzma2=preset=0,dict=8MiB"]);
     file.extend_from_slice(&xz_bytes(&record()));
     drop(raw);
     let image = temp("big-two-stream.img.xz");

@@ -125,7 +125,7 @@ fn a_stream_with_more_blocks_than_the_reader_takes_is_refused_by_count_before_de
     // index, so the content does not matter.
     let dir = TestDir::new("too-many-blocks");
     let scratch = TestDir::new("too-many-blocks-scratch");
-    let raw: Vec<u8> = (0..(8193usize * 4096)).map(|i| (i % 251) as u8).collect();
+    let raw = periodic(8193 * 4096);
     let path = dir.write(
         "many.img.xz",
         &xz_with(&raw, &["-0", "--check=crc64", "-T1", "--block-size=4096"]),
