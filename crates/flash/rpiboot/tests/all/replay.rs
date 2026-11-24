@@ -107,14 +107,19 @@ const A0_LOG: &[Row] = &[
 ];
 
 /// A file's bytes: its size, and a pattern of its own so one file sent for
-/// another shows.
+/// another shows. The 251-byte period is copied, not made byte by byte: the
+/// boot image is 82 MB, seconds of a per-byte loop in a debug build.
 fn contents(name: &str, size: usize) -> Vec<u8> {
     let seed = name
         .bytes()
         .fold(7u8, |acc, byte| acc.wrapping_mul(31) ^ byte);
-    (0..size)
-        .map(|at| seed.wrapping_add((at % 251) as u8))
-        .collect()
+    let period: Vec<u8> = (0..251u8).map(|at| seed.wrapping_add(at)).collect();
+    let mut bytes = Vec::with_capacity(size);
+    while bytes.len() < size {
+        let n = (size - bytes.len()).min(period.len());
+        bytes.extend_from_slice(&period[..n]);
+    }
+    bytes
 }
 
 /// The served folder as the log saw it: every file it found, at its size, keyed
