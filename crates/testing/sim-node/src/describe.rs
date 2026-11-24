@@ -13,7 +13,7 @@
 
 use std::fmt::Write as _;
 
-// board: Lemnos e199fcb9 service/orion/src/description.rs:244-262 (device_record): a mirror of its encoder. This crate
+// board: Lemnos 214c0ca7 service/orion/src/description.rs:244-262 (device_record): a mirror of its encoder. This crate
 // does not depend on Lemnos; `live` and `refusal` are written as the encoder writes them for a running device.
 /// The first line of every description: the format's version.
 pub const VERSION_LINE: &str = "describe 1";
@@ -196,7 +196,7 @@ fn reading_name(reading: Option<Reading>) -> &'static str {
 /// `generation` is the device's description generation (`None` before the device has one).
 /// `lease_seconds` is the board's lease period when the lease is on (`None`: the record has no such
 /// word, as the bridge writes it only then).
-// board: Lemnos e199fcb9 service/orion/src/description.rs:244-248 (device_record: generation, then lease_seconds when set)
+// board: Lemnos 214c0ca7 service/orion/src/description.rs:244-248 (device_record: generation, then lease_seconds when set)
 #[must_use]
 pub fn render(device: &Device, generation: Option<u64>, lease_seconds: Option<u64>) -> String {
     let mut out = String::from(VERSION_LINE);

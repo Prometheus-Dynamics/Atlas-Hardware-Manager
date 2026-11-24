@@ -1,6 +1,14 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to 376a4b56 (pin move 15, 2026-11-23, the coordinator's change to the move): Gaia next, e0252eac and the EROFS
+# read-back taking lz4 and lz4hc with a cluster size as lz4 (it refused them, which every dev-to-bundle build hit). Its
+# cache key is unchanged, so nothing rebuilds. Before: e0252eac (never gated here; its words below stay as its record).
+# Moved to e0252eac (pin move 15, 2026-11-23, the coordinator's rev): Gaia next with the board profile's stock host
+# attaching again when a gadget goes twice (e0252eac), the gate's per-test bounds (03b3a805, af759c9f), the OS root
+# having the users its table declares and the links its presets call for (6f98adbc), the FunctionFS refusal run in the
+# board profile (5765773f), extended attributes kept or named (331a51d7), a target directory per worktree (e6fd4e69),
+# and the Luckfox Aura board examples (df716c26, 26125b21). Before: 7b9d6379.
 # Moved to 7b9d6379 (pin move 13, 2026-11-23, the coordinator's rev): Gaia next row 41 on row 42 (a0fd2cb1, below): the
 # toolchain's runtime libraries that nothing in the root links leave it, and a product names a library the OS builds
 # but nothing links with `[[images.prune_libs]]` (raze-base: libgpiodcxx, which was what kept libstdc++). The build
@@ -60,4 +68,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "7b9d637947f5a84b0b8cb6dd67f4c599cc259f50"
+commit = "376a4b564c6f6752b966f7cc0a965ef7314f8654"

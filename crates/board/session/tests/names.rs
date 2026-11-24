@@ -35,11 +35,11 @@ fn the_sim_contract_hashes_are_the_pinned_contracts_hashes() {
     assert_eq!(
         <dyn Slots as Contract>::HASH,
         atlas_sim_node::readings::SLOTS_CONTRACT_HASH,
-        "system.slots/1 at e199fcb9"
+        "system.slots/1 at 214c0ca7"
     );
     assert_eq!(
         <dyn Reboot as Contract>::HASH,
         atlas_sim_node::readings::REBOOT_CONTRACT_HASH,
-        "system.reboot/1 at e199fcb9"
+        "system.reboot/1 at 214c0ca7"
     );
 }

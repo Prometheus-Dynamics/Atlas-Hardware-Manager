@@ -21,7 +21,7 @@
 #
 # The items (Orion's six unit-setting checks, and the image's own):
 #   units            no unit failed; the journal is on the data partition (board-journal); no leftover peer file
-#   files-fact       the hello document says `files` (`orion node show`)
+#   files-fact       files are open: the hello (`orion node show`) has no `files` fact, which says why they fail
 #   files-push       a file pushed into each read-write root (roots/app/, roots/calibrations/) arrives with its bytes
 #   files-fetch      a file under the read-only root is fetched with its bytes (roots/logs/; a root's files are
 #                    named roots/<root>/<path>, Orion 2026-11-23)
@@ -91,8 +91,11 @@ fi
 
 if wanted files-fact; then
   ctl node show > "$out/node-show.txt" 2>&1
-  if grep -q '^files ' "$out/node-show.txt"; then pass files-fact "$(grep '^files ' "$out/node-show.txt")"
-  else fail files-fact "\`orion node show\` has no \`files\` line (facts: $(sed -n 's/^\([a-z_.-]*\) .*/\1/p' "$out/node-show.txt" | tr '\n' ' '))"; fi
+  # The board publishes the `files` fact only where files cannot be opened, and it says why:
+  # board: Orion ae6eb669 crates/node/node-app/src/lib.rs:545 ("Where files cannot be opened, the board says so in its hello")
+  if ! grep -q '^node ' "$out/node-show.txt"; then fail files-fact "\`orion node show\` did not answer: $(first "$out/node-show.txt" 3)"
+  elif grep -q '^files ' "$out/node-show.txt"; then fail files-fact "the board says files fail: $(grep '^files ' "$out/node-show.txt")"
+  else pass files-fact "the hello has no \`files\` fact, so files are open (facts: $(sed -n 's/^\([a-z_.-]*\) .*/\1/p' "$out/node-show.txt" | tr '\n' ' '))"; fi
 fi
 
 stamp="first-boot-check $(date -u +%Y%m%dT%H%M%SZ) $$"

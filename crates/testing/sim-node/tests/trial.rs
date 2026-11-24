@@ -218,7 +218,7 @@ fn a_healthy_trial_confirms_itself_after_the_uptime_on_the_clock() {
     assert_eq!(confirmed["resolved"]["outcome"], "confirmed");
     assert_eq!(confirmed["resolved"]["by"], "auto");
     assert!(confirmed["resolved"]["caller"].is_null());
-    // A confirm records no reason: null, as the board writes it (Lemnos resolve.rs:472).
+    // A confirm records no reason: null, as the board writes it (Lemnos resolve.rs:481).
     assert!(confirmed["resolved"]["reason"].is_null(), "{confirmed}");
 }
 

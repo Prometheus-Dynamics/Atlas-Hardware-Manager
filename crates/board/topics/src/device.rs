@@ -26,10 +26,10 @@ use crate::description::{Description, DescriptionState, ItemRecord};
 use crate::value::{ItemKind, ReadingKind, Reported, Scalar, UnitState};
 
 /// The resource prefix of the devices a node lists (`lemnos.<device>`).
-// board: Lemnos e199fcb9 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
+// board: Lemnos 214c0ca7 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
 pub const RESOURCE_PREFIX: &str = "lemnos.";
 /// The kind a device resource is written as.
-// board: Lemnos e199fcb9 service/orion/src/lib.rs:54 (RESOURCE_KIND)
+// board: Lemnos 214c0ca7 service/orion/src/lib.rs:54 (RESOURCE_KIND)
 pub const RESOURCE_KIND: &str = "lemnos.device";
 /// The suffix of a device's status topic: its `health` and `reason`.
 pub const STATUS_SUFFIX: &str = ".status";
@@ -444,7 +444,7 @@ pub(crate) fn describe(raw: RawDevice) -> Device {
             .collect();
         let mut matched = Vec::new();
         for item in &description.items {
-            // The values topic has one field per item, named as the item is (board: Lemnos e199fcb9
+            // The values topic has one field per item, named as the item is (board: Lemnos 214c0ca7
             // service/orion/src/publish.rs:1332). The item's `field` names a field of its method's
             // reply, never a topic field, so it plays no part here.
             let value = item.name.as_deref().and_then(|name| {
@@ -575,7 +575,7 @@ mod tests {
     fn a_value_is_joined_to_its_item_by_the_item_s_name_whatever_the_reply_field() {
         // A real board's cpu-thermal, as it described it on 2026-11-22: the item reads the whole
         // reply of method 1 (`field=none`), and the bridge publishes the value under the item's
-        // name (board: Lemnos e199fcb9 service/orion/src/publish.rs:1337, `name: &item.name`).
+        // name (board: Lemnos 214c0ca7 service/orion/src/publish.rs:1344, `name: &item.name`).
         let board = described(
             "describe 1\ndevice\ncontract index=0 tag=\"temperature/1\" kind=\"sensor\" hash=0x1 methods=1\nmethod contract=0 id=1 name=\"read\" params=\"\" returns=\"f32\" out_buffer=false job=false\nitem kind=value name=\"v\" unit=\"°C\" unit_state=known exponent=0 contract=0 method=1 field=none reading=number group=none",
         );

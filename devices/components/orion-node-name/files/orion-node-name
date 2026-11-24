@@ -8,7 +8,7 @@
 # the unit shows failed and the board keeps orion.conf's name. No name is invented.
 # The serial is read as lemnos0-address reads it (the scheme Atlas uses): NUL and surrounding whitespace dropped, all
 # hex, at least 8 digits, the last 8 lowercased. Overrides for the off-board check (scripts/check-orion-node-name.sh):
-# ORION_NODE_NAME_CONF, ORION_NODE_NAME_SERIAL, ORION_NODE_NAME_DIR.
+# ORION_NODE_NAME_CONF, ORION_NODE_NAME_SERIAL, ORION_NODE_NAME_DIR, ORION_NODE_NAME_HOSTNAME.
 set -u
 
 CONF=${ORION_NODE_NAME_CONF:-/etc/orion/node-name.conf}
@@ -48,3 +48,13 @@ s8=${s8#"${s8%????????}"}
 mkdir -p "$DIR" || fail "$DIR cannot be made: orion.conf's name is kept"
 printf 'ORION_NODE_NAME=%s-%s\n' "$prefix" "$s8" > "$DIR/node-name.env.tmp" &&
 	mv "$DIR/node-name.env.tmp" "$DIR/node-name.env" || fail "$DIR/node-name.env cannot be written: orion.conf's name is kept"
+
+# The board's hostname is its node name too (coordinator, pin move 15), so the journal, mDNS and a shell all say the
+# same name as Atlas. The kernel's hostname is written directly (the root is read-only, so /etc/hostname cannot
+# change, and no hostname applet is needed). A failure here leaves Orion's name in place: it is said, and the unit
+# shows failed. ORION_NODE_NAME_HOSTNAME overrides the file for the off-board check.
+HOSTNAME_FILE=${ORION_NODE_NAME_HOSTNAME:-/proc/sys/kernel/hostname}
+if ! printf '%s' "$prefix-$s8" > "$HOSTNAME_FILE"; then
+	echo "orion-node-name: the hostname could not be set to $prefix-$s8 ($HOSTNAME_FILE): Orion's name is set" >&2
+	exit 1
+fi

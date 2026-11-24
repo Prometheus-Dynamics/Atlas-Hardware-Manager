@@ -15,6 +15,9 @@ dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x2000
 # The boot-time pin states (USB power on, fan duty) are config.txt lines Lemnos writes in its own later
 # steps (`tree --boot-dir`, and at L2 the boot-partition step). They are NOT written by the Gaia generate step
 # of PR B27: Gaia has no key for config.txt lines by design. Nothing is written yet, so the board does not get
-# its pin states from this file until Lemnos's step exists. Checked at e199fcb9: NOT FOUND. No code in
-# drivers/slot-store writes these lines (bootadd.rs keeps config.txt and has no gpio writer).
+# its pin states from this file. Checked at 214c0ca7 (pin move 15): Lemnos's step exists and is what the
+# Raze's boot partition is built with: `lemnos-ctl boot-partition` writes config.txt's fixed text with the
+# board's `gpio=` lines from the board file and its SoC map (board: Lemnos 214c0ca7
+# service/ctl/src/boot_partition.rs:4; the Raze's config_lines are in lemnos-board.toml [boot]). No build
+# step reads this file; it is kept as the record of dev's lines until it is removed with a ruling.
 # ---- END LEMNOS-OWNED PLACEHOLDER ----

@@ -485,8 +485,86 @@ fn the_kept_signature_is_given_back_as_the_image_holds_it_and_an_unsigned_slot_h
 }
 
 #[test]
-fn a_named_partition_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_is_refused() {
+fn a_partition_is_given_back_by_its_label_byte_for_byte_and_a_missing_or_oversized_one_is_refused()
+{
     let dir = TestDir::new("partition-bytes");
+    // The table's name for it decides nothing: the label on its filesystem does.
+    let boot = fat_partition(Some("LEMNOS-BOOT"), 96 * 1024);
+    let disk = gpt_disk(&[
+        Part {
+            name: "firmware",
+            first_lba: 2048,
+            bytes: &boot,
+        },
+        Part {
+            name: "data",
+            first_lba: 4096,
+            bytes: DATA_FIXTURE,
+        },
+    ]);
+    for (name, bytes) in [("raw.img", disk.clone()), ("xz.img.xz", xz(&disk))] {
+        let image = dir.write(name, &bytes);
+        let read =
+            atlas_image::partition_bytes_labelled(&image, dir.path(), "LEMNOS-BOOT", 1 << 20)
+                .expect("the boot partition is read");
+        assert_eq!(read, boot, "{name}");
+        let missing = atlas_image::partition_bytes_labelled(&image, dir.path(), "NOPE", 1 << 20);
+        assert!(
+            matches!(&missing, Err(error) if error.to_string().contains("the image has no partition whose filesystem is labelled \"NOPE\"")),
+            "{missing:?}"
+        );
+        let large = atlas_image::partition_bytes_labelled(&image, dir.path(), "LEMNOS-BOOT", 1024);
+        assert!(
+            matches!(&large, Err(error) if error.to_string().contains("more than")),
+            "{large:?}"
+        );
+        // Nothing is left behind in the scratch parent.
+        assert_eq!(dir.entries(), [name.to_owned()], "{name}");
+        std::fs::remove_file(image).expect("the image is removed");
+    }
+}
+
+#[test]
+fn an_mbr_image_gives_its_boot_partition_by_its_label_and_one_built_before_the_label_is_refused() {
+    let dir = TestDir::new("partition-bytes-mbr");
+    let boot = fat_partition(Some("LEMNOS-BOOT"), 64 * 1024);
+    let labelled = mbr_disk(&[
+        MbrPart {
+            kind: 0x0C,
+            first_lba: 2048,
+            bytes: &boot,
+        },
+        MbrPart {
+            kind: 0x83,
+            first_lba: 4096,
+            bytes: DATA_FIXTURE,
+        },
+    ]);
+    let image = dir.write("labelled.img", &labelled);
+    let read = atlas_image::partition_bytes_labelled(&image, dir.path(), "LEMNOS-BOOT", 1 << 20)
+        .expect("the boot partition is read");
+    assert_eq!(read, boot);
+    std::fs::remove_file(image).expect("the image is removed");
+    // An image from before the label: its boot FAT has none, and the refusal lists what it holds.
+    let image = dir.write("mbr.img", &raze_like_disk());
+    let error = atlas_image::partition_bytes_labelled(&image, dir.path(), "LEMNOS-BOOT", 1 << 20)
+        .unwrap_err();
+    let words = error.to_string();
+    assert!(
+        words.contains("the image has no partition whose filesystem is labelled \"LEMNOS-BOOT\""),
+        "{words}"
+    );
+    assert!(
+        words.contains("partition 1 (type 0x0c, vfat, no label)"),
+        "{words}"
+    );
+    assert_eq!(dir.entries(), ["mbr.img".to_owned()]);
+}
+
+#[test]
+fn a_partition_by_its_gpt_name_the_lookup_before_labels_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_is_refused()
+ {
+    let dir = TestDir::new("partition-bytes-named");
     let boot = noise(96 * 1024, 7);
     let disk = gpt_disk(&[
         Part {
@@ -502,15 +580,15 @@ fn a_named_partition_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_
     ]);
     for (name, bytes) in [("raw.img", disk.clone()), ("xz.img.xz", xz(&disk))] {
         let image = dir.write(name, &bytes);
-        let read = atlas_image::partition_bytes(&image, dir.path(), "boot", 1 << 20)
+        let read = atlas_image::partition_bytes_named(&image, dir.path(), "boot", 1 << 20)
             .expect("the boot partition is read");
         assert_eq!(read, boot, "{name}");
-        let missing = atlas_image::partition_bytes(&image, dir.path(), "nope", 1 << 20);
+        let missing = atlas_image::partition_bytes_named(&image, dir.path(), "nope", 1 << 20);
         assert!(
             matches!(&missing, Err(error) if error.to_string().contains("no \"nope\" partition")),
             "{missing:?}"
         );
-        let large = atlas_image::partition_bytes(&image, dir.path(), "boot", 1024);
+        let large = atlas_image::partition_bytes_named(&image, dir.path(), "boot", 1024);
         assert!(
             matches!(&large, Err(error) if error.to_string().contains("more than")),
             "{large:?}"
@@ -523,9 +601,10 @@ fn a_named_partition_is_given_back_byte_for_byte_and_a_missing_or_oversized_one_
 
 #[test]
 fn a_named_partition_of_an_mbr_image_is_refused_since_an_mbr_names_none() {
-    let dir = TestDir::new("partition-bytes-mbr");
+    let dir = TestDir::new("partition-bytes-named-mbr");
     let image = dir.write("mbr.img", &raze_like_disk());
-    let error = atlas_image::partition_bytes(&image, dir.path(), "boot", 1 << 20).unwrap_err();
+    let error =
+        atlas_image::partition_bytes_named(&image, dir.path(), "boot", 1 << 20).unwrap_err();
     let words = error.to_string();
     assert!(
         words.contains("an MBR, which names no partition"),

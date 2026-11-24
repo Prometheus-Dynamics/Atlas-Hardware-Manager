@@ -83,6 +83,9 @@ pub struct Plan {
     pub bay: String,
     pub form: Form,
     pub files: Vec<Served>,
+    /// How the boot partition was found, when not by its label: an image built before its Lemnos
+    /// labelled the boot partition. Said in one line with the plan.
+    pub boot_found: Option<String>,
 }
 
 /// How the boot partition is served.
@@ -111,8 +114,9 @@ pub const BAY_EXACT_IMAGE: &str = "boot.img";
 /// The BAY-EXACT form's outer config.txt.
 pub const BAY_EXACT_CONFIG: &str = "boot_ramdisk=1\n";
 
-/// The name of the boot partition in a product's image.
-const BOOT_PARTITION: &str = "boot";
+/// The label of the boot partition's FAT, which is how the image says which partition it is: the
+/// board's `boot_label`, or Lemnos's default when the board file names none.
+const BOOT_LABEL: &str = lemnos_slot_store::fatimage::DEFAULT_LABEL;
 /// The largest boot partition read (it is held in memory).
 const MAX_BOOT_PARTITION: u64 = 1 << 30;
 
@@ -162,26 +166,45 @@ fn one_slot(image: &std::path::Path, scratch: &std::path::Path) -> Result<String
     }
 }
 
-/// The image's boot partition, byte for byte.
+/// The GPT name of the boot partition, the lookup for an image built before its Lemnos labelled the
+/// boot FAT. An MBR names no partition, so a pre-label MBR image is still refused.
+const BOOT_GPT_NAME: &str = "boot";
+
+/// The image's boot partition, byte for byte, found by its label; on an image without the label,
+/// by the old lookup (its GPT name), with the one line that says so.
 fn boot_partition_of(
     image: &std::path::Path,
     scratch: &std::path::Path,
-) -> Result<Vec<u8>, String> {
-    atlas_image::partition_bytes(image, scratch, BOOT_PARTITION, MAX_BOOT_PARTITION).map_err(
-        |error| {
-            // An MBR image's boot partition can only be told by a label on its FAT, which Lemnos's
-            // boot-partition tool does not write yet: such an image predates the boot label.
-            let predates = if error.to_string().contains("an MBR") {
-                " (this image predates the boot partition's label, so its boot partition cannot be told from the others)"
-            } else {
-                ""
-            };
-            format!(
-                "the boot partition of the image {}: {error}{predates}: nothing was sent",
-                image.display()
-            )
-        },
-    )
+) -> Result<(Vec<u8>, Option<String>), String> {
+    let refused = |error: atlas_image::ImageError| {
+        format!(
+            "the boot partition of the image {}: {error}: nothing was sent",
+            image.display()
+        )
+    };
+    match atlas_image::partition_bytes_labelled(image, scratch, BOOT_LABEL, MAX_BOOT_PARTITION) {
+        Ok(bytes) => Ok((bytes, None)),
+        Err(labelled) if labelled.to_string().contains("the image has no ") => {
+            // Lemnos labels the boot FAT from 214c0ca7 on (BOOT-FAT-LABEL); the way-back images
+            // on the bench predate it, and are still read the old way.
+            atlas_image::partition_bytes_named(image, scratch, BOOT_GPT_NAME, MAX_BOOT_PARTITION)
+                .map(|bytes| {
+                    (
+                        bytes,
+                        Some(format!(
+                            "no boot label: found boot by its GPT name {BOOT_GPT_NAME:?}; an image built at Lemnos 214c0ca7 or later has one"
+                        )),
+                    )
+                })
+                .map_err(|named| {
+                    format!(
+                        "the boot partition of the image {}: {labelled}; nor by the old lookup: {named}: nothing was sent",
+                        image.display()
+                    )
+                })
+        }
+        Err(error) => Err(refused(error)),
+    }
 }
 
 /// Checks everything before anything is sent. `Err` carries every refusal, each in plain words.
@@ -212,7 +235,8 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         )]
     })?;
     let manifest = inspected.manifest;
-    let image = boot_partition_of(&opts.image, scratch.path()).map_err(|error| vec![error])?;
+    let (image, boot_found) =
+        boot_partition_of(&opts.image, scratch.path()).map_err(|error| vec![error])?;
     let tree = fat::read_tree(image.clone())
         .map_err(|error| vec![format!("{error}: nothing was sent")])?;
 
@@ -477,6 +501,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         bay: format!("bay{bay_set}"),
         form,
         files,
+        boot_found,
     })
 }
 
@@ -495,7 +520,7 @@ fn padded_differences(
 ) -> Vec<String> {
     let base_image =
         match Scratch::make().and_then(|scratch| boot_partition_of(base, scratch.path())) {
-            Ok(bytes) => bytes,
+            Ok((bytes, _)) => bytes,
             Err(error) => return vec![format!("the base image: {error}")],
         };
     if base_image.len() != image.len() {
@@ -767,6 +792,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// The plan as text, for the coordinator to read before any board contact.
 pub fn write_plan<W: Write>(plan: &Plan, opts: &UsbBootOptions, out: &mut W) {
     let _ = writeln!(out, "usb-boot plan");
+    if let Some(found) = &plan.boot_found {
+        let _ = writeln!(out, "  {found}");
+    }
     match (&opts.agent, &opts.serve_dir) {
         (Some(agent), _) => {
             let _ = writeln!(out, "  agent      {agent}");

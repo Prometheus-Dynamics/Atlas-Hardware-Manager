@@ -209,7 +209,12 @@ fn boot_partition(dir: &Path, files: &[(String, Vec<u8>)]) -> PathBuf {
         &mut file,
         fatfs::FormatVolumeOptions::new()
             .fat_type(fatfs::FatType::Fat16)
-            .bytes_per_cluster(2048),
+            .bytes_per_cluster(2048)
+            // Labelled as Lemnos's boot-partition tool labels it: how usb-boot finds it in an image.
+            .volume_label(
+                lemnos_slot_store::fatimage::label(lemnos_slot_store::fatimage::DEFAULT_LABEL)
+                    .expect("Lemnos's default label is a FAT label"),
+            ),
     )
     .expect("formatted");
     let fs = fatfs::FileSystem::new(file, fatfs::FsOptions::new()).expect("mounted");
@@ -646,6 +651,10 @@ async fn the_dry_run_lists_every_file_and_sends_nothing() {
     eprintln!("{out}");
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("usb-boot plan"), "{out}");
+    assert!(
+        !out.contains("no boot label"),
+        "a labelled image's boot is found by its label: {out}"
+    );
     assert!(out.contains("slot       slot-a"), "{out}");
     assert!(out.contains("dry run: nothing was sent"), "{out}");
     for (path, hash) in &want {
@@ -1051,7 +1060,8 @@ async fn agent_and_serve_dir_together_are_refused() {
 }
 
 #[tokio::test]
-async fn an_image_with_no_boot_partition_or_no_slot_is_refused_by_name() {
+async fn an_image_with_no_slot_is_refused_by_name_and_one_built_before_the_boot_label_is_read_the_old_way()
+ {
     let boot = boot_contents();
     let case = case(&SIGN_SEED, partition_files("slot-a", &boot, vec![]));
     let dir = case.bootfiles.parent().expect("scratch");
@@ -1063,26 +1073,37 @@ async fn an_image_with_no_boot_partition_or_no_slot_is_refused_by_name() {
         atlas_sim_node::image::disk_of(&[("boot", &partition)]),
     )
     .expect("an image");
-    // The whole image with its boot partition under another name.
+    // The whole image with its boot FAT unlabelled, as an image built before Lemnos labelled it
+    // (the boot sector's label field as mkfs.fat leaves a volume with none): its boot is found by
+    // the old lookup, its GPT name, and the plan says so in one line.
     let whole = std::fs::read(image_of(&case)).expect("the image");
-    let renamed = dir.join("renamed.img");
+    let unlabelled = dir.join("unlabelled.img");
+    let mut bare = partition.clone();
+    bare[43..54].copy_from_slice(b"NO NAME    ");
     let bundle = std::fs::read(&case.bundle).expect("the bundle");
     let files = atlas_sim_node::image::bundle_files(&bundle, "slot-a", true).expect("files");
     let scratch = tempfile::tempdir_in(dir).expect("scratch");
     let data =
         atlas_sim_node::image::data_partition(&files, scratch.path(), 4 << 20).expect("data");
     std::fs::write(
-        &renamed,
-        atlas_sim_node::image::disk_of(&[("firmware", &partition), ("data", &data)]),
+        &unlabelled,
+        atlas_sim_node::image::disk_of(&[("boot", &bare), ("data", &data)]),
     )
     .expect("an image");
     assert!(!whole.is_empty());
-    for (image, words) in [
+    for (image, dry_run, code_wanted, words) in [
         (
             &no_slot,
-            "no partition whose filesystem is labelled \"lemnos-data\": it holds partition 1 (named \"boot\", vfat, no label)",
+            false,
+            1,
+            "no partition whose filesystem is labelled \"lemnos-data\": it holds partition 1 (named \"boot\", vfat, labelled \"LEMNOS-BOOT\")",
         ),
-        (&renamed, "no \"boot\" partition"),
+        (
+            &unlabelled,
+            true,
+            0,
+            "usb-boot plan\n  no boot label: found boot by its GPT name \"boot\"; an image built at Lemnos 214c0ca7 or later has one\n",
+        ),
     ] {
         let env = Env::new(None);
         let args: Vec<String> = [
@@ -1100,11 +1121,12 @@ async fn an_image_with_no_boot_partition_or_no_slot_is_refused_by_name() {
         ]
         .iter()
         .map(|s| s.to_string())
+        .chain(dry_run.then(|| "--dry-run".to_owned()))
         .collect();
         let mut out = Vec::new();
         let code = execute(&args, &env, &mut out).await;
         let out = String::from_utf8(out).expect("text");
-        assert_eq!(code, 1, "{out}");
+        assert_eq!(code, code_wanted, "{out}");
         assert!(out.contains(words), "{out}");
         assert!(sent(&case).is_empty(), "nothing is sent: {out}");
     }

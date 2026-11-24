@@ -28,7 +28,8 @@ expect() {  # <case> <want rc> <want text in output or file> <command...>
 name() {  # <conf text> <serial bytes>
   printf '%s' "$1" > "$t/name.conf"
   printf "$2" > "$t/serial"
-  ORION_NODE_NAME_CONF=$t/name.conf ORION_NODE_NAME_SERIAL=$t/serial ORION_NODE_NAME_DIR=$t/run sh "$name_sh" && cat "$t/run/node-name.env"
+  ORION_NODE_NAME_CONF=$t/name.conf ORION_NODE_NAME_SERIAL=$t/serial ORION_NODE_NAME_DIR=$t/run \
+    ORION_NODE_NAME_HOSTNAME=${hostname_file:-$t/hostname} sh "$name_sh" && cat "$t/run/node-name.env" "$t/hostname"
 }
 expect "a 16-digit serial with a NUL" 0 "ORION_NODE_NAME=raze-26d57abc" name $'# x\nprefix=raze\n' '1000a317BCbe26d57ABC\000'
 expect "an 8-digit serial with spaces" 0 "ORION_NODE_NAME=pv-deadbeef" name $'prefix=pv\n' ' DEADBEEF \n'
@@ -40,6 +41,11 @@ expect "a prefix with a dot" 1 "no usable prefix" name $'prefix=ra.ze\n' '123456
 expect "no prefix" 1 "no usable prefix" name $'other=1\n' '12345678'
 expect "a 55-byte prefix" 1 "longer than 54" name "prefix=$(printf 'a%.0s' {1..55})" '12345678'
 expect "a 54-byte prefix fits Orion's 63" 0 "-12345678" name "prefix=$(printf 'a%.0s' {1..54})" '12345678'
+# The hostname is the node name too; a hostname that cannot be written is said, and the node name stays written.
+expect "the hostname is the node name" 0 "raze-26d57abc" name $'prefix=raze\n' '1000a317bcbe26d57abc'
+[[ $(cat "$t/hostname") == raze-26d57abc ]] || { echo "check-boot-scripts: the hostname file holds $(cat "$t/hostname")" >&2; fails=$((fails + 1)); }
+hostname_file=$t/no-such-dir/hostname expect "a hostname that cannot be written" 1 "hostname could not be set" name $'prefix=raze\n' '12345678'
+grep -q "ORION_NODE_NAME=raze-12345678" "$t/run/node-name.env" || { echo "check-boot-scripts: the node name was not kept when the hostname failed" >&2; fails=$((fails + 1)); }
 
 # ---- board-journal (the paths that bind nothing)
 journal() {  # <mountinfo lines>

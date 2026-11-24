@@ -229,7 +229,7 @@ async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
     };
     assert_eq!(decided.by, "auto");
     assert_eq!(decided.running, Running::Trial);
-    // The board's record is kept as it is: a confirm carries no reason (Lemnos resolve.rs:472).
+    // The board's record is kept as it is: a confirm carries no reason (Lemnos resolve.rs:481).
     assert_eq!(decided.reason, "", "the board's own (empty) reason is kept");
     assert!(follower.states().is_empty(), "the outcome is released");
 

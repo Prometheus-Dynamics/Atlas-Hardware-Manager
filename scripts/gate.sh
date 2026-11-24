@@ -195,7 +195,7 @@ if [ -f scripts/check-board-names.sh ]; then
   step "board names self-test" scripts/check-board-names.sh --self-test
 fi
 
-# The Raze's console follows the board's security switch (LOCK: Lemnos e199fcb9 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
+# The Raze's console follows the board's security switch (LOCK: Lemnos 214c0ca7 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
 if [ -f scripts/check-console-gate.py ]; then
   step "console follows the security view" python3 scripts/check-console-gate.py
 fi

@@ -404,7 +404,7 @@ impl Watch {
     fn decide(&self, list: &SlotList) -> TrialState {
         let slot = self.slot.clone();
         let running = self.running();
-        // The board writes the per-slot `signature` word (Lemnos e199fcb9 drivers/system-slots/src/lib.rs:1413).
+        // The board writes the per-slot `signature` word (Lemnos 214c0ca7 drivers/system-slots/src/lib.rs:1441).
         // An absent word is NotReported, never verified.
         let signature = list
             .get(&self.slot)

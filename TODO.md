@@ -3,13 +3,65 @@
 Every PR has a brief in `docs/prs/`. `python3 scripts/pr-status.py` shows what is ready.
 Needs named `X<n>` are outside blocks, listed in `docs/design.md`.
 
-Status of every item, checked on 2026-11-22 against `origin/next` f9daf4c2 and every `origin/pr/*` branch:
+Status of every item, checked on 2026-11-22 against `origin/next` f9daf4c2 and every `origin/pr/*` branch. On 2026-11-23,
+every open row was checked again against `origin/next` a98a2cf6, and the work in hand is listed under "Now":
 - **Done**: the brief's deliverables are on `next`; the landing commits are named.
 - **Partly**: names what is missing, including work that exists only on an unmerged branch.
 - **Not started**: nothing of it is on any branch.
 
-Totals: 56 done, 18 partly, 14 not started (88 items; the duplicate D6 row is gone). The six items added on 2026-11-22
-(B42-B46, D19) are not started.
+Totals: 65 done, 13 partly, 14 not started, 2 obsolete (94 items: the 88 of 2026-11-22 and the six added that day,
+B42-B46 and D19). Every row that was not done was checked again on 2026-11-23 against its brief and origin/next
+a98a2cf6. `[~]` marks an obsolete row.
+
+## Now (2026-11-23)
+
+In order. Each item lands on next by itself, through the local gate.
+
+- [ ] **update-try fix** (`pr/update-try-flake`): update.spec.ts checks for any try past the first instead of "(try 2)".
+  The hunt caught it, and its cause is named in docs/flakes.md (update-try-2). Proof first: a planted page stall must
+  fail the old check 3 of 3 and pass the new one 3 of 3. **Written**; the proof waits for the hunt.
+- [ ] **The hunt** for flash.spec.ts:131 ("setting up app": page.goto's load never fired; docs/flakes.md,
+  flash-goto-load). The whole click suite runs round after round, with traces and the bridge's request log, until it
+  fails again. Run 1 caught only update-try-2 (round 9 of 9). Run 2 is under way. **Open**: confirm-rollback cannot
+  land until this cause is named.
+- [ ] **Pin move 15** (`pr/pin15`): Lemnos 214c0ca7, Orion ae6eb669 (I102: its shm crates on the same Lemnos), Gaia
+  376a4b56. Also in it: the hostname is the node name; usb-boot finds the boot partition by the LEMNOS-BOOT label, and
+  an image built before the label by its GPT name, saying so in one line. A pre-label MBR image stays refused, as it
+  always was (coordinator's ruling). After the pin: first-boot-check on the emulator, with files-fact, files-push and
+  files-fetch on roots/<name>/<path>. **Edits done, unbuilt**; checks, the gate (run alone), the image and the
+  emulator run come after the hunt.
+- [ ] **D6 refresh**, one change after pin 15:
+  - the flasher moves to Lemnos 214c0ca7 (one Lemnos rev; FLASH-BRIDGE-PUMP comes with it);
+  - stack-D6F's atlas-files fix, rewritten on next: a lapse after the whole file was acknowledged is not a restart;
+  - D6.md takes the user's ruling that flasher security is out of scope, in place of its security section;
+  - the Flash page's steps 4-6 (Flasher image running, Writing, First boot), which still say "not in this build",
+    are wired to the flash flow on next, so a flash runs from the page end to end in the emulator.
+  **Not started.**
+- [ ] **The eMMC write on Raze #2 through the flasher** (user: yes, with the way back as written). It needs a run sheet
+  once the D6 refresh is on next; the coordinator approves its steps. **Not started.**
+- [ ] **Confirm / Roll back** (`pr/confirm-rollback`, dd0c7932, local, not pushed): Confirm and Roll back on a running
+  trial; Last boots from Lemnos boots(); log times from the board's orion.time offset, or time since the board started
+  with "Board clock not set". **Written, gated once**: it lands once the hunt names its red; its Orion citations move
+  after pin 15.
+- [ ] **Board page rulings (2026-11-23):**
+  - the log time is as above;
+  - Last boots comes from boots(), and the simulator serves it;
+  - the fallback row stays as it is, recorded as a difference from the mock-up;
+  - the flash file's name is on its row, with its folder on a faint second line and no tooltip;
+  - readings lead with temperature, power and current, then Lemnos SYSTEM-STATS once it lands; camera fps comes later
+    from Styx.
+  **Partly**: the log time and Last boots are in confirm-rollback; the readings order waits for SYSTEM-STATS.
+- [ ] **Terminal**: the Board page's Terminal tab still says "The terminal is not in this build". It needs a production
+  carrier in atlas-access (C8), then the terminal widget. **Not started.**
+- [ ] **B14 (mock-up row)**: the row being written is titled from the image's own version ("Slot 5 · 2026.11.14"),
+  not the file's name, until the board gives an id. **Not started.**
+- [ ] **Bus kind (mock-up F21)**: the Flash page's disk Bus column comes from the disk's own bus ("card reader ·
+  removable", "USB 3 · removable"), not the link's label. **Not started.**
+- [ ] **RAZE-DEV-PRODUCT**: a dev variant of raze-base that never ships. It is unsigned, and the slots device has
+  `signature = "not-required"`, so `--until raze-base::bundle` runs without the bench seed. The shipped raze-base is
+  unchanged. Both pieces exist at the pins: Gaia's slot-disk takes an empty `sign_key_env`, and Lemnos 214c0ca7 takes
+  `signature = "not-required"`. Open: giving the variant that board-file line without copying the board. **Not
+  started**; after pin 15.
 
 ## A. Foundation
 
@@ -27,7 +79,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [x] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1). **Done** on next: 231c763f, 7ffeda37
 - [x] [A12](docs/prs/A12.md) The session keeps the key it first saw (wave 5; needs A10, C8). **Done** on next: 0e610ce6, 71303a10
 - [x] [A14](docs/prs/A14.md) The session carries calls while a transfer runs: long operations stepped between calls (needs A12; the real interleaving waits for Orion R2). **Done** on next: 07c88735, 698a5933. Note: The real interleaving waits for Orion R2, as the brief says. Not verified on a board.
-- [ ] [A15](docs/prs/A15.md) A board's lease is kept while Atlas holds something on it (a hold guard, a keep-alive only while holds exist); absent `hello.offers` is NOT REPORTED, not "offers nothing" (needs A14; the renewal is `describe` at Lemnos I6h, the offers cap at M8c). **Partly**: The lease is switched OFF: crates/board/session/src/lease.rs:48 pub const LEASE_IN_FORCE: bool = false; on next. The keep-alive is not in effect at the locked Lemnos.
+- [x] [A15](docs/prs/A15.md) A board's lease is kept while Atlas holds something on it (a hold guard, a keep-alive only while holds exist); absent `hello.offers` is NOT REPORTED, not "offers nothing" (needs A14; the renewal is `describe` at Lemnos I6h, the offers cap at M8c). **Done** on next: 57fefdf4, 6648980d, 590f30e9, 2e197ee5 (merge 433cfc34). LEASE_IN_FORCE is true (crates/board/session/src/lease.rs:46) (checked 2026-11-23 against origin/next a98a2cf6).
 
 ## B. Board descriptions
 
@@ -41,32 +93,33 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B6](docs/prs/B6.md) Luckfox Pico Pro and Aura (wave 2; needs B1). **Partly**: devices/families/rv11xx is not on next. The brief's family is missing from the baseline. Not in PR-merged form.
 - [ ] [B7](docs/prs/B7.md) K230D Zero and AI-CAM (wave 2; needs B1). **Partly**: devices/families/k230 is not on next. The K230D bring-up products are not on next.
 - [ ] [B8](docs/prs/B8.md) SystemCore and robot devices (wave 2; needs B1). **Partly**: devices/products/systemcore-package is not on next.
-- [ ] [B9](docs/prs/B9.md) The flasher image, per family (wave 3; needs B2, B3). **Partly**: on origin/pr/B9 (b2efaf42) as flasher-bcm2712 and flasher-rk35xx, not on next. Brief path devices/products/flasher does not exist; per-family products are on the unmerged branch only.
+- [ ] [B9](docs/prs/B9.md) The flasher image, per family (wave 3; needs B2, B3). **Partly**: flasher-bcm2712 is on next (aabe2074, through D6). flasher-rk35xx is missing; origin/pr/B9 b2efaf42 is not merged (checked 2026-11-23 against origin/next a98a2cf6).
 - [x] [B10](docs/prs/B10.md) App data for every board (wave 3; needs A6, B1). **Done** on next: c2720db3
 - [x] [B11](docs/prs/B11.md) Bring-up products for the ROCK 5C and ROCK 4D (wave 4; needs B4). **Done** on next: 5edb759c. Note: Brief path devices/pending/rock-*-bringup is not used; a38e2070 (B22) moved them out of pending to products. Recorded as the moved location.
-- [ ] [B12](docs/prs/B12.md) Allwinner A733: a candidate source tree, and a bring-up product for the Cubie A7 boards (wave 4; needs B5). **Partly**: Cubie bring-up product deleted on next by PADS bf46b1c8 (PR #138, "cubie bring-up deleted"). devices/pending/cubie-a7-bringup absent.
-- [ ] [B13](docs/prs/B13.md) The bring-up and base consoles, and the SSH host key on the data partition (wave 5; needs B11). **Partly**: Brief's devices/pending/zero-3e-bringup, rock-5c-bringup, rock-4d-bringup, cubie-a7-bringup decision set: zero-3e-bringup deleted by Z2 2f9c1268; cubie-a7-bringup …
+- [~] [B12](docs/prs/B12.md) Allwinner A733: a candidate source tree, and a bring-up product for the Cubie A7 boards (wave 4; needs B5). **Obsolete**: PADS bf46b1c8 deleted cubie-a7-bringup ("superseded by the A7S board's own statement"). The A733 sources and sun60i landed (b08ea1e6, 23902f97, e05de9ea) (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [B13](docs/prs/B13.md) The bring-up and base consoles, and the SSH host key on the data partition (wave 5; needs B11). **Partly**: dev-bringup-hostkey landed (7b9c2f59); devices/pending was removed (a38e2070). Open: the Raze kernel console. Ruled 2026-11-23: console=serial0,115200 (no tty1); the old mask rule goes if the switch-gated getty drop-in covers it, proved by the gate check. Not yet written (raze.fragment:86 still says OPEN) (checked 2026-11-23 against origin/next a98a2cf6).
 - [x] [B14](docs/prs/B14.md) The flasher's built-in kernel options, per family (wave 4; needs B2, B3, B9). **Done** on next: e33f224b
-- [ ] [B15](docs/prs/B15.md) A USB device-mode port in each board's description, and stable gadget addresses on the bring-up products (wave 5; needs B11, Lemnos Q2e). **Partly**: devices/pending/zero-3e-bringup/components/dev-zero-3e-usb-extlinux and its product.toml: deleted on next by Z2 2f9c1268 (bench product replaces it). Fixed g_ether …
+- [x] [B15](docs/prs/B15.md) A USB device-mode port in each board's description, and stable gadget addresses on the bring-up products (wave 5; needs B11, Lemnos Q2e). **Done** on next: 99cf31da (the device-mode port in the board files; RK ports held in lemnos-board.pending.toml). The bring-up half is obsolete: Z2 2f9c1268 deleted zero-3e-bringup (checked 2026-11-23 against origin/next a98a2cf6).
 - [x] [B18](docs/prs/B18.md) Lemnos lock to 4a2d3b7d: every Lemnos pin moved, one-rev check per product, ZERO 3E port validated, Raze refusals on record (needs B15; Lemnos 4a2d3b7d). **Done** on next: 1aad8733, 203b5096
-- [ ] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15). **Partly**: devices/pending/cubie-a7-bringup/{board,product.toml,os.fragment,components/...} deleted on next by PADS bf46b1c8. The bring-up that shows life without a console is not …
+- [~] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15). **Obsolete**: PADS bf46b1c8 deleted the bring-up this needed. The A7S vendor and kernel pins landed (e05de9ea, b08ea1e6) (checked 2026-11-23 against origin/next a98a2cf6).
 - [x] [B20](docs/prs/B20.md) The Raze board file, written to Lemnos Q2d (6905b681); takes effect when the lock moves past 4a2d3b7d (needs B18; Lemnos 6905b681). **Done** on next: 6aebe13b, 03ef52a8
 - [x] [B21](docs/prs/B21.md) VBUS on each board's device-mode port, prepared for Lemnos Q2f (ZERO 3E complete; ROCK 5C held by Lemnos Q2g; ROCK 4D held; needs B15, B18, B19; Lemnos Q2f at 96080d36). **Done** on next: 3f5cef6e, 9174ecd6. Note: ROCK 5C and ROCK 4D stay held (Lemnos Q2g, held), as the brief states. Not a gap in this PR.
 - [x] [B22](docs/prs/B22.md) Gaia lock to 7db227f (next head): the checker refuses a binary of another commit, the plain check is offline, the bring-up products leave pending/ with a named bench-key input (needs B17, B18, B19). **Done** on next: 68e7b43b, 05ec67c6
 - [x] [B24](docs/prs/B24.md) Bring-up USB network: Gaia's usb-gadget-network (configfs NCM, pinned Gaia 4509f6b) for the ZERO 3E and the Cubie A7S; addresses from the board id and serial; the board-id check (needs B15, B16, B19, B22). **Done** on next: 65845581, e53afe34
 - [x] [B16](docs/prs/B16.md) Each family's kernel trimmed to what its boards use, stripping on, and dtbs built with symbols (wave 5; needs B2, B3, B14; Lemnos 4c6678f3 kernel doc). **Done** on next: 5ff282f6, d2ec7bec
 - [x] [B25](docs/prs/B25.md) Every kernel fragment line takes, checked in the gate (wave 6; needs B16, B24). **Done** on next: b8b71845, 68606f5b
-- [ ] [B42](docs/prs/B42.md) The board answers for its hostname by mDNS on lemnos0 (needs B24, B41). **Not started**
-- [ ] [B43](docs/prs/B43.md) check-devices checks the board's DHCP server against the lemnos0 scheme (needs B24). **Not started**
-- [ ] [B44](docs/prs/B44.md) No root console with an empty password in a product image (needs B13). **Not started**
+- [ ] [B42](docs/prs/B42.md) The board answers for its hostname by mDNS on lemnos0 (needs B24, B41). **Partly**: Orion mDNS on lemnos0 and end0 is on next (df6153f7, 30-raze-ways-in.conf). Missing: the hostname-from-node-name step (in pr/pin15), the check-devices refusal for mDNS without a responder, and the board proof (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [B43](docs/prs/B43.md) check-devices checks the board's DHCP server against the lemnos0 scheme (needs B24). **Partly**: scripts/check-lemnos0-address.py exists (a8d1ad7c), but nothing calls it, and it has no pool or lease_seconds check (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [B44](docs/prs/B44.md) Every product's console follows the security switch: off is an open root console, on requires a login and never an empty password (needs B13; rewritten 2026-11-23 by the coordinator's ruling). **Partly**: raze-base's getty gate and scripts/check-console-gate.py are on next. The check covers raze-base-files only, not every product.
 - [ ] [B45](docs/prs/B45.md) check-devices runs lemnos-ctl validate on every board file (needs B20, B18). **Not started**
-- [ ] [B46](docs/prs/B46.md) build-product.sh --build-mode and --medium (needs B22). **Not started**
+- [x] [B46](docs/prs/B46.md) build-product.sh --build-mode and --medium (needs B22). **Done** on next: 999790a9 (scripts/build-product.sh --build-mode clean|dev-reuse and --medium) (checked 2026-11-23 against origin/next a98a2cf6).
 
 ## C. One board driver
 
 Every job on a board through the Orion client, against a simulated node.
 
 - [x] [C1](docs/prs/C1.md) Connect, discover and identify (wave 3; needs A1, A4). **Done** on next: f3d6a065, 45f4b79c. Note: Branch-only origin/pr/C1 head 34dee858 is not an ancestor of next; its own commits are board-data, not the driver, and the driver content …
+  Open (2026-11-23): cubie-a7s-bench exists only on origin/pr/C1 (34dee858; 19 commits not on next, 14 of them touching cubie-a7s-bench). It is rebuilt on next before G5.
 - [x] [C2](docs/prs/C2.md) Readings and logs (wave 4; needs C1, A10). **Done** on next: dcc54b1e, 5173ef08
 - [x] [C3](docs/prs/C3.md) Actions (wave 4; needs C1, A10). **Done** on next: ee2cbc6a, d6873262
 - [x] [C4](docs/prs/C4.md) Files (wave 4; needs C1, A10). **Done** on next: 65fcd9d6, b7cfe61c
@@ -88,8 +141,8 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [x] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1). **Done** on next: 917cd9bf
 - [x] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1). **Done** on next: f131517e
 - [x] [D16](docs/prs/D16.md) FEL: an AArch64 thunk for the A733 (needs D5; untested on board). **Done** on next: ec718494, 742282e8. Note: Untested on a board, as the TODO line says.
-- [ ] [D19](docs/prs/D19.md) atlas-rpiboot boots a real BCM2712; first, since D6 stands on it (needs D2; board step on Raze #2). **Not started**
-- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15). **Not started**
+- [x] [D19](docs/prs/D19.md) atlas-rpiboot boots a real BCM2712; first, since D6 stands on it (needs D2; board step on Raze #2). **Done** on next (came in with pr/F3-PM2): aa2565e0, 9d5fd9b0. The board step on Raze #2 passed 3 of 3.
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15). **Partly**: on next (came in with pr/F3-PM2), aabe2074 to 11745afd and ce6223ba. That covers the bcm2712 flasher product, its way in, its /init and way back, and the whole flash in emulation. Missing: the refresh and the Raze #2 eMMC write listed under "Now".
 - [x] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1). **Done** on next: 36a82285
 - [x] [D18](docs/prs/D18.md) Writing a card on Windows and macOS, as far as it can be proven here (needs D7; host test: docs/host-tests/disk-writer.md). **Done** on next: 6516193f, e035e81b. Note: Windows/macOS proof is only as far as the brief says (CI in G9).
 - [x] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1). **Done** on next: bcb99680
@@ -116,15 +169,15 @@ The robot's own devices, and Atlas installing its package on the controller.
 
 Mockups first, then a faster, cleaner app on the new core.
 
-- [ ] [F1](docs/prs/F1.md) Design language and mockups (wave 1; needs nothing). **Partly**: on origin/pr/F1 (288c070e) and pr/F-app, not merged into next.
-- [ ] [F2](docs/prs/F2.md) The app shell (wave 3; needs A2, A3, A5). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F3](docs/prs/F3.md) Device list and discovery (wave 4; needs F1, F2, C1, A6). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F4](docs/prs/F4.md) The board page (wave 6; needs F3, C2, C3, C5, C7, C8). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F5](docs/prs/F5.md) The flash flow (wave 7; needs F3, D6, D7). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F6](docs/prs/F6.md) Robot and SystemCore pages (wave 6; needs F3, E1, E2, E4). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F7](docs/prs/F7.md) Settings, keys and security (wave 4; needs F2, A7). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
-- [ ] [F8](docs/prs/F8.md) The CLI (wave 7; needs C5, D6, E2). **Not started**
-- [ ] [F9](docs/prs/F9.md) Packaging and self-update (wave 4; needs F2). **Partly**: on origin/pr/F-app (head d1f44d60), not merged into next.
+- [x] [F1](docs/prs/F1.md) Design language and mockups (wave 1; needs nothing). **Done** on next: 288c070e (docs/mockups/, docs/design-language.md). The mock-up differences still open are under "Now" (checked 2026-11-23 against origin/next a98a2cf6).
+- [x] [F2](docs/prs/F2.md) The app shell (wave 3; needs A2, A3, A5). **Done** on next: 31a0fb42 (the app shell; scripts/ui-gate.sh checks that every command is async) (checked 2026-11-23 against origin/next a98a2cf6).
+- [x] [F3](docs/prs/F3.md) Device list and discovery (wave 4; needs F1, F2, C1, A6). **Done** on next: 6754d638, c966c9ba (apps/desktop/src/lib/devices, e2e devices.spec.ts) (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [F4](docs/prs/F4.md) The board page (wave 6; needs F3, C2, C3, C5, C7, C8). **Partly**: the page is on next (pr/F-app, f986c421). Missing: the terminal (needs a production carrier in atlas-access), Files and backup (C7), the camera preview, Confirm/Roll back (pr/confirm-rollback, unlanded) (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [F5](docs/prs/F5.md) The flash flow (wave 7; needs F3, D6, D7). **Partly**: the page is on next (pr/F-app, f986c421), as far as the loader. Missing: steps 4-6 ("not in this build", Flash.svelte:95, :301-305), which come with the D6 refresh (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [F6](docs/prs/F6.md) Robot and SystemCore pages (wave 6; needs F3, E1, E2, E4). **Partly**: the pages are on next. Missing: the install offer is read-only ("Orion and Lemnos not in this build", Systemcore.svelte:132); it needs E2 and E4 (checked 2026-11-23 against origin/next a98a2cf6).
+- [x] [F7](docs/prs/F7.md) Settings, keys and security (wave 4; needs F2, A7). **Done** on next: c04e4249 (trusted keys, the security switch, keep-last-N, the support bundle, settings.spec.ts) (checked 2026-11-23 against origin/next a98a2cf6).
+- [ ] [F8](docs/prs/F8.md) The CLI (wave 7; needs C5, D6, E2). **Partly**: the CLI is crates/tools/next (atlas-next: list, install, trial, confirm, remove, usb-boot). Missing from the brief: ls, flash, doctor, last-boot, rollback, and the gateway paths (E2) (checked 2026-11-23 against origin/next a98a2cf6).
+- [x] [F9](docs/prs/F9.md) Packaging and self-update (wave 4; needs F2). **Done** on next: d1f44d60, 474dc880, 3abfc204, 0ce71655, c77f8f0c (bundles, scripts/deb-fast.sh, self-update in src-tauri/src/update.rs and crates/core/release/src/app_update.rs) (checked 2026-11-23 against origin/next a98a2cf6).
 
 ## G. Board runs and finish
 

@@ -21,7 +21,7 @@ tar = "0.4"
 orion = { workspace = true, features = ["topics", "records", "actions", "files", "provider"] }
 # The comm core for tests: the real server, broker, hello and keys on a real socket, with
 # small stand-ins for node logic. Same commit as the locked `orion` crate.
-orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab" }
+orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "ae6eb669fb55258a37e23f6ddfe6a0df7fd0a978" }
 
 [dev-dependencies]
 tempfile = "3"

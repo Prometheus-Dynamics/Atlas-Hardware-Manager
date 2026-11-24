@@ -1,6 +1,6 @@
 //! Where a scan looks for Orion nodes. This is the one function a scan calls.
 //!
-//! Orion's discovery is in its pinned tree (Orion b01a7fb2, crates/comm/discovery: `mdns.rs` browses
+//! Orion's discovery is in its pinned tree (Orion ae6eb669, crates/comm/discovery: `mdns.rs` browses
 //! `_orion._tcp.local.` and reports the add and remove events as `PeerEvent`). The ticket name "D12" is
 //! not in that tree. Atlas does not read Orion's discovery yet, so the caller supplies the addresses;
 //! this function is where that read goes, and it keeps its place in the driver. Discovery proves

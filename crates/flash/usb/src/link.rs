@@ -456,7 +456,7 @@ fn runtime() -> io::Result<Runtime> {
     Builder::new_current_thread().enable_time().build()
 }
 
-// LOCK: Orion b01a7fb2 crates/client/connect/src/piped.rs:21 (LinkRead, LinkWrite): provisional, as the traits stand at the pin.
+// LOCK: Orion ae6eb669 crates/client/connect/src/piped.rs:21 (LinkRead, LinkWrite): provisional, as the traits stand at the pin.
 /// The read side of a link, as a session moves it onto its own thread.
 /// Provisional: it mirrors Orion's trait until the lock has it, and the
 /// blocking read half of this crate implements it.
@@ -470,7 +470,7 @@ pub trait LinkRead: Send + 'static {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize>;
 }
 
-// LOCK: Orion b01a7fb2 crates/client/connect/src/piped.rs:21 (LinkRead, LinkWrite): provisional, as the traits stand at the pin.
+// LOCK: Orion ae6eb669 crates/client/connect/src/piped.rs:21 (LinkRead, LinkWrite): provisional, as the traits stand at the pin.
 /// The write side of a link. Provisional, as [`LinkRead`].
 ///
 /// `write_all` returns once every byte has been handed to the device, or

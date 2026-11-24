@@ -51,7 +51,7 @@ lemnos = "lemnos-board.toml"
 # boot.scr and the three bay sets from: its size is the product's boot_size, check-devices requires that) and `data`
 # (the slot file; last, and its size is the one number `@data-size@` takes and the ext4 filesystem is made to).
 # DATA SIZE (Z2, final; the set the bench boards copy). The data partition does NOT grow on this GPT board; Lemnos's grow is
-# GPT grow is in code at e199fcb9 (drivers/slot-store/src/grow/gpt.rs) but not yet run on a card (testing/board-runs/GROW.md). Smallest card: 8 GB (the tree's statement, "8 GB+ SD cards the bench uses"), taken as 7.4 GiB
+# GPT grow is in code at 214c0ca7 (drivers/slot-store/src/grow/gpt.rs) but not yet run on a card (testing/board-runs/GROW.md). Smallest card: 8 GB (the tree's statement, "8 GB+ SD cards the bench uses"), taken as 7.4 GiB
 # usable = 7,945,689,497 bytes (a safety margin for cards smaller than nominal). check-devices data_size_rule reads that
 # constant (scripts/check-devices.sh, DATA_CARD_USABLE_BYTES): a board file has no key for the card.
 # Slot bay set (ENFORCED: install.rs:698 refuses a payload larger than its bay before any write; the sizes are the

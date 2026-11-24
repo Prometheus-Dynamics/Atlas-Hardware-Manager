@@ -9,7 +9,7 @@ description = "Orion recovery: orion-recovery-bin (binary orion-recovery), the c
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "b01a7fb2fc76436b551b8f61ac8ebe3d332164ab"  # Orion b01a7fb2 (next: shm pins at Lemnos e199fcb9; I82 clock steps, I83 gateway and nt4 time sources and time.interface, I87 files.receivers; level 6), coordinator 2026-11-23, pin move 14; before: b029f602
+ref = "ae6eb669fb55258a37e23f6ddfe6a0df7fd0a978"  # Orion ae6eb669 (next: I102 shm pins at Lemnos 214c0ca7, I100 board list and mDNS browse, I101, I99, I98 files under node logic's unit, I97; on b01a7fb2), coordinator 2026-11-23, pin move 15; before: b01a7fb2
 
 # The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
 # lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).

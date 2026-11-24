@@ -274,26 +274,63 @@ pub fn open(
     })
 }
 
-/// The bytes of the one partition a GPT names `name` in the image at `image` (`.img.xz` or
-/// `.img`), as the image holds them: for a caller that reads a partition itself (the boot
-/// partition's FAT, which a USB boot serves). The partition is spooled under `scratch_parent` and
-/// the spool is removed before this returns. `max` bounds the partition's length, which is also
-/// the memory this takes.
+/// The bytes of the one partition whose filesystem is labelled `label` in the image at `image`
+/// (`.img.xz` or `.img`), as the image holds them: for a caller that reads a partition itself (the
+/// boot partition's FAT, which a USB boot serves). The image itself says which partition it is, on
+/// a GPT and an MBR disk alike, as for the data partition: a partition is never taken by its
+/// position. The partition is spooled under `scratch_parent` and the spool is removed before this
+/// returns. `max` bounds the partition's length, which is also the memory this takes.
 ///
-/// An MBR names no partition, so an MBR image is refused here, with what it holds: a partition
-/// is never taken by its position. (The data partition is found by its filesystem's label on
-/// either kind of disk; the boot partition's FAT carries no label yet.)
+/// # Errors
+///
+/// When the image cannot be read, has no partition so labelled or two (each partition is listed,
+/// with its filesystem and label), or the partition is longer than `max`.
+pub fn partition_bytes_labelled(
+    image: &Path,
+    scratch_parent: &Path,
+    label: &str,
+    max: u64,
+) -> Result<Vec<u8>, ImageError> {
+    partition_bytes(
+        image,
+        scratch_parent,
+        route::Select::Label(label.to_owned()),
+        max,
+    )
+}
+
+/// As [`partition_bytes_labelled`], for the one partition a GPT names `name`: the lookup for an
+/// image whose partition carries no label. An MBR names no partition, so an MBR image is refused,
+/// with what it holds: a partition is never taken by its position.
 ///
 /// # Errors
 ///
 /// When the image cannot be read, is an MBR disk, has no partition of that name or two, or the
 /// partition is longer than `max`.
-pub fn partition_bytes(
+pub fn partition_bytes_named(
     image: &Path,
     scratch_parent: &Path,
     name: &str,
     max: u64,
 ) -> Result<Vec<u8>, ImageError> {
+    partition_bytes(
+        image,
+        scratch_parent,
+        route::Select::GptName(name.to_owned()),
+        max,
+    )
+}
+
+fn partition_bytes(
+    image: &Path,
+    scratch_parent: &Path,
+    select: route::Select,
+    max: u64,
+) -> Result<Vec<u8>, ImageError> {
+    let what = match &select {
+        route::Select::Label(label) => format!("the partition labelled {label:?}"),
+        route::Select::GptName(name) => format!("the {name:?} partition"),
+    };
     let options = Options {
         max_spool_bytes: max,
         ..Options::default()
@@ -310,15 +347,13 @@ pub fn partition_bytes(
             .map_err(|e| ImageError::Io(e.to_string()))?;
         atlas_xzdec::Layout::plain(len)
     };
-    let mut router = Router::new(scratch.path(), &options, Mode::Slots)
-        .keeping(route::Select::GptName(name.to_owned()));
+    let mut router = Router::new(scratch.path(), &options, Mode::Slots).keeping(select);
     let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
         .map_err(|error| error.to_string());
     let output = router
         .complete(stream)
         .map_err(flash::FlashError::into_image)?;
-    std::fs::read(&output.data)
-        .map_err(|error| ImageError::Io(format!("the {name:?} partition: {error}")))
+    std::fs::read(&output.data).map_err(|error| ImageError::Io(format!("{what}: {error}")))
 }
 
 /// Reads and checks one slot's manifest, file, boot list and boot files.
