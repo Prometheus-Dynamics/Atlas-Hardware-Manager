@@ -6,7 +6,10 @@ export default defineConfig({
   testDir: ".",
   outputDir: process.env.ATLAS_E2E_OUT ?? "../test-results",
   fullyParallel: true,
-  workers: 4,
+  // 8 workers: the suite's tests mostly wait on the app's own timers, not the CPU. At nice 10 and
+  // load 55-73 (2026-11-24): 4 workers 52-54 s, 6 workers 35-50 s, 8 workers 32-35 s for 15% more
+  // CPU. 8 had been refused at nice 19, where other deps' builds starved the suite.
+  workers: 8,
   retries: 0,
   reporter: [["list"]],
   timeout: 30_000,
