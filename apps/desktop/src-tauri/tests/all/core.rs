@@ -68,12 +68,18 @@ fn online(core: &Core) -> usize {
         .count()
 }
 
-/// The demo world as it settles: seven records, the old board unplugged once it was seen.
+/// The demo world as it settles: seven records, the old board unplugged once it was seen, and
+/// the node followed over USB. The node is found on the LAN first and taken over by its USB link
+/// just after; a test that acted before that saw "now followed over usb-1-2" land after its own
+/// change (2026-11-24, docs/flakes.md `scan-settled-node-link`).
 async fn settled(core: &Core) {
     until(core, |core| {
         devices(core).len() == 7
             && online(core) == 6
             && presence(core, OLD).as_deref() == Some("offline")
+            && devices(core)
+                .iter()
+                .any(|device| device["id"] == NODE && device["identity"]["link"] == "usb-1-2")
     })
     .await;
 }
