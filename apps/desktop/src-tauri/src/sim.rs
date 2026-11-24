@@ -691,8 +691,8 @@ impl World {
     }
 
     /// Follows the app and does what a person would have done before the picture: names the
-    /// boards, puts the controller in its robot, and unplugs the old board once it was seen, so
-    /// the list holds an offline record. Called once, when the core is open.
+    /// boards, puts the controller in its robot, and unplugs the old board once it was seen on
+    /// each of its links, so the list holds an offline record. Called once, when the core is open.
     pub fn settle(&self, core: &Core) {
         *self
             .inner
@@ -745,8 +745,20 @@ impl World {
                         });
                     }
                 }
+                // Unplugged once its record holds every link it is placed on. Each link is found
+                // on its own, so the record can exist with one link only; unplugged then, the
+                // other is never seen (docs/flakes.md, devices-old-links).
                 let old = bench::key(bench::OLD_BOARD);
-                if !unplugged && core.with_inventory(|inventory| inventory.get(&old).is_some()) {
+                let seen_everywhere = || {
+                    core.with_inventory(|inventory| {
+                        inventory.get(&old).is_some_and(|record| {
+                            bench::links_of(bench::OLD_BOARD).all(|link| {
+                                record.links.iter().any(|sighting| sighting.link == link)
+                            })
+                        })
+                    })
+                };
+                if !unplugged && seen_everywhere() {
                     world.inner.fleet.set_online(&old, false);
                     unplugged = true;
                 }

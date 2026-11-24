@@ -63,6 +63,14 @@ const PLACES: [Place; 3] = [
     },
 ];
 
+/// The links a board is placed on, each a place of its own.
+pub fn links_of(serial: &str) -> impl Iterator<Item = LinkId> + '_ {
+    PLACES
+        .iter()
+        .filter(move |place| place.serial == serial)
+        .map(|place| LinkId::new(place.link))
+}
+
 #[must_use]
 pub fn key(serial: &'static str) -> DeviceKey {
     DeviceKey::from_static(FAMILY, serial)
