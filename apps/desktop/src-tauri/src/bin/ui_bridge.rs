@@ -10,30 +10,42 @@
 //! - `GET /updates?after=N` answers the updates after number N, waiting up to twenty seconds for
 //!   one. `{"resync": true}` means N is older than what is kept: read `snapshot` again.
 //!
-//! With `--request-log PATH` it writes one line when a worker takes a request and one when it has
-//! answered it (wall time in ms, the worker, the method and path, and for a call its name), so a
+//! With `--request-log PATH` it writes one line when a request is read and one when it has been
+//! answered (wall time in ms, the connection, the method and path, and for a call its name), so a
 //! request that never ends is seen on the server's side too.
+//!
+//! Each connection is its own task on the runtime (hyper), and each answer is worked out on a
+//! blocking thread: a call blocks on the core, and `/updates` waits up to twenty seconds. There is
+//! no fixed pool of connection threads. tiny_http's pool (0.12) could leave a new connection queued
+//! with no thread to read it while the browser kept its other connections open, so a page's load
+//! never finished (docs/flakes.md, flash-goto-load).
 //!
 //! It listens on 127.0.0.1 only, and answers a call only to a page it served itself (the
 //! `Origin` header), so another site open in the same browser cannot drive it.
 
 use std::collections::VecDeque;
+use std::convert::Infallible;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use atlas_app::paths::Dirs;
 use atlas_app::view::Update;
 use atlas_app::{Core, Mode, Options};
+use http_body_util::{BodyExt, Full, Limited};
+use hyper::body::{Bytes, Incoming};
+use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, ORIGIN};
+use hyper::{Method, Request, Response, StatusCode};
 use serde_json::{Value, json};
-use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
 /// Updates kept for a page that polls.
 const KEPT: usize = 512;
 const POLL_WAIT: Duration = Duration::from_secs(20);
-const WORKERS: usize = 8;
+/// The largest call body read.
+const MAX_CALL: usize = 4 << 20;
 
 #[derive(Default)]
 struct Feed {
@@ -185,8 +197,8 @@ fn main() {
         });
     }
 
-    let server = match Server::http(("127.0.0.1", args.port)) {
-        Ok(server) => Arc::new(server),
+    let listener = match std::net::TcpListener::bind(("127.0.0.1", args.port)) {
+        Ok(listener) => listener,
         Err(error) => {
             eprintln!(
                 "atlas-ui-bridge: cannot listen on 127.0.0.1:{}: {error}",
@@ -195,10 +207,7 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let port = server
-        .server_addr()
-        .to_ip()
-        .map_or(args.port, |addr| addr.port());
+    let port = listener.local_addr().map_or(args.port, |addr| addr.port());
     let origin = format!("http://127.0.0.1:{port}");
     println!("atlas-ui-bridge: listening on {origin}");
 
@@ -215,93 +224,166 @@ fn main() {
         },
         None => None,
     };
-    let workers: Vec<_> = (0..WORKERS)
-        .map(|worker| {
-            let log = log.clone();
-            let server = Arc::clone(&server);
-            let feed = Arc::clone(&feed);
-            let core = core.clone();
-            let handle = runtime.handle().clone();
-            let dist = args.dist.clone();
-            let origin = origin.clone();
-            std::thread::spawn(move || {
-                while let Ok(request) = server.recv() {
-                    let what = format!("w{worker} {} {}", request.method(), request.url());
-                    if let Some(log) = &log {
-                        log.line(&format!("begin {what}"));
-                    }
-                    let started = Instant::now();
-                    let call = serve(request, &core, &handle, &feed, &dist, &origin);
-                    if let Some(log) = &log {
-                        let took = started.elapsed().as_millis();
-                        let call = call.map(|name| format!(" call {name}")).unwrap_or_default();
-                        log.line(&format!("end {what} {took} ms{call}"));
-                    }
-                }
-            })
-        })
-        .collect();
-    for worker in workers {
-        let _ = worker.join();
+    let shared = Arc::new(Shared {
+        core,
+        handle: runtime.handle().clone(),
+        feed,
+        dist: args.dist.clone(),
+        origin,
+        log,
+    });
+    runtime.block_on(accept(listener, shared));
+}
+
+/// What every connection's requests are answered from.
+struct Shared {
+    core: Core,
+    handle: tokio::runtime::Handle,
+    feed: Arc<Feed>,
+    dist: PathBuf,
+    origin: String,
+    log: Option<Arc<RequestLog>>,
+}
+
+/// Takes connections for as long as the bridge runs: each one is its own task.
+async fn accept(listener: std::net::TcpListener, shared: Arc<Shared>) {
+    let listener = listener
+        .set_nonblocking(true)
+        .and_then(|()| tokio::net::TcpListener::from_std(listener));
+    let listener = match listener {
+        Ok(listener) => listener,
+        Err(error) => {
+            eprintln!("atlas-ui-bridge: cannot take connections: {error}");
+            std::process::exit(1);
+        }
+    };
+    let next = AtomicU64::new(0);
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _)) => stream,
+            // A connection that failed before it was taken (reset, out of files): the next one is
+            // taken as usual.
+            Err(error) => {
+                eprintln!("atlas-ui-bridge: a connection could not be taken: {error}");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                continue;
+            }
+        };
+        let connection = next.fetch_add(1, Ordering::Relaxed);
+        let shared = Arc::clone(&shared);
+        tokio::spawn(async move {
+            let service = hyper::service::service_fn(move |request| {
+                let shared = Arc::clone(&shared);
+                async move { Ok::<_, Infallible>(answer(request, connection, shared).await) }
+            });
+            // A connection the browser drops mid-request ends here; nothing else depends on it.
+            let _ = hyper::server::conn::http1::Builder::new()
+                .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                .await;
+        });
     }
 }
 
-fn header(name: &str, value: &str) -> Header {
-    Header::from_bytes(name.as_bytes(), value.as_bytes()).expect("a static header is valid")
+/// One request: read, logged, and answered on a blocking thread.
+async fn answer(
+    request: Request<Incoming>,
+    connection: u64,
+    shared: Arc<Shared>,
+) -> Response<Full<Bytes>> {
+    let what = format!("c{connection} {} {}", request.method(), request.uri());
+    if let Some(log) = &shared.log {
+        log.line(&format!("begin {what}"));
+    }
+    let started = Instant::now();
+    let method = request.method().clone();
+    let url = request.uri().path_and_query().map_or_else(
+        || request.uri().path().to_owned(),
+        |pq| pq.as_str().to_owned(),
+    );
+    let from = request
+        .headers()
+        .get(ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let body = if method == Method::POST {
+        match Limited::new(request.into_body(), MAX_CALL).collect().await {
+            Ok(collected) => Some(collected.to_bytes()),
+            Err(_) => None,
+        }
+    } else {
+        Some(Bytes::new())
+    };
+    let worked = Arc::clone(&shared);
+    let (reply, call) =
+        tokio::task::spawn_blocking(move || serve(&method, &url, from.as_deref(), body, &worked))
+            .await
+            .unwrap_or_else(|_| {
+                (
+                    json_reply(
+                        500,
+                        &json!({ "error": "the bridge failed while answering" }),
+                    ),
+                    None,
+                )
+            });
+    if let Some(log) = &shared.log {
+        let took = started.elapsed().as_millis();
+        let call = call.map(|name| format!(" call {name}")).unwrap_or_default();
+        log.line(&format!("end {what} {took} ms{call}"));
+    }
+    reply
 }
 
-fn json_reply(request: Request, status: u16, body: &Value) {
-    let _ = request.respond(
-        Response::from_string(body.to_string())
-            .with_status_code(StatusCode(status))
-            .with_header(header("Content-Type", "application/json"))
-            .with_header(header("Cache-Control", "no-store")),
+fn reply(status: u16, kind: &str, body: impl Into<Bytes>) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(body.into()));
+    *response.status_mut() =
+        StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    if let Ok(value) = kind.parse() {
+        response.headers_mut().insert(CONTENT_TYPE, value);
+    }
+    response.headers_mut().insert(
+        CACHE_CONTROL,
+        hyper::header::HeaderValue::from_static("no-store"),
     );
+    response
+}
+
+fn json_reply(status: u16, body: &Value) -> Response<Full<Bytes>> {
+    reply(status, "application/json", body.to_string())
 }
 
 /// Answers one request. Gives the call's name for a `/call` whose body was read, for the log.
+/// `body` is `None` for a call whose body could not be read (or was over [`MAX_CALL`]).
 fn serve(
-    mut request: Request,
-    core: &Core,
-    runtime: &tokio::runtime::Handle,
-    feed: &Feed,
-    dist: &Path,
-    origin: &str,
-) -> Option<String> {
-    let url = request.url().to_owned();
-    let (path, query) = url.split_once('?').unwrap_or((&url, ""));
-    match (request.method(), path) {
-        (Method::Post, "/call") => {
-            let from_here = request
-                .headers()
-                .iter()
-                .find(|h| h.field.equiv("Origin"))
-                .is_some_and(|h| h.value.as_str() == origin);
-            if !from_here {
-                json_reply(
-                    request,
-                    403,
-                    &json!({ "error": "calls are answered only to the page this bridge serves" }),
+    method: &Method,
+    url: &str,
+    from: Option<&str>,
+    body: Option<Bytes>,
+    shared: &Shared,
+) -> (Response<Full<Bytes>>, Option<String>) {
+    let (path, query) = url.split_once('?').unwrap_or((url, ""));
+    match (method, path) {
+        (&Method::POST, "/call") => {
+            if from != Some(shared.origin.as_str()) {
+                return (
+                    json_reply(
+                        403,
+                        &json!({ "error": "calls are answered only to the page this bridge serves" }),
+                    ),
+                    None,
                 );
-                return None;
             }
-            let mut body = String::new();
-            if request
-                .as_reader()
-                .take(4 << 20)
-                .read_to_string(&mut body)
-                .is_err()
-            {
-                json_reply(
-                    request,
-                    400,
-                    &json!({ "error": "the call could not be read" }),
+            let Some(body) = body else {
+                return (
+                    json_reply(400, &json!({ "error": "the call could not be read" })),
+                    None,
                 );
-                return None;
-            }
-            let Ok(asked) = serde_json::from_str::<Value>(&body) else {
-                json_reply(request, 400, &json!({ "error": "the call is not JSON" }));
-                return None;
+            };
+            let Ok(asked) = serde_json::from_slice::<Value>(&body) else {
+                return (
+                    json_reply(400, &json!({ "error": "the call is not JSON" })),
+                    None,
+                );
             };
             let name = asked
                 .get("name")
@@ -309,42 +391,37 @@ fn serve(
                 .unwrap_or_default()
                 .to_owned();
             let arguments = asked.get("args").cloned().unwrap_or(Value::Null);
-            let mut reply = match runtime.block_on(atlas_app::call::call(core, &name, arguments)) {
-                Ok(value) => json!({ "ok": value }),
-                Err(error) => json!({ "error": error.0 }),
-            };
+            let mut answer =
+                match shared
+                    .handle
+                    .block_on(atlas_app::call::call(&shared.core, &name, arguments))
+                {
+                    Ok(value) => json!({ "ok": value }),
+                    Err(error) => json!({ "error": error.0 }),
+                };
             if name == "snapshot" {
                 // The page follows updates from the number its snapshot was taken at.
-                reply["last"] = json!(feed.last());
+                answer["last"] = json!(shared.feed.last());
             }
-            json_reply(request, 200, &reply);
-            Some(name)
+            (json_reply(200, &answer), Some(name))
         }
-        (Method::Get, "/updates") => {
+        (&Method::GET, "/updates") => {
             let after = query
                 .split('&')
                 .find_map(|pair| pair.strip_prefix("after="))
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0);
-            json_reply(request, 200, &feed.after(after));
-            None
+            (json_reply(200, &shared.feed.after(after)), None)
         }
-        (Method::Get, _) => {
-            serve_file(request, dist, path);
-            None
-        }
-        _ => {
-            json_reply(
-                request,
-                405,
-                &json!({ "error": "not a call this bridge answers" }),
-            );
-            None
-        }
+        (&Method::GET, _) => (serve_file(&shared.dist, path), None),
+        _ => (
+            json_reply(405, &json!({ "error": "not a call this bridge answers" })),
+            None,
+        ),
     }
 }
 
-fn serve_file(request: Request, dist: &Path, path: &str) {
+fn serve_file(dist: &Path, path: &str) -> Response<Full<Bytes>> {
     let relative = path.trim_start_matches('/');
     let relative = if relative.is_empty() {
         "index.html"
@@ -361,9 +438,7 @@ fn serve_file(request: Request, dist: &Path, path: &str) {
         None
     };
     let Some(bytes) = bytes else {
-        let _ =
-            request.respond(Response::from_string("not found").with_status_code(StatusCode(404)));
-        return;
+        return reply(404, "text/plain; charset=utf-8", "not found");
     };
     let kind = match file.extension().and_then(|e| e.to_str()) {
         Some("html") => "text/html; charset=utf-8",
@@ -375,9 +450,5 @@ fn serve_file(request: Request, dist: &Path, path: &str) {
         Some("json") => "application/json",
         _ => "application/octet-stream",
     };
-    let _ = request.respond(
-        Response::from_data(bytes)
-            .with_header(header("Content-Type", kind))
-            .with_header(header("Cache-Control", "no-store")),
-    );
+    reply(200, kind, bytes)
 }

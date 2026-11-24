@@ -29,7 +29,10 @@ sim = [
     "dep:atlas-mock",
     "dep:atlas-sim-node",
     "dep:atlas-driver-rockchip",
-    "dep:tiny_http",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:http-body-util",
+    "tokio/net",
     "dep:base64",
     "dep:sha2",
 ]
@@ -75,7 +78,12 @@ atlas-driver-rockchip = { path = "../../../crates/drivers/rockchip", optional = 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
-tiny_http = { version = "0.12", optional = true }
+# The UI bridge's HTTP server (feature `sim`): one task per connection on the runtime. hyper and
+# hyper-util were already in the lock (through the HTTP client); the bridge adds their server side.
+# tiny_http 0.12 is gone: its connection pool could strand a new connection (docs/flakes.md).
+hyper = { version = "1", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio"], optional = true }
+http-body-util = { version = "0.1", optional = true }
 # The simulated release feed: a minisign-form key for the trusted list, and its installer's hash.
 base64 = { version = "0.22", optional = true }
 sha2 = { version = "0.11", optional = true }
