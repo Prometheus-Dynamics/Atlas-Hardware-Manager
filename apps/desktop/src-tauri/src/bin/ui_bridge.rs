@@ -35,6 +35,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use atlas_app::paths::Dirs;
 use atlas_app::view::Update;
 use atlas_app::{Core, Mode, Options};
+use atlas_jobs::ScanConfig;
 use http_body_util::{BodyExt, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, ORIGIN};
@@ -175,6 +176,13 @@ fn main() {
     });
     let mut options = Options::new(Some(Dirs::under(data)), Mode::Sim);
     options.scene = args.scene.clone();
+    // The simulated world answers from memory, so the bridge scans it often: a test waits for
+    // what the scan sees, and a two-second scan made every test wait seconds for each change.
+    options.scan = ScanConfig {
+        tick: Duration::from_millis(50),
+        interval: Duration::from_millis(250),
+        ..ScanConfig::default()
+    };
     let core = runtime.block_on(Core::open(options));
 
     let feed = Arc::new(Feed::default());

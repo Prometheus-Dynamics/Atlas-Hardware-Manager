@@ -292,8 +292,8 @@
         <button class="btn" data-busy-stop onclick={() => call("board.busy.stop", { id }).catch(() => {})}>Stop</button>
       {/if}
       {#if missing}<span class="faint" data-not-offered>{missing}</span>{/if}
-      <button class="btn" class:dis={!locate} disabled={!locate} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
-      <button class="btn" class:dis={!reboot} disabled={!reboot} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
+      <button class="btn" class:dis={!locate} disabled={!locate || !!busy} onclick={() => locate && run("locate", "board.action", { action: locate.name })}><Icon name="locate" />Locate</button>
+      <button class="btn" class:dis={!reboot} disabled={!reboot || !!busy} onclick={() => reboot && run("reboot", "board.action", { action: reboot.name })}><Icon name="power" />Reboot</button>
     {/snippet}
 
     <section class="panel" style="grid-column:1/-1" data-panel="readings">
@@ -346,7 +346,7 @@
         {#if list && online}<span class="chip neu">{list.slots.length + (installing ? 1 : 0)} kept</span>{/if}
         <span class="grow"></span>
         <!-- Always in its place; it can be pressed when the board's slots are read and nothing is being installed. -->
-        <button class="btn sm pri" disabled={!list || !online || installing} onclick={() => run("install", "board.slots.install", {})}><Icon name="plus" />Install…</button>
+        <button class="btn sm pri" disabled={!list || !online || installing || !!busy} onclick={() => run("install", "board.slots.install", {})}><Icon name="plus" />Install…</button>
       </div>
       {#if list && online}
         <div class="fill" style="flex:1;min-height:0">
@@ -372,9 +372,9 @@
                 </div>
                 <div class="acts">
                   {#if install.final}
-                    <button class="btn sm" onclick={() => run("dismiss", "board.slots.install.dismiss", {})}>Dismiss</button>
+                    <button disabled={!!busy} class="btn sm" onclick={() => run("dismiss", "board.slots.install.dismiss", {})}>Dismiss</button>
                   {:else}
-                    <button class="btn sm quiet" onclick={() => run("cancel", "board.slots.install.cancel", {})}>Cancel</button>
+                    <button disabled={!!busy} class="btn sm quiet" onclick={() => run("cancel", "board.slots.install.cancel", {})}>Cancel</button>
                   {/if}
                 </div>
               </div>
@@ -425,15 +425,15 @@
                   </div>
                   <div class="acts">
                     {#if slot.pinned}
-                      <button class="btn sm" onclick={() => run("unpin", "board.slots.unpin", { slot: slot.id })}>Unpin</button>
+                      <button disabled={!!busy} class="btn sm" onclick={() => run("unpin", "board.slots.unpin", { slot: slot.id })}>Unpin</button>
                     {:else}
-                      <button class="btn sm" onclick={() => run("pin", "board.slots.pin", { slot: slot.id })}><Icon name="pin" />Pin</button>
+                      <button disabled={!!busy} class="btn sm" onclick={() => run("pin", "board.slots.pin", { slot: slot.id })}><Icon name="pin" />Pin</button>
                     {/if}
                     {#if !slot.running && !slot.trial && !list.trial_slot}
-                      <button class="btn sm" onclick={() => run("trial", "board.slots.trial", { slot: slot.id })}>Trial</button>
+                      <button disabled={!!busy} class="btn sm" onclick={() => run("trial", "board.slots.trial", { slot: slot.id })}>Trial</button>
                     {/if}
                     {#if !slot.default && !slot.trial}
-                      <button class="btn sm" onclick={() => run("default", "board.slots.default", { slot: slot.id })}>Set default</button>
+                      <button disabled={!!busy} class="btn sm" onclick={() => run("default", "board.slots.default", { slot: slot.id })}>Set default</button>
                     {/if}
                     {#if removable(slot)}
                       <button class="btn sm" onclick={() => (removing = slot.id)}>Remove</button>

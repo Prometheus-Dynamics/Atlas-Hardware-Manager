@@ -71,7 +71,7 @@
     <div class="ph">
       <h2>Image</h2><span class="grow"></span><span class="chip neu">first-flash image</span>
       <!-- Always in its place: it cannot be pressed while a disk is being written. -->
-      <button class="btn sm" class:pri={app.ready && !writing && image?.state !== "ready"} disabled={!app.ready || writing} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
+      <button class="btn sm" class:pri={app.ready && !writing && image?.state !== "ready"} disabled={!app.ready || writing || !!busy} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
     </div>
     <div class="pb">
       <!-- The same three rows in every state, so the list below never moves. A refused file's
@@ -140,24 +140,24 @@
             {/if}
           </div>
         </div>
-        <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.cancel")}>Cancel</button>
+        <button disabled={!!busy} class="btn sm" style="margin-left:8px" onclick={() => ask("disk.cancel")}>Cancel</button>
       {:else if write?.status === "done"}
         <div class="note ok" style="flex:1;white-space:normal;overflow-wrap:anywhere" data-written>
           {write.file} is on {write.name}: {size(write.report?.bytes_written ?? 0)} written and read back. It can be removed.
           {#if write.report?.sha256}<span class="mono">SHA-256 {write.report.sha256}</span>{/if}
         </div>
-        <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Done</button>
+        <button disabled={!!busy} class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Done</button>
       {:else if write}
         <!-- Why the write failed, in full: it wraps instead of being cut. -->
         <div class="note err" style="flex:1;white-space:normal" data-write-failed>
           {write.status === "cancelled" ? `Cancelled. ${write.name} is partly written and needs a new write.` : write.words}
         </div>
-        <button class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Dismiss</button>
+        <button disabled={!!busy} class="btn sm" style="margin-left:8px" onclick={() => ask("disk.dismiss")}>Dismiss</button>
       {:else if confirming && chosen && image?.state === "ready"}
         <div class="confirm-line" style="flex:1;height:auto;min-height:24px;padding:4px 8px;background:var(--err-bg);border-left:2px solid var(--err);border-radius:2px">
           <span class="q">Erase {dev(chosen)} ({nameOf(chosen)}) and write {image.file}? This cannot be undone.</span>
           <button class="btn sm" onclick={() => (confirming = false)}>Cancel</button>
-          <button class="btn sm danger" onclick={erase}>Erase and write</button>
+          <button disabled={!!busy} class="btn sm danger" onclick={erase}>Erase and write</button>
         </div>
       {:else if !app.ready}
         <div style="flex:1"><div class="ph-skel" style="width:40%"></div></div>

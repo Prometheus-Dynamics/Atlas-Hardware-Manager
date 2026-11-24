@@ -5,7 +5,8 @@
 #
 #   ATLAS_AREA (default /mnt/nvme-wd/atlas)
 #     wt/<name>        one git worktree per piece of work (branch pr/<name>)
-#     target/<name>    its own CARGO_TARGET_DIR (never shared: cargo's mtime freshness mixes code between worktrees)
+#     target/<name>    its own CARGO_TARGET_DIR (never shared: cargo's mtime freshness mixes code between worktrees);
+#                      on btrfs its own subvolume, as are tmp/<name> and cache/gaia-store (see make_dir)
 #     tmp/<name>       its TMPDIR and gate scratch root (short, so test socket paths fit)
 #     logs/<name>      the logs of its runs, each with the load at start and end
 #     cache/           shared caches: gaia-store (GAIA_STORE), downloads (sccache stays in its own default, shared)
@@ -31,10 +32,24 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && git rev-parse --show-toplevel)
 
 die() { echo "area: $*" >&2; exit 1; }
 
+# On btrfs, each heavy directory is its own subvolume: in the disk's shared top-level subvolume every metadata read
+# (a cargo freshness check, Gaia's lstat walk of a reused tree) queued behind other sessions' writers in
+# btrfs_tree_read_lock (Gaia measured a 0.15-0.22 s walk at 0.4-4.6 s, and 94 s in a gate). Elsewhere, a directory.
+make_dir() {  # <path>
+  [[ -e $1 ]] && return 0
+  mkdir -p "$(dirname "$1")"
+  if [[ $(stat -f -c %T "$(dirname "$1")") == btrfs ]] && command -v btrfs >/dev/null 2>&1; then
+    btrfs subvolume create "$1" >/dev/null
+  else
+    mkdir -p "$1"
+  fi
+}
+
 name_ok() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "a name is letters, digits, '.', '_' or '-': '$1'"; }
 
 setup() {
-  mkdir -p "$area"/{wt,target,tmp,logs} "$area"/cache/{gaia-store,downloads}
+  mkdir -p "$area"/{wt,target,tmp,logs} "$area"/cache/downloads
+  make_dir "$area/cache/gaia-store"
   local t missing=0
   for t in cargo rustc cargo-nextest sccache mold bun python3 git systemd-run taskset; do
     if ! command -v "$t" >/dev/null 2>&1; then
@@ -57,7 +72,9 @@ worktree() {  # <name> [<base>]
   else
     git -C "$repo" worktree add -b "pr/$name" "$area/wt/$name" "$base"
   fi
-  mkdir -p "$area/target/$name" "$area/tmp/$name" "$area/logs/$name"
+  make_dir "$area/target/$name"
+  make_dir "$area/tmp/$name"
+  mkdir -p "$area/logs/$name"
   echo "area: wt/$name on pr/$name from $base; target, tmp and logs made"
 }
 

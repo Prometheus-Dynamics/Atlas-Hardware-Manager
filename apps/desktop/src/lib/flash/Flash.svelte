@@ -130,12 +130,12 @@
   {/snippet}
   {#snippet actions()}
     {#if active}
-      <button class="btn quiet" onclick={() => ask("flash.cancel")}>Cancel</button>
+      <button disabled={!!busy} class="btn quiet" onclick={() => ask("flash.cancel")}>Cancel</button>
     {:else if ready}
-      {#if run}<button class="btn quiet" onclick={() => ask("flash.dismiss")}>Clear</button>{/if}
-      <button class="btn pri" onclick={start}><Icon name="bolt" />{run ? "Send loader again" : "Send loader"}</button>
+      {#if run}<button disabled={!!busy} class="btn quiet" onclick={() => ask("flash.dismiss")}>Clear</button>{/if}
+      <button disabled={!!busy} class="btn pri" onclick={start}><Icon name="bolt" />{run ? "Send loader again" : "Send loader"}</button>
     {:else if run}
-      <button class="btn quiet" onclick={() => ask("flash.dismiss")}>Clear</button>
+      <button disabled={!!busy} class="btn quiet" onclick={() => ask("flash.dismiss")}>Clear</button>
     {/if}
   {/snippet}
 
@@ -215,15 +215,15 @@
           <div class="bar err" style="height:4px"><i style="width:{run.status === 'retrying' ? waited : 0}%"></i></div>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap">
             {#if run.status === "retrying"}
-              <button class="btn sm pri" onclick={() => ask("flash.retry")}><Icon name="retry" />Retry now</button>
-              <button class="btn sm" onclick={() => ask("flash.stop")}><Icon name="stop" />Stop retrying</button>
+              <button disabled={!!busy} class="btn sm pri" onclick={() => ask("flash.retry")}><Icon name="retry" />Retry now</button>
+              <button disabled={!!busy} class="btn sm" onclick={() => ask("flash.stop")}><Icon name="stop" />Stop retrying</button>
             {:else if run.status === "stopped"}
-              <button class="btn sm pri" onclick={() => ask("flash.retry")}><Icon name="retry" />Retry</button>
+              <button disabled={!!busy} class="btn sm pri" onclick={() => ask("flash.retry")}><Icon name="retry" />Retry</button>
             {:else if board && rom && image?.state === "ready"}
-              <button class="btn sm pri" onclick={start}><Icon name="retry" />Start again</button>
+              <button disabled={!!busy} class="btn sm pri" onclick={start}><Icon name="retry" />Start again</button>
             {/if}
             <span class="sp"></span>
-            <button class="btn sm quiet" onclick={bundle}><Icon name="bundle" />Make support bundle</button>
+            <button disabled={!!busy} class="btn sm quiet" onclick={bundle}><Icon name="bundle" />Make support bundle</button>
           </div>
           <!-- Where the bundle was written, in full. -->
           <div class="faint" style="font-size:11px;white-space:normal;overflow-wrap:anywhere" data-bundled>
@@ -251,7 +251,7 @@
         <div class="ph">
           <h2>Image</h2><span class="grow"></span><span class="chip neu">first-flash image</span>
           <!-- Always in its place: it cannot be pressed while a flash is running. -->
-          <button class="btn sm" class:pri={app.ready && !active && image?.state !== "ready"} disabled={!app.ready || active} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
+          <button class="btn sm" class:pri={app.ready && !active && image?.state !== "ready"} disabled={!app.ready || active || !!busy} onclick={() => ask("flash.pick_image")}><Icon name="folder" />{image ? "Choose another…" : "Choose image…"}</button>
         </div>
         <div class="pb">
           <!-- The same four rows in every state, so the panels below never move. A refused file's
