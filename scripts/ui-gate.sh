@@ -21,6 +21,8 @@
 # Needs: bun, and Playwright's headless Chromium (fetched once into PLAYWRIGHT_BROWSERS_PATH,
 # default <target>/ms-playwright; `--no-fetch` fails instead of fetching).
 set -euo pipefail
+# Each stage says when it starts, in seconds since the gate did, so a slow stage is seen in the log.
+stage() { echo "==> ui gate: $* (+$SECONDS s)"; }
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 
@@ -40,7 +42,7 @@ tauri_src=$app/src-tauri/src
 target=${CARGO_TARGET_DIR:-$root/target}
 case $target in /*) ;; *) target=$root/$target ;; esac
 
-echo "==> ui gate: every Tauri command is async"
+stage "every Tauri command is async"
 # The line after each #[tauri::command] must not be a plain `fn`. grep exits 1 for no match (the
 # pass), 0 for a match (a failure) and 2 for an error (also a failure: the check did not run).
 commands=$(grep -rn -A1 --include='*.rs' '#\[tauri::command' "$tauri_src") || { echo "ui-gate: no Tauri command found under $tauri_src: the check has nothing to read" >&2; exit 1; }
@@ -50,14 +52,14 @@ if bad=$(grep -E -- '-[0-9]+-\s*(pub(\([a-z]+\))? )?fn ' <<<"$commands"); then
   exit 1
 fi
 
-echo "==> ui gate: the app's stylesheet is the design language's"
+stage "the app's stylesheet is the design language's"
 cmp docs/mockups/atlas.css $app/src/styles/atlas.css
 if grep -nE '#[0-9a-fA-F]{3,8}\b|rgba?\(' $app/src/styles/app.css; then
   echo "ui-gate: app.css names a colour; colours are tokens in atlas.css" >&2
   exit 1
 fi
 
-echo "==> ui gate: the UI builds and type-checks"
+stage "the UI builds and type-checks"
 # The build goes to a scratch directory first and only files whose bytes changed are copied into
 # dist/, so an unchanged UI leaves dist/ untouched: the app crate embeds dist/, and a rewritten
 # dist/ with new mtimes recompiled it in each of the three cargo steps below.
@@ -79,20 +81,20 @@ setsid bash -c 'cd "$1" && exec bun run check' ui-check "$app" >"$check_log" 2>&
 check_pid=$!
 bg_pids+=("$check_pid")
 
-echo "==> ui gate: the UI bridge with the simulated devices"
+stage "the UI bridge with the simulated devices"
 cargo build --locked -p atlas-app --features sim --bin atlas-ui-bridge
 # The click tests run a copy: `cargo test` below rebuilds the package's binaries in target/debug while they run.
 mkdir -p "$target/ui-bridge"
 cp -f "$target/debug/atlas-ui-bridge" "$target/ui-bridge/atlas-ui-bridge"
 
-echo "==> ui gate: the app's Rust side with the simulated devices (beside the click tests; log $target/ui-rust.log)"
+stage "the app's Rust side with the simulated devices (beside the click tests; log $target/ui-rust.log)"
 rust_log=$target/ui-rust.log
 setsid bash -c 'cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings && cargo test --locked -p atlas-app --features sim' \
   ui-rust >"$rust_log" 2>&1 &
 rust_pid=$!
 bg_pids+=("$rust_pid")
 
-echo "==> ui gate: click tests"
+stage "click tests"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwright}
 if ! compgen -G "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-*" >/dev/null; then
   [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium in $PLAYWRIGHT_BROWSERS_PATH" >&2; exit 1; }
@@ -105,6 +107,7 @@ export ATLAS_E2E_OUT=$target/ui-gate
 
 # The type-check ran beside the bridge's build and the clicks: they need only the built UI, not
 # its types (8 s of svelte-check no longer waits in front of them).
+stage "waiting for the type-check"
 if ! wait "$check_pid"; then
   cat "$check_log" >&2
   echo "ui-gate: the UI does not type-check (svelte-check, above)" >&2
@@ -112,6 +115,7 @@ if ! wait "$check_pid"; then
 fi
 tail -n 3 "$check_log"
 
+stage "waiting for the Rust side"
 if ! wait "$rust_pid"; then
   cat "$rust_log" >&2
   echo "ui-gate: the app's Rust side with the simulated devices failed (clippy or its tests, above)" >&2
@@ -119,4 +123,4 @@ if ! wait "$rust_pid"; then
 fi
 grep -E '^test result:|Finished' "$rust_log" | tail -n 4
 trap - EXIT
-echo "ui gate passed"
+echo "ui gate passed (+$SECONDS s)"
