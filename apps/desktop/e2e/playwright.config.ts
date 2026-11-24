@@ -16,8 +16,12 @@ export default defineConfig({
     colorScheme: "dark",
     deviceScaleFactor: 1,
     viewport: { width: 1320, height: 860 },
-    // A red test is explained from its own run: its trace is kept (beside the bridge's request
-    // log and the app's log, see bridge.ts), and a test that passes keeps none.
-    trace: "retain-on-failure",
+    // A red test is explained from its own run: Playwright's page snapshot at the failure
+    // (error-context.md), a screenshot, the bridge's request log and the app's log (see
+    // bridge.ts); a test that passes keeps none. The full trace is off unless ATLAS_E2E_TRACE=1:
+    // recorded for every test it cost 45% of the suite's CPU (2026-11-24, load ~85-165:
+    // 196 CPU-s with it, 106 without, 83 tests at 4 workers).
+    trace: process.env.ATLAS_E2E_TRACE === "1" ? "retain-on-failure" : "off",
+    screenshot: "only-on-failure",
   },
 });
