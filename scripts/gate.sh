@@ -269,13 +269,25 @@ echo "    static checks: $((SECONDS - static_start)) s"
 devices_then_config_only() {
   # Board files are data. The config-only build of every product (PR B32, Gaia #120): each image's Buildroot
   # configuration resolves, every fragment line takes as written, nothing is compiled. A cold GAIA_STORE fetches the
-  # kernel sources (network); a warm one is offline. It needs the gaia binary check-devices.sh builds, so it runs after.
+  # kernel sources (network); a warm one is offline. It needs the gaia binary and recipes check-devices.sh builds and
+  # fetches: when they are already there (--ready) the two run at once, else config-only runs after. Either failing
+  # fails the lane (each step's code is handed on; the function's own status is not just the last step's).
+  local cfg_pid="" rc=0 cfg_rc=0
+  if [ -x scripts/check-config-only.sh ] && scripts/check-config-only.sh --ready 2>/dev/null; then
+    step "config-only build (every product, beside the descriptions)" scripts/check-config-only.sh >"$TMPDIR/config-only.log" 2>&1 &
+    cfg_pid=$!
+  fi
   if [ -x scripts/check-devices.sh ]; then
-    step "device descriptions" scripts/check-devices.sh
+    step "device descriptions" scripts/check-devices.sh || rc=$?
   fi
-  if [ -x scripts/check-config-only.sh ]; then
-    step "config-only build (every product)" scripts/check-config-only.sh
+  if [ -n "$cfg_pid" ]; then
+    wait "$cfg_pid" || cfg_rc=$?
+    [ "$rc" -ne 0 ] || rc=$cfg_rc
+    cat "$TMPDIR/config-only.log"
+  elif [ "$rc" -eq 0 ] && [ -x scripts/check-config-only.sh ]; then
+    step "config-only build (every product)" scripts/check-config-only.sh || rc=$?
   fi
+  return "$rc"
 }
 # Doctests: only the crates whose library has a doc example (scripts/doc-crates.py, scanned each run); rustdoc over
 # the other ~40 had nothing to run and cost ~40 s.

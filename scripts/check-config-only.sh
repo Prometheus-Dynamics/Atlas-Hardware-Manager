@@ -9,7 +9,9 @@
 # The Gaia binary is $GAIA_BIN, else the one scripts/check-devices.sh built into its cache, at the commit
 # devices/gaia.lock names. Run check-devices.sh first when there is no binary: it also fetches Gaia's recipes.
 #
-#   scripts/check-config-only.sh     the gate runs this (scripts/gate.sh)
+#   scripts/check-config-only.sh           the gate runs this (scripts/gate.sh)
+#   scripts/check-config-only.sh --ready   exits 0 when the binary and recipes at the pin are already there (nothing
+#                                          is run), so the gate can start this beside check-devices.sh
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -28,6 +30,7 @@ gaia_line=$("$gaia" --version 2>&1 | head -1 || true)
 [[ $gaia_line == *"($commit)"* ]] || die "$gaia prints '$gaia_line', not the commit devices/gaia.lock names ($commit)"
 recipes=$dir/src/recipes
 [[ -d $recipes ]] || die "no recipes at $recipes: run scripts/check-devices.sh first (it fetches Gaia's checkout)"
+[[ ${1:-} != --ready ]] || exit 0
 
 export GAIA_STORE=${GAIA_STORE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia-store}
 mkdir -p "$GAIA_STORE"
