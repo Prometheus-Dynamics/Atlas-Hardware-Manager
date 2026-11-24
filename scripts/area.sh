@@ -20,13 +20,15 @@
 #                                                 the build CPUs, logging to logs/<name>/<unit>.log; .load
 #                                                 holds the load at start and end, wall and CPU seconds
 #
-# Build runs use nice 19 on CPUs ATLAS_CPUS (default 6-31) with ATLAS_JOBS (default 13) jobs, as the shared host's
-# rules ask. The machine's bench key is passed by path only (ATLAS_BENCH_KEY_DIR); its files are never read here.
+# Build runs use nice ATLAS_NICE (default 10) on CPUs ATLAS_CPUS (default 6-31) with ATLAS_JOBS (default 13) jobs, as
+# the shared host's rules ask. Every dep runs its heavy work at nice 10 (coordinator ruling 2026-11-24): at nice 19
+# beside other deps' builds at 10 and 0 our runs got ~3 CPUs, and the click suite took 538 s at load 185. The machine's bench key is passed by path only (ATLAS_BENCH_KEY_DIR); its files are never read here.
 set -euo pipefail
 
 area=${ATLAS_AREA:-/mnt/nvme-wd/atlas}
 cpus=${ATLAS_CPUS:-6-31}
 jobs=${ATLAS_JOBS:-13}
+nice_level=${ATLAS_NICE:-10}
 key_dir=${ATLAS_BENCH_KEY_DIR:-/mnt/ssd-samsung/atlas-bench-key}
 # The gate's scratch root (its TMPDIR, removed when it exits) is on tmpfs: the tests write hundreds of MiB of images
 # and sparse cards there, and on a busy disk they waited on it (2026-11-24, atlas-image + atlas-disk under nextest at
@@ -92,6 +94,7 @@ export TMPDIR=$area/tmp/$name
 export ATLAS_SCRATCH_ROOT=$scratch_fast/atlas-$name-scratch
 export GAIA_STORE=$area/cache/gaia-store
 export CARGO_BUILD_JOBS=$jobs
+export ATLAS_NICE=$nice_level
 export ATLAS_BENCH_SEED_FILE=$key_dir/bench.seed
 export ATLAS_BENCH_PUBKEY_FILE=$key_dir/bench.pub
 EOF
@@ -123,11 +126,12 @@ run() {  # <name> <unit> -- <cmd...>
   done <<<"$envs"
   systemd-run --user --unit="atlas-$name-$unit" --collect -p LimitNOFILE=524288 \
     -p WorkingDirectory="$area/wt/$name" "${setenv[@]}" --setenv=PATH="$PATH" --setenv=HOME="$HOME" --setenv=CPUS="$cpus" \
+    --setenv=NICE="$nice_level" \
     -- bash -c 'log=$1 load=$1.load; shift
-      { date +%T; cat /proc/loadavg; } >"$load"
+      { date +%T; cat /proc/loadavg; echo "nice $NICE"; } >"$load"
       rc=0
       /usr/bin/time -o "$load" -a -f "wall %e s, CPU %U s user + %S s system" \
-        nice -n 19 taskset -c "$CPUS" "$@" >"$log" 2>&1 || rc=$?
+        nice -n "$NICE" taskset -c "$CPUS" "$@" >"$log" 2>&1 || rc=$?
       { date +%T; cat /proc/loadavg; echo "rc=$rc"; } >>"$load"
       echo "rc=$rc" >>"$log"
       exit "$rc"' area-run "$log" "$@" >/dev/null
