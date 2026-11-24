@@ -124,7 +124,9 @@ run() {  # <name> <unit> -- <cmd...>
     eval "local $line"
     setenv+=("--setenv=$var=${!var}")
   done <<<"$envs"
-  systemd-run --user --unit="atlas-$name-$unit" --collect -p LimitNOFILE=524288 \
+  # CPUWeight=100, the default, stated (coordinator ruling 2026-11-24): every dep's heavy unit has the same
+  # weight, nice 10 inside it. Between units the weight decides the share; nice ranks only within one.
+  systemd-run --user --unit="atlas-$name-$unit" --collect -p LimitNOFILE=524288 -p CPUWeight=100 \
     -p WorkingDirectory="$area/wt/$name" "${setenv[@]}" --setenv=PATH="$PATH" --setenv=HOME="$HOME" --setenv=CPUS="$cpus" \
     --setenv=NICE="$nice_level" \
     -- bash -c 'log=$1 load=$1.load; shift
