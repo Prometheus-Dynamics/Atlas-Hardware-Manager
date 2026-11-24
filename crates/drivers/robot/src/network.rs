@@ -21,7 +21,9 @@ use tokio::time::{self, Instant};
 use crate::reach::{Answer, CONNECT_LIMIT, HTTP_LIMIT, NAME_LIMIT, Reach};
 use crate::team::Teams;
 
-/// How long a connect or a name lookup is kept before it is asked again.
+/// How long a connect or a name lookup is kept before it is asked again, on a
+/// real network. A network in memory (the simulated world) keeps answers for
+/// less; see [`RobotNet::keeping_for`].
 pub const CACHE_FOR: Duration = Duration::from_secs(20);
 
 /// Runs `call` for at most `limit`. `None` when it did not finish in time.
@@ -46,6 +48,7 @@ pub struct RobotNet {
     reach: Arc<dyn Reach>,
     teams: Arc<dyn Teams>,
     cache: Mutex<Cache>,
+    cache_for: Duration,
 }
 
 impl fmt::Debug for RobotNet {
@@ -55,11 +58,24 @@ impl fmt::Debug for RobotNet {
 }
 
 impl RobotNet {
+    /// The network as the drivers use it: answers are kept for [`CACHE_FOR`].
     pub fn new(reach: Arc<dyn Reach>, teams: Arc<dyn Teams>) -> Arc<Self> {
+        Self::keeping_for(reach, teams, CACHE_FOR)
+    }
+
+    /// A network whose answers are kept for `cache_for`. Only a reach that
+    /// costs nothing to ask (the simulated world's, in memory) takes less than
+    /// [`CACHE_FOR`]: there, a device that left is seen in seconds.
+    pub fn keeping_for(
+        reach: Arc<dyn Reach>,
+        teams: Arc<dyn Teams>,
+        cache_for: Duration,
+    ) -> Arc<Self> {
         Arc::new(Self {
             reach,
             teams,
             cache: Mutex::new(Cache::default()),
+            cache_for,
         })
     }
 
@@ -81,13 +97,14 @@ impl RobotNet {
     }
 
     /// Connects to every probe at once, each within [`CONNECT_LIMIT`], and
-    /// says which accepted. Answers less than [`CACHE_FOR`] old are reused.
+    /// says which accepted. Answers younger than the network's cache time are
+    /// reused.
     pub async fn open_all(&self, probes: &[(Ipv4Addr, u16)]) -> Vec<bool> {
         let known: Vec<Option<bool>> = {
             let cache = self.lock();
             probes
                 .iter()
-                .map(|probe| fresh(cache.opened.get(probe)).copied())
+                .map(|probe| fresh(cache.opened.get(probe), self.cache_for).copied())
                 .collect()
         };
         let answers = futures::future::join_all(probes.iter().zip(&known).map(
@@ -119,7 +136,7 @@ impl RobotNet {
 
     /// The IPv4 addresses `name` resolves to, within [`NAME_LIMIT`].
     pub async fn resolve(&self, name: &str) -> Vec<Ipv4Addr> {
-        if let Some(known) = fresh(self.lock().names.get(name)) {
+        if let Some(known) = fresh(self.lock().names.get(name), self.cache_for) {
             return known.clone();
         }
         let found = bounded(NAME_LIMIT, self.reach.resolve(name))
@@ -140,9 +157,9 @@ impl RobotNet {
     }
 }
 
-/// The value kept under `kept`, if it is younger than [`CACHE_FOR`].
-fn fresh<T>(kept: Option<&Kept<T>>) -> Option<&T> {
-    kept.filter(|kept| kept.at.elapsed() < CACHE_FOR)
+/// The value kept under `kept`, if it is younger than `cache_for`.
+fn fresh<T>(kept: Option<&Kept<T>>, cache_for: Duration) -> Option<&T> {
+    kept.filter(|kept| kept.at.elapsed() < cache_for)
         .map(|kept| &kept.value)
 }
 
@@ -210,6 +227,23 @@ mod tests {
         tokio::time::advance(CACHE_FOR + Duration::from_secs(1)).await;
         assert_eq!(net.open_all(&[(ip, 80)]).await, [true]);
         assert_eq!(fake.connects(), 3);
+    }
+
+    /// A network kept for less (the simulated world's) asks again after its
+    /// own time, and not before.
+    #[tokio::test(start_paused = true)]
+    async fn a_shorter_cache_asks_again_after_its_own_time() {
+        let ip = Ipv4Addr::new(10, 63, 90, 2);
+        let fake = Fake::new().open(ip, 80);
+        let keep = Duration::from_secs(1);
+        let net = RobotNet::keeping_for(fake.reach(), Arc::new(BTreeSet::<u16>::new()), keep);
+        assert_eq!(net.open_all(&[(ip, 80)]).await, [true]);
+        tokio::time::advance(keep - Duration::from_millis(1)).await;
+        assert_eq!(net.open_all(&[(ip, 80)]).await, [true]);
+        assert_eq!(fake.connects(), 1);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        assert_eq!(net.open_all(&[(ip, 80)]).await, [true]);
+        assert_eq!(fake.connects(), 2);
     }
 
     /// A probe that hangs is cut at its own limit, and reads as closed.

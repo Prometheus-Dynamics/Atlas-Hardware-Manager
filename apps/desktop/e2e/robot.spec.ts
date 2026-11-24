@@ -57,12 +57,14 @@ test("the controller's screen says what is known, offers nothing it cannot do, a
   await expect.poll(() => bridge.call("sim.opened")).toEqual(["http://10.99.99.2/"]);
 });
 
-// The robot drivers keep a connect's answer for twenty seconds (atlas_robot::CACHE_FOR), so a
-// device that left or came back is seen within that, not at once.
-const SEEN = { timeout: 40_000 };
+// The robot drivers keep a connect's answer for a while (twenty seconds on a real network,
+// atlas_robot::CACHE_FOR; one second in the simulated world, SIM_ROBOT_CACHE_FOR), so a device
+// that left or came back is seen within that plus a scan, not at once. The bound is a ceiling
+// for a loaded machine; the test waits only until the chip changes.
+const SEEN = { timeout: 15_000 };
 
 test("a robot device that stops answering is not reporting, and reports again when it is back", async ({ app, bridge }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(60_000);
   await demoSettled(app);
   await app.locator("aside.side").getByText(ROBOT, { exact: true }).click();
   const radio = app.locator(`[data-robot-device="${DEMO.radio.id}"]`);

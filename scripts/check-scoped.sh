@@ -58,28 +58,7 @@ fi
 
 # The crates: each changed file belongs to the workspace crate whose directory holds it; the selection is those crates
 # and every workspace crate that depends on one of them (reverse dependencies, transitively), from cargo metadata.
-crates=$(cargo metadata --format-version 1 --locked --offline --no-deps | python3 -I -c '
-import json, os, sys
-meta = json.load(sys.stdin)
-root = meta["workspace_root"]
-changed = [l for l in sys.argv[1].splitlines() if l]
-pkgs = {p["name"]: p for p in meta["packages"]}
-dirs = {name: os.path.relpath(os.path.dirname(p["manifest_path"]), root) for name, p in pkgs.items()}
-if any(f in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml") for f in changed):
-    print("\n".join(sorted(pkgs))); sys.exit()
-hit = {n for n, d in dirs.items() for f in changed if f == d or f.startswith(d + "/")}
-rdeps = {n: set() for n in pkgs}
-for n, p in pkgs.items():
-    for d in p["dependencies"]:
-        if d.get("path") and d["name"] in pkgs:
-            rdeps[d["name"]].add(n)
-todo, sel = list(hit), set(hit)
-while todo:
-    for r in rdeps[todo.pop()]:
-        if r not in sel:
-            sel.add(r); todo.append(r)
-print("\n".join(sorted(sel)))
-' "$changed")
+crates=$(cargo metadata --format-version 1 --locked --offline --no-deps | python3 -I scripts/scoped-crates.py "$changed")
 
 boards=() all_kernels=0 devices=0 config_only=0
 while IFS= read -r f; do

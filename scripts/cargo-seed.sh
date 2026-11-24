@@ -38,45 +38,7 @@ key=$( { cat Cargo.lock; awk '/^\[profile/{p=1} /^\[/{if ($0 !~ /^\[profile/) p=
 # build/ carrying the same hash. Fails when a member unit would remain.
 strip_members() {  # <seed dir>
   local seed=$1
-  cargo metadata --format-version 1 --locked --offline --no-deps | python3 -I -c '
-import json, os, re, shutil, sys
-seed = sys.argv[1]
-members = {p["name"] for p in json.load(sys.stdin)["packages"]}
-left = 0
-for prof in os.listdir(seed):
-    fp = os.path.join(seed, prof, ".fingerprint")
-    if not os.path.isdir(fp):
-        continue
-    hashes = set()
-    for d in os.listdir(fp):
-        m = re.fullmatch(r"(.+)-([0-9a-f]{16})", d)
-        if m and m.group(1) in members:
-            hashes.add(m.group(2)); shutil.rmtree(os.path.join(fp, d))
-    for sub in ("deps", "build"):
-        base = os.path.join(seed, prof, sub)
-        if not os.path.isdir(base):
-            continue
-        for f in os.listdir(base):
-            m = re.search(r"-([0-9a-f]{16})(\.|$)", f)
-            if m and m.group(1) in hashes:
-                p = os.path.join(base, f)
-                shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p)
-    # What stays must belong to a unit that is not a member: every hash in deps/ and build/ has a fingerprint left.
-    kept = {re.fullmatch(r"(.+)-([0-9a-f]{16})", d).group(2) for d in os.listdir(fp) if re.fullmatch(r"(.+)-([0-9a-f]{16})", d)}
-    for d in os.listdir(fp):
-        m = re.fullmatch(r"(.+)-([0-9a-f]{16})", d)
-        if m and m.group(1) in members:
-            left += 1
-    for sub in ("deps", "build"):
-        base = os.path.join(seed, prof, sub)
-        for f in os.listdir(base) if os.path.isdir(base) else []:
-            m = re.search(r"-([0-9a-f]{16})(\.|$)", f)
-            if m and m.group(1) not in kept:
-                p = os.path.join(base, f)
-                shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p)
-if left:
-    sys.exit(f"cargo-seed: {left} workspace member unit(s) left in the seed")
-' "$seed"
+  cargo metadata --format-version 1 --locked --offline --no-deps | python3 -I scripts/seed-strip-members.py "$seed"
 }
 
 case ${1:-} in

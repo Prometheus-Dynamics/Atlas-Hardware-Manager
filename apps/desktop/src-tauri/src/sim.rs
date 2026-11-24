@@ -52,6 +52,10 @@ use crate::drivers::TeamList;
 /// The simulated robot, its team, and where its controller answers.
 pub const ROBOT: &str = "Practice field";
 const TEAM: u16 = 9999;
+/// How long the simulated robot network keeps an answer (the real one keeps
+/// [`atlas_robot::CACHE_FOR`]). The drivers see a device leave or come back
+/// within this plus one scan.
+const SIM_ROBOT_CACHE_FOR: std::time::Duration = std::time::Duration::from_secs(1);
 const CONTROLLER: Ipv4Addr = Ipv4Addr::new(10, 99, 99, 2);
 /// The controller's own API port and path (what a controller without Orion answers on).
 const CONTROLLER_API: (u16, &str) = (4800, "/api/team");
@@ -612,7 +616,14 @@ impl World {
             controller_up: AtomicBool::new(demo),
             radio_up: AtomicBool::new(demo),
         });
-        for driver in atlas_robot::drivers(net.clone(), Arc::new(teams.clone())) {
+        // Its answers cost nothing to ask, so they are kept for a second, not the
+        // real network's twenty: a device that leaves is seen within seconds.
+        let robot_net = atlas_robot::RobotNet::keeping_for(
+            net.clone(),
+            Arc::new(teams.clone()),
+            SIM_ROBOT_CACHE_FOR,
+        );
+        for driver in atlas_robot::drivers_on(robot_net) {
             parts.registry.register(driver);
         }
 

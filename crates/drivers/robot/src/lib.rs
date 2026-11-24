@@ -61,7 +61,12 @@ pub use team::{MAX_TEAM, Teams, address, team_of};
 /// The three drivers on one shared robot network, reaching devices through `reach`
 /// and looking for the teams `teams` names.
 pub fn drivers(reach: Arc<dyn Reach>, teams: Arc<dyn Teams>) -> Vec<Arc<dyn Driver>> {
-    let net = RobotNet::new(reach, teams);
+    drivers_on(RobotNet::new(reach, teams))
+}
+
+/// The three drivers on the given robot network (for a network built with
+/// [`RobotNet::keeping_for`]).
+pub fn drivers_on(net: Arc<RobotNet>) -> Vec<Arc<dyn Driver>> {
     vec![
         Arc::new(RoborioDriver::new(Arc::clone(&net))),
         Arc::new(RadioDriver::new(Arc::clone(&net))),

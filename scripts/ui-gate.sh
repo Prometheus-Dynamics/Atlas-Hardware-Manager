@@ -58,12 +58,34 @@ if grep -nE '#[0-9a-fA-F]{3,8}\b|rgba?\(' $app/src/styles/app.css; then
 fi
 
 echo "==> ui gate: the UI builds and type-checks"
-(cd $app && bun install --frozen-lockfile >/dev/null && bun run check && bun run build >/dev/null)
+# The build goes to a scratch directory first and only files whose bytes changed are copied into
+# dist/, so an unchanged UI leaves dist/ untouched: the app crate embeds dist/, and a rewritten
+# dist/ with new mtimes recompiled it in each of the three cargo steps below.
+(cd $app && bun install --frozen-lockfile >/dev/null)
+built=$target/ui-dist
+(cd $app && bun run build --outDir "$built" --emptyOutDir >/dev/null)
+[ -f "$built/index.html" ] || { echo "ui-gate: the UI build wrote no index.html into $built" >&2; exit 1; }
+mkdir -p $app/dist
+rsync -r --checksum --delete "$built/" "$app/dist/"
+# The type-check reads only the UI sources; it runs beside the cargo steps, and the gate waits
+# for it before the click tests.
+check_log=$target/ui-check.log
+setsid bash -c 'cd "$1" && exec bun run check' ui-check "$app" >"$check_log" 2>&1 &
+check_pid=$!
+# A failing cargo step ends the gate; the type-check's process group goes with it (by its PID).
+trap 'kill -TERM -- "-$check_pid" 2>/dev/null || true' EXIT
 
 echo "==> ui gate: the app's Rust side with the simulated devices"
 cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings
 cargo test --locked -p atlas-app --features sim
 cargo build --locked -p atlas-app --features sim --bin atlas-ui-bridge
+if ! wait "$check_pid"; then
+  cat "$check_log" >&2
+  echo "ui-gate: the UI does not type-check (svelte-check, above)" >&2
+  exit 1
+fi
+trap - EXIT
+tail -n 3 "$check_log"
 
 echo "==> ui gate: click tests"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwright}

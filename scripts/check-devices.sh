@@ -76,7 +76,7 @@ devices_result_key() {
     echo "devices-result v1"
     (cd "$repo" && find devices -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
     (cd "$repo" && sha256sum scripts/check-devices.sh scripts/check-watchdog-owner.sh scripts/version-rule.sh \
-      scripts/pc-key-strip.sh Cargo.toml Cargo.lock)
+      scripts/pc-key-strip.sh scripts/plan-erofs-images.py scripts/patch-rail-state.py Cargo.toml Cargo.lock)
     (cd "$repo" && for f in rust-toolchain rust-toolchain.toml; do [[ -f $f ]] && sha256sum "$f"; done; true)
     sha256sum "$gaia_bin"
     (cd "${gaia_bin%/bin/gaia}/src" && find recipes -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum)
@@ -851,16 +851,7 @@ erofs_lines() {  # <compression>
 # Prints "IMAGE COMPRESSION" for each erofs image in a plan (`gaia plan --json`): the constant `compression` of the node
 # labelled <image>::erofs. A compression that is not a constant prints "-".
 erofs_images() {  # <plan.json>
-  python3 -I -c '
-import json, sys
-graph = json.load(open(sys.argv[1]))["graph"]["graph"]
-for node in graph["nodes"]:
-    label = node.get("label", "")
-    if label.endswith("::erofs"):
-        const = node.get("consts", {}).get("compression", {})
-        value = const.get("value", "-") if const.get("type") == "str" else "-"
-        print(label[: -len("::erofs")], value)
-' "$1"
+  python3 -I "$repo/scripts/plan-erofs-images.py" "$1"
 }
 
 # Prints the board file a product names, as a path, or nothing.
@@ -1073,40 +1064,7 @@ pads_rail_state() {  # <patch> <rail> -> "<rail>=range", "<rail>=fixed:<uV>", "<
   # Reads the POST-image of a unified diff (the context and added lines of every hunk of each .dts/.dtsi) and finds the
   # regulator node named <rail>. A node whose min and max are equal is fixed; a node with a min and a different max is a
   # range; a node with neither is open (no constraint). A node the patch does not show is absent.
-  python3 -I -c '
-import re, sys
-patch, rail = sys.argv[1], sys.argv[2]
-post, cur = {}, None
-for line in open(patch, encoding="utf-8"):
-    line = line.rstrip("\n")
-    if line.startswith("+++ b/"):
-        cur = line[6:]; post.setdefault(cur, []); continue
-    if cur is None or line.startswith(("--- ", "diff ", "index ", "@@")):
-        continue
-    if line[:1] in (" ", "+"):
-        post[cur].append(line[1:])
-head = re.compile(r"(^|\s)" + re.escape(rail) + r" \{")
-for f, lines in post.items():
-    if not (f.endswith(".dts") or f.endswith(".dtsi")):
-        continue
-    for i, l in enumerate(lines):
-        if not head.search(l):
-            continue
-        mn = mx = None
-        for m in lines[i + 1:]:
-            a = re.search(r"regulator-min-microvolt = <(\d+)>", m)
-            b = re.search(r"regulator-max-microvolt = <(\d+)>", m)
-            if a: mn = int(a.group(1))
-            if b: mx = int(b.group(1))
-            if re.match(r"^\s*};", m):
-                break
-        if mn is None and mx is None:
-            print(rail + "=open"); sys.exit(0)
-        if mn is not None and mn == mx:
-            print(rail + "=fixed:" + str(mn)); sys.exit(0)
-        print(rail + "=range"); sys.exit(0)
-print(rail + "=absent")
-' "$1" "$2"
+  python3 -I "$repo/scripts/patch-rail-state.py" "$1" "$2"
 }
 pads_bank_value() {  # <inline table line> <key> -> the quoted value of key in it (empty when absent)
   grep -oE "(^|[ {,])$2 *= *\"[^\"]+\"" <<<"$1" | sed -E 's/^[ {,]?[A-Za-z0-9_-]+ *= *"//; s/"$//' | head -1

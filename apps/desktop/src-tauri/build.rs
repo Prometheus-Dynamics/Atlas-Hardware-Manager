@@ -10,10 +10,9 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-env-changed=ATLAS_VERSION");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    println!(
-        "cargo:rerun-if-changed={}",
-        root.join(".git/HEAD").display()
-    );
+    for file in commit_files(&root) {
+        println!("cargo:rerun-if-changed={}", file.display());
+    }
     let version = std::env::var("ATLAS_VERSION")
         .ok()
         .filter(|v| !v.is_empty())
@@ -31,6 +30,36 @@ fn main() {
         );
     }
     tauri_build::build();
+}
+
+/// The files whose change means a new commit: this checkout's own HEAD, the branch file it names
+/// and the packed refs. Only files that exist are named: cargo reruns a build script that names a
+/// missing file on every build, and in a worktree `<root>/.git` is a file, not a directory, so
+/// the old `.git/HEAD` rebuilt this crate in every build of every lane.
+fn commit_files(root: &Path) -> Vec<std::path::PathBuf> {
+    let git = |arg: &str| {
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["rev-parse", "--path-format=absolute", arg])
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim()))
+    };
+    let (Some(dir), Some(common)) = (git("--git-dir"), git("--git-common-dir")) else {
+        return Vec::new();
+    };
+    let head = dir.join("HEAD");
+    let mut files = vec![head.clone(), common.join("packed-refs")];
+    if let Some(branch) = std::fs::read_to_string(&head)
+        .ok()
+        .and_then(|text| text.strip_prefix("ref: ").map(|r| r.trim().to_string()))
+    {
+        files.push(common.join(branch));
+    }
+    files.retain(|file| file.is_file());
+    files
 }
 
 fn checkout_version(root: &Path) -> String {

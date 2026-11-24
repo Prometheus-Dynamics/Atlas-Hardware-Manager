@@ -156,10 +156,9 @@ export const SCREENS: Screen[] = [
     hash: ROBOT,
     ready: async (page, bridge) => {
       await demoSettled(page);
-      test.setTimeout(90_000);
       await bridge.call("sim.set_online", { id: DEMO.radio.id, online: false });
-      // The robot drivers keep a connect's answer for twenty seconds.
-      await expect(page.locator(`[data-robot-device="${DEMO.radio.id}"] .chip.off`)).toBeVisible({ timeout: 40_000 });
+      // The simulated robot network keeps a connect's answer for one second (SIM_ROBOT_CACHE_FOR).
+      await expect(page.locator(`[data-robot-device="${DEMO.radio.id}"] .chip.off`)).toBeVisible({ timeout: 15_000 });
     },
   },
   {
