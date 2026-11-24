@@ -21,7 +21,7 @@
 //!   `size` bytes has `ceil(size / 64 MiB)` blocks, and 8192 blocks is reached at
 //!   512 GiB; Gaia refuses more after writing. A change to either number, here or in
 //!   Gaia's writer, must be noticed: the `gaia_block_count_arithmetic_matches_the_block_limit`
-//!   test checks it, and tests/gaia_multi_block.rs reads Gaia's own four-block files,
+//!   test checks it, and tests/all/gaia_multi_block.rs reads Gaia's own four-block files,
 //!   unsigned and signed.
 //! - Decoder memory: the dictionary plus [`DECODER_OVERHEAD`] (256 KiB). The
 //!   decoder is liblzma, with that bound as its memory limit.

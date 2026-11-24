@@ -4,7 +4,7 @@
 //! The encoder is Lemnos's, and this crate does not depend on Lemnos: the key order, the words,
 //! the escapes and the absent-value forms below are copied from that file, and the tests check
 //! them against the vectors Lemnos's own tests use (see the tests at the end of this module and
-//! `crates/board/topics/tests/description.rs`). Where Lemnos's documentation and its encoder
+//! `crates/board/topics/tests/all/description.rs`). Where Lemnos's documentation and its encoder
 //! differ, the encoder is followed here and the difference is recorded in `docs/prs/C11.md`.
 //!
 //! Absent values are written as Lemnos writes them: a figure the device does not give is

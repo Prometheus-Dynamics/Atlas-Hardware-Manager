@@ -2,7 +2,7 @@
 
 `slot-a1.bundle` is a slot bundle written by Lemnos's own writer, `lemnos-ctl bundle`, built from
 Lemnos at `f4a295c611972ba422df20a78112b9fb409c47d0` (the image's Lemnos pin, `devices/`). Atlas's
-reader (`atlas-bundle`, `tests/lemnos_fixture.rs`) must read and verify it. Nothing here is a product
+reader (`atlas-bundle`, `tests/all/lemnos_fixture.rs`) must read and verify it. Nothing here is a product
 or board key.
 
 **This is a TEST key.** `test-key.pub` is the public half of a throwaway Ed25519 key made by

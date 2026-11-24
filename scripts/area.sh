@@ -16,7 +16,8 @@
 #                                                 one from <base> (default next)
 #   scripts/area.sh env <name>                    print the exports a run in wt/<name> uses (eval "$(... env x)")
 #   scripts/area.sh run <name> <unit> -- <cmd...> run <cmd> in wt/<name> as a systemd user unit at low priority on
-#                                                 the build CPUs, logging to logs/<name>/<unit>.log (+ .load)
+#                                                 the build CPUs, logging to logs/<name>/<unit>.log; .load
+#                                                 holds the load at start and end, wall and CPU seconds
 #
 # Build runs use nice 19 on CPUs ATLAS_CPUS (default 6-31) with ATLAS_JOBS (default 13) jobs, as the shared host's
 # rules ask. The machine's bench key is passed by path only (ATLAS_BENCH_KEY_DIR); its files are never read here.
@@ -95,9 +96,10 @@ run() {  # <name> <unit> -- <cmd...>
     -p WorkingDirectory="$area/wt/$name" "${setenv[@]}" --setenv=PATH="$PATH" --setenv=HOME="$HOME" --setenv=CPUS="$cpus" \
     -- bash -c 'log=$1 load=$1.load; shift
       { date +%T; cat /proc/loadavg; } >"$load"
-      s=$(date +%s); rc=0
-      nice -n 19 taskset -c "$CPUS" "$@" >"$log" 2>&1 || rc=$?
-      { date +%T; cat /proc/loadavg; echo "wall $(( $(date +%s) - s )) s rc=$rc"; } >>"$load"
+      rc=0
+      /usr/bin/time -o "$load" -a -f "wall %e s, CPU %U s user + %S s system" \
+        nice -n 19 taskset -c "$CPUS" "$@" >"$log" 2>&1 || rc=$?
+      { date +%T; cat /proc/loadavg; echo "rc=$rc"; } >>"$load"
       echo "rc=$rc" >>"$log"
       exit "$rc"' area-run "$log" "$@" >/dev/null
   echo "area: started atlas-$name-$unit; log $log"

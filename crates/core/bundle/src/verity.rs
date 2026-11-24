@@ -7,7 +7,7 @@
 //! power of two, which a 32-byte SHA-256 digest already is. A hash block holds 128
 //! digests, zero padded; the root is the digest of the single top hash block,
 //! with the salt before it. Format 0, which appends the salt, is not used. The
-//! `veritysetup` test in `tests/veritysetup.rs` checks this against the real tool.
+//! `veritysetup` test in `tests/all/veritysetup.rs` checks this against the real tool.
 //!
 //! [`VerityHasher`] keeps one partial block per tree level, so its memory is a few
 //! 4 KiB blocks whatever the image's size. It recomputes the ROOT only. The tree

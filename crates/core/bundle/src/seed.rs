@@ -7,7 +7,7 @@
 //!
 //! The record is Lemnos's 108-byte `LMNSSIG1` record and what is signed is Lemnos's slot-bundle message
 //! (`lemnos_slot_store::signing`, see [`crate::sign`]): nothing of either format is written here. The
-//! vector is in `tests/seed.rs`.
+//! vector is in `tests/all/seed.rs`.
 //!
 //! Nothing here prints seed bytes: [`Seed`]'s `Debug` is `Seed(..)`, it has no `Display`, and every
 //! error names the path and the rule, never the file's content.

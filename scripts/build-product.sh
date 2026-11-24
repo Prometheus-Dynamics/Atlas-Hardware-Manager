@@ -300,8 +300,8 @@ for o in $outputs; do
   command -v cargo >/dev/null || die "FAILED products/$pname: cargo is needed to read the slot back out of $o"
   rb=$(mktemp -d)
   ln -s "${object[$o]}" "$rb/$o"  # the store names objects by digest; the reader is given the output's name
-  said=$(cd "$repo" && ATLAS_REAL_IMAGE=$rb/$o ATLAS_REAL_BUNDLE=$slot_file cargo test --locked -p atlas-bundle --test image \
-    a_real_product_image_gives_the_slot_its_build_made -- --exact --nocapture 2>&1) \
+  said=$(cd "$repo" && ATLAS_REAL_IMAGE=$rb/$o ATLAS_REAL_BUNDLE=$slot_file cargo test --locked -p atlas-bundle --test all \
+    image::a_real_product_image_gives_the_slot_its_build_made -- --exact --nocapture 2>&1) \
     || { echo "$said" >&2; rm -rf "${rb:?}"; die "FAILED products/$pname: the slot read back out of $o is not the build's slot file (above)"; }
   rm -rf "${rb:?}"
   # The test does nothing without its two paths: its own line is what says the comparison ran.
