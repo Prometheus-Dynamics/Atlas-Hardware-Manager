@@ -277,6 +277,7 @@ static_checks() {
     s+=("a failing step fails its lane and records no pass|lane_failure_self_test")
     s+=("the devices lane fails when either of its checks fails|devices_lane_self_test")
     s+=("a lane's key holds the scripts it runs and not a person's tools|lane_keys_self_test")
+    s+=("no build, test or app reads a script outside the code lanes' key|. scripts/gate-lib.sh && python3 -I scripts/check-script-reads.py --self-test >/dev/null && python3 -I scripts/check-script-reads.py \"\${GATE_CODE_LANE_SCRIPTS[@]}\"")
     s+=("no board or product names in code|no_match -rn -i -E '\\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\\b' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
     s+=("no shell-outs to ssh for board jobs|no_match -rn -E 'Command::new\\(\"(ssh|scp|sftp)\"\\)' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
   fi
