@@ -93,7 +93,8 @@ jobs:
       - run: cd apps/desktop && bun install --frozen-lockfile && sudo env "PATH=$PATH" node node_modules/@playwright/test/cli.js install-deps chromium
       # scripts/check-config-only.sh runs `gaia build --config-only` for every product: Gaia's content store (the kernel
       # sources each family fetches, about 2.3 GiB per family) is kept here, keyed on the devices tree's source pins, so a
-      # store that was fetched once is not fetched again. Saved even when a later step fails (see the save step).
+      # store that was fetched once is not fetched again. Saved only when the job passed: a red run may hold a cold or
+      # partial store, and one saved under the exact key is restored as a hit and never saved again.
       # v2: every run from 2026-11-24 on failed before Gaia fetched anything (GAIA_WORK_DIR, above) and saved the cold
       # store under the exact key, so later runs restored it as a hit and never saved a warm one.
       - uses: actions/cache/restore@v4
@@ -115,7 +116,7 @@ jobs:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml', 'scripts/kernel-llvm-tools.sh') }}
       - uses: actions/cache/save@v4
-        if: always() && steps.gaia-store-cache.outputs.cache-hit != 'true'
+        if: success() && steps.gaia-store-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/atlas/gaia-store
           key: gaia-store-v2-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
