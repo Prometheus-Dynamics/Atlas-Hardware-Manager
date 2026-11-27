@@ -525,7 +525,14 @@ fn seed_slots(node: &SimNode) {
 impl World {
     /// Adds the simulated drivers and links to the app's parts. What cannot be started (the
     /// simulated node's port or socket) is left out and returned as a line for the log.
-    pub fn install(parts: &mut Parts, scene: Scene, teams: &TeamList) -> (Self, Vec<String>) {
+    /// `retry_scale` shortens the simulated board's transfer limits as it shortens the waits
+    /// between tries (`Options::retry_scale`): a try that goes unanswered fails that much sooner.
+    pub fn install(
+        parts: &mut Parts,
+        scene: Scene,
+        teams: &TeamList,
+        retry_scale: u32,
+    ) -> (Self, Vec<String>) {
         let mut problems = Vec::new();
         let demo = scene != Scene::Empty;
         for (id, kind, label) in [
@@ -571,11 +578,12 @@ impl World {
             .register(Arc::new(RockchipDriver::new(rom.clone(), vec![ROM_ID])));
         // Its loader: the real one, with transfer limits short enough for a failed try to be
         // seen and tried again while a person watches.
+        let limit = std::time::Duration::from_millis(400) / retry_scale.max(1);
         let limits = OpenOptions {
             interface: None,
             timeouts: Timeouts {
-                control: std::time::Duration::from_millis(400),
-                bulk: std::time::Duration::from_millis(400),
+                control: limit,
+                bulk: limit,
             },
         };
         match crate::flash::RockchipRom::new(

@@ -18,7 +18,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use atlas_driver::DriverRegistry;
 use atlas_inventory::{Inventory, JsonFileStore, LoadOutcome, Outcome, Presence};
 use atlas_jobs::{
-    DeviceHolds, Event, Events, JobKind, Jobs, LinkSource, ScanConfig, ScanControl, start_scan,
+    Backoff, DeviceHolds, Event, Events, JobKind, JobTiming, Jobs, LinkSource, ScanConfig,
+    ScanControl, start_scan,
 };
 use atlas_log::Logger;
 use atlas_types::{DeviceKey, Family, Link, LinkId, LinkKind};
@@ -59,6 +60,11 @@ pub struct Options {
     /// Which simulated world the simulated mode builds: `demo` (one device in every state) or
     /// `empty` (nothing plugged in). Read only in the simulated mode.
     pub scene: String,
+    /// Divides every wait between tries (the jobs' backoff and the update feed's), keeping its
+    /// doubling and its cap in the same proportion. 1 in the app; only the UI bridge, which
+    /// always runs the simulated world, sets more, so the click tests see a whole retry sequence
+    /// in a fraction of the time.
+    pub retry_scale: u32,
 }
 
 impl Options {
@@ -69,6 +75,7 @@ impl Options {
             mode,
             scan: ScanConfig::default(),
             scene: "demo".into(),
+            retry_scale: 1,
         }
     }
 }
@@ -210,7 +217,10 @@ impl Core {
             mode,
             scan,
             scene,
+            retry_scale,
         } = options;
+        let mut timing = atlas_files::job_timing();
+        timing.backoff = scaled(timing.backoff, retry_scale);
         let log = dirs
             .as_ref()
             .and_then(|dirs| Logger::open(dirs.logs(), atlas_log::Config::default()).ok())
@@ -257,8 +267,12 @@ impl Core {
         #[cfg(feature = "sim")]
         let (parts, sim, unused) = if mode == Mode::Sim {
             let mut parts = Parts::default();
-            let (world, unused) =
-                crate::sim::World::install(&mut parts, crate::sim::Scene::named(&scene), &teams);
+            let (world, unused) = crate::sim::World::install(
+                &mut parts,
+                crate::sim::Scene::named(&scene),
+                &teams,
+                retry_scale,
+            );
             (parts, Some(world), unused)
         } else {
             let (parts, unused) = crate::drivers::real(&teams);
@@ -291,15 +305,19 @@ impl Core {
             roms,
             disk_writer,
             dirs.as_ref().map(|dirs| dirs.data.as_path()),
+            timing.backoff.cap,
         );
         job_kinds.push(flashes.kind());
-        let app_update =
-            crate::update::Updates::new(fetch, dirs.as_ref().map(|dirs| dirs.data.as_path()));
+        let app_update = crate::update::Updates::new(
+            fetch,
+            dirs.as_ref().map(|dirs| dirs.data.as_path()),
+            scaled(crate::update::RETRY, retry_scale),
+        );
         job_kinds.push(app_update.kind());
 
         let events = Events::new(1024);
         let holds = DeviceHolds::new();
-        let jobs = open_jobs(dirs.as_ref(), job_kinds, &events, &holds, &log).await;
+        let jobs = open_jobs(dirs.as_ref(), job_kinds, &events, &holds, timing, &log).await;
         let links = Arc::new(Links::default());
         links.set(link_list);
         let (updates, _) = broadcast::channel(256);
@@ -775,11 +793,22 @@ impl Core {
 
 /// Opens the job list. A list that cannot be read is put aside (nothing in it is lost) and the
 /// app opens with an empty one.
+/// `backoff` with its first wait and its cap divided by `scale` (see [`Options::retry_scale`]).
+#[must_use]
+pub fn scaled(backoff: Backoff, scale: u32) -> Backoff {
+    let scale = scale.max(1);
+    Backoff {
+        first: backoff.first / scale,
+        cap: backoff.cap / scale,
+    }
+}
+
 async fn open_jobs(
     dirs: Option<&Dirs>,
     kinds: Vec<Arc<dyn JobKind>>,
     events: &Events,
     holds: &DeviceHolds,
+    timing: JobTiming,
     log: &Logger,
 ) -> Jobs {
     let path = match dirs {
@@ -788,13 +817,7 @@ async fn open_jobs(
         None => std::env::temp_dir().join(format!("atlas-jobs-{}.json", std::process::id())),
     };
     let open = |path: std::path::PathBuf| {
-        Jobs::open(
-            path,
-            kinds.clone(),
-            events.clone(),
-            atlas_files::job_timing(),
-            holds.clone(),
-        )
+        Jobs::open(path, kinds.clone(), events.clone(), timing, holds.clone())
     };
     match open(path.clone()).await {
         Ok(jobs) => jobs,

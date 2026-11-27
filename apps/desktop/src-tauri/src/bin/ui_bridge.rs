@@ -10,6 +10,10 @@
 //! - `GET /updates?after=N` answers the updates after number N, waiting up to twenty seconds for
 //!   one. `{"resync": true}` means N is older than what is kept: read `snapshot` again.
 //!
+//! With `--retry-scale N` every wait between tries (a job's backoff, the update feed's) is N
+//! times shorter, doubling to a cap N times lower: the click tests see a whole retry sequence
+//! without waiting for the app's real seconds. The app itself always runs with 1.
+//!
 //! With `--request-log PATH` it writes one line when a request is read and one when it has been
 //! answered (wall time in ms, the connection, the method and path, and for a call its name), so a
 //! request that never ends is seen on the server's side too.
@@ -105,6 +109,7 @@ struct Args {
     port: u16,
     data: Option<PathBuf>,
     scene: String,
+    retry_scale: u32,
     request_log: Option<PathBuf>,
 }
 
@@ -129,6 +134,7 @@ fn parse_args() -> Result<Args, String> {
         port: 0,
         data: None,
         scene: "demo".into(),
+        retry_scale: 1,
         request_log: None,
     };
     let mut words = std::env::args().skip(1);
@@ -143,6 +149,13 @@ fn parse_args() -> Result<Args, String> {
             }
             "--data" => args.data = Some(PathBuf::from(value()?)),
             "--scene" => args.scene = value()?,
+            "--retry-scale" => {
+                args.retry_scale = value()?
+                    .parse()
+                    .ok()
+                    .filter(|&scale| scale >= 1)
+                    .ok_or_else(|| "--retry-scale needs a whole number from 1".to_string())?
+            }
             "--request-log" => args.request_log = Some(PathBuf::from(value()?)),
             _ => return Err(format!("unknown argument {word}")),
         }
@@ -156,7 +169,7 @@ fn main() {
         Ok(args) => args,
         Err(error) => {
             eprintln!(
-                "atlas-ui-bridge: {error}\nusage: atlas-ui-bridge [--dist DIR] [--port N] [--data DIR] [--scene demo|empty]"
+                "atlas-ui-bridge: {error}\nusage: atlas-ui-bridge [--dist DIR] [--port N] [--data DIR] [--scene demo|empty] [--retry-scale N]"
             );
             std::process::exit(2);
         }
@@ -176,6 +189,7 @@ fn main() {
     });
     let mut options = Options::new(Some(Dirs::under(data)), Mode::Sim);
     options.scene = args.scene.clone();
+    options.retry_scale = args.retry_scale;
     // The simulated world answers from memory, so the bridge scans it often: a test waits for
     // what the scan sees, and a two-second scan made every test wait seconds for each change.
     options.scan = ScanConfig {

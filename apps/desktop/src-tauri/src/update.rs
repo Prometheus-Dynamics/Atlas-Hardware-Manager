@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::DriverError;
-use atlas_jobs::{DeviceClaim, JobId, JobKind};
+use atlas_jobs::{Backoff, DeviceClaim, JobId, JobKind};
 use atlas_release::{
     AppQuery, AppUpdate, Fetch, InstallKind, ReleaseError, VerifiedInstaller, check_app_update,
     download_app_update,
@@ -44,8 +44,10 @@ pub const TOPIC: &str = "update";
 pub const KIND: &str = "app-update";
 const STEP: &str = "download";
 /// The wait between tries of a feed that does not answer: doubled from the first to the cap.
-const RETRY_FIRST: Duration = Duration::from_secs(1);
-const RETRY_CAP: Duration = Duration::from_secs(5);
+pub const RETRY: Backoff = Backoff {
+    first: Duration::from_secs(1),
+    cap: Duration::from_secs(5),
+};
 /// The feed a build was given, if any.
 const BUILT_IN_FEED: Option<&str> = option_env!("ATLAS_UPDATE_FEED");
 
@@ -168,6 +170,8 @@ struct Shared {
     feed: Mutex<Option<String>>,
     /// Where installers are kept.
     dir: PathBuf,
+    /// The waits between tries of a feed that does not answer.
+    retry: Backoff,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -274,9 +278,10 @@ struct View {
 
 impl Updates {
     /// The update state. `fetch` is the network (the simulated world gives its own); `data_dir`
-    /// is where installers are kept.
+    /// is where installers are kept; a feed that does not answer is asked again after `retry`
+    /// ([`RETRY`] in the app).
     #[must_use]
-    pub fn new(fetch: Option<Arc<dyn Fetch>>, data_dir: Option<&Path>) -> Self {
+    pub fn new(fetch: Option<Arc<dyn Fetch>>, data_dir: Option<&Path>, retry: Backoff) -> Self {
         let fetch = fetch.unwrap_or_else(|| match atlas_release::HttpFetcher::new() {
             Ok(fetcher) => Arc::new(fetcher),
             Err(error) => Arc::new(NoNetwork(error)),
@@ -293,6 +298,7 @@ impl Updates {
                 install: Mutex::new(Install::of_this_program()),
                 feed: Mutex::new(None),
                 dir,
+                retry,
             }),
         }
     }
@@ -418,7 +424,7 @@ impl Updates {
         let kind = lock(&shared.install).kind;
         let log = core.log().clone();
         tokio::spawn(async move {
-            let mut wait = RETRY_FIRST;
+            let mut wait = shared.retry.first;
             loop {
                 let query = AppQuery {
                     feed_url: &feed,
@@ -480,7 +486,7 @@ impl Updates {
                     }
                 }
                 tokio::time::sleep(wait).await;
-                wait = (wait * 2).min(RETRY_CAP);
+                wait = (wait * 2).min(shared.retry.cap);
                 if lock(&shared.state).generation != generation {
                     return;
                 }

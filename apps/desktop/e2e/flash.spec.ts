@@ -4,7 +4,7 @@
 // The harness calls the core only to change the simulated world: to queue the file the person
 // will choose, to make the board silent, to hold or pull the card.
 import type { Page } from "@playwright/test";
-import { DEMO, SIZES, demoSettled, expect, expectNoOverflow, test, type Bridge } from "./bridge";
+import { DEMO, SIZES, capMs, demoSettled, expect, expectNoOverflow, test, type Bridge } from "./bridge";
 
 const step = (page: Page, key: string) => page.locator(`[data-step="${key}"]`);
 
@@ -78,14 +78,21 @@ test("a silent board: the loader is retried, stopped by hand, and runs when Retr
   await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("failed at loader");
   await expect(step(app, "loader")).toHaveAttribute("data-state", "fail");
   await expect(failure.locator("dl")).toContainText("never gives up on its own");
-  await expect(failure.locator("dl")).toContainText("capped at 5 s between tries");
+  // The cap is the one the run waits by: the app's 5 s, which the bridge's retry scale shortens.
+  const cap = `${capMs() / 1000} s`;
+  await expect(failure.locator("dl")).toContainText(`capped at ${cap} between tries`);
   await expect(failure.locator("dl")).toContainText("did not answer");
-  // It tries again by itself.
-  await expect(failure.locator("dl")).toContainText(/[3-9] so far/, { timeout: 15_000 });
+  // It tries again by itself, waiting longer each time until the wait is the cap (the sixth
+  // try's: a twentieth of the cap, doubled four times, is past it), and stays there.
+  await expect(failure.locator('dt:text-is("Backoff") + dd')).toHaveText(`${cap}, capped at ${cap} between tries`);
+  await expect(failure.locator("dl")).toContainText(/([6-9]|\d{2,}) so far/);
   await expect(app.locator('[data-panel="log"] .ln .lv-err').first()).toBeVisible();
 
   // The manual off, without moving the panel.
-  const before = await failure.boundingBox();
+  // The panel is on the page between tries, not during one (each try is a few tens of ms with
+  // the bridge's retry scale): its box is read while it is there.
+  let before: Awaited<ReturnType<typeof failure.boundingBox>> = null;
+  await expect.poll(async () => (before = await failure.boundingBox())).not.toBeNull();
   await failure.getByRole("button", { name: "Stop retrying" }).click();
   await expect(failure).toHaveAttribute("data-status", "stopped");
   await expect(failure.locator(".ph .chip")).toHaveText("Stopped");
@@ -97,7 +104,9 @@ test("a silent board: the loader is retried, stopped by hand, and runs when Retr
   await expect(failure.locator("dl")).toContainText("not until you press Retry");
   expect(await failure.boundingBox()).toEqual(before);
   const attempts = await failure.locator("dl dd").first().textContent();
-  await app.waitForTimeout(1500);
+  // Nothing happening has no event to wait for: twice the longest wait between tries, in which
+  // a run still retrying would have tried at least twice.
+  await app.waitForTimeout(2 * capMs());
   expect(await failure.locator("dl dd").first().textContent(), "nothing is tried while stopped").toBe(attempts);
 
   // A board that answers is plugged in; Retry runs the loader at once.
@@ -128,21 +137,42 @@ test("a failing flash says its last error and where its support bundle is, in fu
   await app.getByRole("button", { name: "Cancel" }).click();
 });
 
-test("Retry now cuts the wait short, and Cancel ends a flash that is failing", async ({ app, bridge }) => {
+type FlashRun = { status: string; retry_in_ms: number; retry_at_ms: number; ended_ms: number | null };
+const flashRun = async (bridge: Bridge) => ((await bridge.call("snapshot")) as { topics: { flash: { run: FlashRun } } }).topics.flash.run;
+
+test.describe("with the app's own waits between tries", () => {
+  // Retry now must be pressed well inside a wait: the app's own seconds, not the bridge's tenths.
+  test.use({ retryScale: 1 });
+
+  test("Retry now cuts the wait short", async ({ app, bridge }) => {
+    await openFlash(app);
+    await chooseImage(app, bridge);
+    await bridge.call("sim.rom", { silent: 400 });
+    await app.getByRole("button", { name: "Send loader" }).click();
+    const failure = app.locator('[data-panel="failure"]');
+    // Far enough in for the wait between tries to be seconds long (the fourth try's is 2 s).
+    await expect(failure.locator("dl")).toContainText(/([4-9]|\d{2,}) so far/, { timeout: 15_000 });
+    let waiting: FlashRun | undefined;
+    await expect.poll(async () => {
+      waiting = await flashRun(bridge);
+      return waiting.status === "retrying" && waiting.retry_at_ms - Date.now() > 1000;
+    }).toBe(true);
+    await bridge.call("sim.rom", { fresh: true });
+    await failure.getByRole("button", { name: "Retry now" }).click();
+    await expect(step(app, "loader")).toHaveAttribute("data-state", "done");
+    // The press started the try, not the end of the wait: the run ended before its wait was over.
+    expect((await flashRun(bridge)).ended_ms).toBeLessThan(waiting!.retry_at_ms);
+    // A run that ended can be sent again.
+    await expect(app.getByRole("button", { name: "Send loader again" })).toBeVisible();
+  });
+});
+
+test("Cancel ends a flash that is failing", async ({ app, bridge }) => {
   await openFlash(app);
   await chooseImage(app, bridge);
   await bridge.call("sim.rom", { silent: 400 });
   await app.getByRole("button", { name: "Send loader" }).click();
   const failure = app.locator('[data-panel="failure"]');
-  // Far enough in for the wait between tries to be seconds long.
-  await expect(failure.locator("dl")).toContainText(/[5-9] so far/, { timeout: 25_000 });
-  await bridge.call("sim.rom", { fresh: true });
-  await failure.getByRole("button", { name: "Retry now" }).click();
-  await expect(step(app, "loader")).toHaveAttribute("data-state", "done", { timeout: 2500 });
-
-  // Again, and this time it is cancelled while it fails.
-  await bridge.call("sim.rom", { fresh: true, silent: 400 });
-  await app.getByRole("button", { name: "Send loader again" }).click();
   await expect(failure).toHaveAttribute("data-status", "retrying");
   await app.getByRole("button", { name: "Cancel" }).click();
   await expect(failure).toHaveCount(0);

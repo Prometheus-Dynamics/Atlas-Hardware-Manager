@@ -643,6 +643,8 @@ struct Shared {
     writer: Option<Arc<dyn DiskWriter>>,
     recent_file: Option<PathBuf>,
     scratch: PathBuf,
+    /// The longest wait between two tries of a loader run: the jobs' backoff cap.
+    backoff_cap: Duration,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -721,12 +723,14 @@ impl JobKind for LoaderKind {
 }
 
 impl Flashes {
-    /// The flash state with the loaders and the disk writer this build has.
+    /// The flash state with the loaders and the disk writer this build has. `backoff_cap` is the
+    /// cap of the backoff its loader runs are retried with, as the page says it.
     #[must_use]
     pub fn new(
         roms: Vec<Arc<dyn BootRom>>,
         writer: Option<Arc<dyn DiskWriter>>,
         data_dir: Option<&Path>,
+        backoff_cap: Duration,
     ) -> Self {
         let recent_file = data_dir.map(|dir| dir.join("flash-recent.json"));
         let recent = recent_file
@@ -749,6 +753,7 @@ impl Flashes {
                 writer,
                 recent_file,
                 scratch,
+                backoff_cap,
             }),
         }
     }
@@ -773,7 +778,7 @@ impl Flashes {
             })).collect::<Vec<_>>(),
             "can_write_disks": self.shared.writer.is_some(),
             // The longest wait between two tries (the failure rule's cap), for the page's words.
-            "backoff_cap_ms": u64::try_from(atlas_jobs::JobTiming::default().backoff.cap.as_millis()).unwrap_or(0),
+            "backoff_cap_ms": u64::try_from(self.shared.backoff_cap.as_millis()).unwrap_or(0),
         })
     }
 

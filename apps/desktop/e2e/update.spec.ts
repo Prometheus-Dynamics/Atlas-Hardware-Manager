@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { SIZES, demoSettled, expect, expectNoOverflow, test } from "./bridge";
+import { SIZES, capMs, demoSettled, expect, expectNoOverflow, test } from "./bridge";
 
 const open = async (page: Page) => {
   await demoSettled(page);
@@ -104,7 +104,9 @@ test("a feed that is down is asked again until it is stopped by hand, and answer
   await expect(check(app)).toBeVisible();
   await expect(line(app)).toHaveText("");
   await bridge.call("sim.feed", { state: "nothing" });
-  await app.waitForTimeout(1500);
+  // Nothing happening has no event to wait for: twice the feed's longest wait between tries, in
+  // which a check still retrying would have asked at least twice.
+  await app.waitForTimeout(2 * capMs());
   await expect(line(app)).toHaveText("");
 });
 

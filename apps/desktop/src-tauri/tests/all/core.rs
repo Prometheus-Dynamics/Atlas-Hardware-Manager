@@ -674,3 +674,33 @@ async fn a_release_no_trusted_key_signed_is_refused_and_a_silent_feed_is_asked_a
         "{opened:?}"
     );
 }
+
+/// The app's waits between tries are the product's: a job's backoff doubles from 250 ms to a 5 s
+/// cap, the update feed's from 1 s to 5 s. The UI bridge's `--retry-scale` divides both and
+/// keeps every wait in the same proportion, so the click tests see the same doubling and the
+/// same cap, only sooner.
+#[test]
+fn the_retry_waits_are_the_products_and_a_scale_keeps_their_doubling_and_cap() {
+    use atlas_app::core::scaled;
+    use atlas_jobs::Backoff;
+    let ms = |backoff: Backoff| {
+        (1..=8)
+            .map(|n| backoff.delay(n).as_millis())
+            .collect::<Vec<_>>()
+    };
+
+    assert_eq!(Options::new(None, Mode::Real).retry_scale, 1);
+    let jobs = atlas_files::job_timing().backoff;
+    assert_eq!(ms(jobs), [250, 500, 1000, 2000, 4000, 5000, 5000, 5000]);
+    assert_eq!(scaled(jobs, 1), jobs);
+    assert_eq!(ms(scaled(jobs, 10)), [25, 50, 100, 200, 400, 500, 500, 500]);
+
+    let feed = atlas_app::update::RETRY;
+    assert_eq!(ms(feed), [1000, 2000, 4000, 5000, 5000, 5000, 5000, 5000]);
+    assert_eq!(
+        ms(scaled(feed, 10)),
+        [100, 200, 400, 500, 500, 500, 500, 500]
+    );
+    // A scale of 0 is read as 1, never as a division by zero.
+    assert_eq!(scaled(feed, 0), feed);
+}

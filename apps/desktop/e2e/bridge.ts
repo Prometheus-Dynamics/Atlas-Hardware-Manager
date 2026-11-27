@@ -24,11 +24,18 @@ export type Bridge = {
 
 export type Scene = "demo" | "empty" | "plain";
 
+/** How many times shorter the bridge makes every wait between tries (`--retry-scale`): a job's
+ *  backoff and the update feed's double from a tenth of the app's first wait to a tenth of its
+ *  5 s cap. A test that needs the app's own waits says `test.use({ retryScale: 1 })`. */
+export const RETRY_SCALE = 10;
+/** The app's cap on a wait between tries (5 s), as a bridge with `scale` runs it. */
+export const capMs = (scale: number = RETRY_SCALE) => 5000 / scale;
+
 /** Starts the bridge. With `requestLog`, the bridge writes each request's begin and end there (see
  *  `--request-log`), so a request that stalls is seen from the server's side too. */
-export async function startBridge(dataDir: string, scene: Scene = "demo", requestLog?: string): Promise<Bridge> {
+export async function startBridge(dataDir: string, scene: Scene = "demo", requestLog?: string, retryScale: number = RETRY_SCALE): Promise<Bridge> {
   if (!BRIDGE) throw new Error("ATLAS_UI_BRIDGE is not set: run scripts/ui-gate.sh");
-  const extra = requestLog ? ["--request-log", requestLog] : [];
+  const extra = ["--retry-scale", String(retryScale), ...(requestLog ? ["--request-log", requestLog] : [])];
   const child: ChildProcess = spawn(BRIDGE, ["--dist", DIST, "--port", "0", "--data", dataDir, "--scene", scene, ...extra], {
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -64,7 +71,7 @@ export async function startBridge(dataDir: string, scene: Scene = "demo", reques
   };
 }
 
-export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }, { bridgeBuilt: void }>({
+export const test = base.extend<{ scene: Scene; retryScale: number; bridge: Bridge; app: Page }, { bridgeBuilt: void }>({
   // Once per worker: waits until the gate says this run's bridge is built. No timeout of its own:
   // a build that fails ends the gate, and the tests with it.
   bridgeBuilt: [
@@ -76,13 +83,15 @@ export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }, { b
   ],
   // The simulated world a test runs in: `test.use({ scene: "empty" })` for nothing plugged in.
   scene: ["demo", { option: true }],
+  // How many times shorter the waits between tries are (see RETRY_SCALE).
+  retryScale: [RETRY_SCALE, { option: true }],
   // A test that fails keeps, beside its output (and its trace), the bridge's request log and the
   // app's own log; a test that passes keeps neither.
-  bridge: async ({ scene, bridgeBuilt }, use, testInfo) => {
+  bridge: async ({ scene, retryScale, bridgeBuilt }, use, testInfo) => {
     void bridgeBuilt;
     const dataDir = mkdtempSync(join(tmpdir(), "atlas-e2e-"));
     const requestLog = testInfo.outputPath("bridge-requests.log");
-    const bridge = await startBridge(dataDir, scene, requestLog);
+    const bridge = await startBridge(dataDir, scene, requestLog, retryScale);
     await use(bridge);
     await bridge.stop();
     if (testInfo.status === testInfo.expectedStatus) {
