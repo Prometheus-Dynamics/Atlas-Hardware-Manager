@@ -64,9 +64,24 @@ stage "the UI builds and type-checks"
 # dist/, so an unchanged UI leaves dist/ untouched: the app crate embeds dist/, and a rewritten
 # dist/ with new mtimes recompiled it in each of the three cargo steps below.
 (cd $app && bun install --frozen-lockfile >/dev/null)
+# The build and the type-check read only the UI's own sources, so each is skipped when those are
+# what its last pass had: a change to the Rust side alone rebuilt the UI on every run, on the
+# clicks' path (2026-11-27: the build stage 36 s at load 152-186, 1.2 s at load 60).
+ui_key() {  # <path...> under apps/desktop: the key of those files and of bun
+  (cd $app && { bun --version; git ls-files -co --exclude-standard -z -- "$@" | sort -z | xargs -0 -r sha256sum; } | sha256sum | cut -c1-32)
+}
+ui_sources=(bun.lock index.html package.json src svelte.config.js tsconfig.json vite.config.ts)
+build_key=$(ui_key "${ui_sources[@]}")
+check_key=$(ui_key "${ui_sources[@]}" e2e)
 built=$target/ui-dist
-(cd $app && bun run build --outDir "$built" --emptyOutDir >/dev/null)
-[ -f "$built/index.html" ] || { echo "ui-gate: the UI build wrote no index.html into $built" >&2; exit 1; }
+if [ -f "$built/index.html" ] && [ "$(cat "$target/ui-dist.key" 2>/dev/null)" = "$build_key" ]; then
+  echo "    the UI's sources are those of its last build: kept ($build_key)"
+else
+  rm -f "${target:?}/ui-dist.key"
+  (cd $app && bun run build --outDir "$built" --emptyOutDir >/dev/null)
+  [ -f "$built/index.html" ] || { echo "ui-gate: the UI build wrote no index.html into $built" >&2; exit 1; }
+  echo "$build_key" >"$target/ui-dist.key"
+fi
 mkdir -p $app/dist
 rsync -r --checksum --delete "$built/" "$app/dist/"
 # Two things run beside the steps after them, each in its own process group: the type-check
@@ -77,9 +92,15 @@ rsync -r --checksum --delete "$built/" "$app/dist/"
 bg_pids=()
 trap 'for p in "${bg_pids[@]}"; do kill -TERM -- "-$p" 2>/dev/null || true; done' EXIT
 check_log=$target/ui-check.log
-setsid bash -c 'cd "$1" && exec bun run check' ui-check "$app" >"$check_log" 2>&1 &
-check_pid=$!
-bg_pids+=("$check_pid")
+check_pid=
+if [ "$(cat "$target/ui-check.pass" 2>/dev/null)" = "$check_key" ]; then
+  echo "    the type-check's sources are those of its last pass: kept ($check_key)"
+else
+  rm -f "${target:?}/ui-check.pass"
+  setsid bash -c 'cd "$1" && exec bun run check' ui-check "$app" >"$check_log" 2>&1 &
+  check_pid=$!
+  bg_pids+=("$check_pid")
+fi
 
 stage "the UI bridge with the simulated devices"
 cargo build --locked -p atlas-app --features sim --bin atlas-ui-bridge
@@ -107,13 +128,16 @@ export ATLAS_E2E_OUT=$target/ui-gate
 
 # The type-check ran beside the bridge's build and the clicks: they need only the built UI, not
 # its types (8 s of svelte-check no longer waits in front of them).
-stage "waiting for the type-check"
-if ! wait "$check_pid"; then
-  cat "$check_log" >&2
-  echo "ui-gate: the UI does not type-check (svelte-check, above)" >&2
-  exit 1
+if [ -n "$check_pid" ]; then
+  stage "waiting for the type-check"
+  if ! wait "$check_pid"; then
+    cat "$check_log" >&2
+    echo "ui-gate: the UI does not type-check (svelte-check, above)" >&2
+    exit 1
+  fi
+  tail -n 3 "$check_log"
+  echo "$check_key" >"$target/ui-check.pass"
 fi
-tail -n 3 "$check_log"
 
 stage "waiting for the Rust side"
 if ! wait "$rust_pid"; then
