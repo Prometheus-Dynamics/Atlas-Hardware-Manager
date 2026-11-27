@@ -24,6 +24,14 @@ on:
         required: false
         default: ""
 
+# Gaia places a step's work directory on the disk or in /dev/shm. Its automatic choice reads the disk quota on /dev/shm,
+# and the runner mounts /dev/shm with usrquota but has no `quota` tool, so every step that needed a new work directory
+# failed: "store: work directory: /dev/shm has quotas on (-u), and `quota` could not be run to read them" (every
+# product in check-config-only, from 2026-11-24 on; the gate's false pass hid it on f0f0c1f4). The runner has no RAM
+# to spare for it anyway: the work directories go on the disk, which needs no reading.
+env:
+  GAIA_WORK_DIR: disk
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.product }}
   cancel-in-progress: true
@@ -86,11 +94,13 @@ jobs:
       # scripts/check-config-only.sh runs `gaia build --config-only` for every product: Gaia's content store (the kernel
       # sources each family fetches, about 2.3 GiB per family) is kept here, keyed on the devices tree's source pins, so a
       # store that was fetched once is not fetched again. Saved even when a later step fails (see the save step).
+      # v2: every run from 2026-11-24 on failed before Gaia fetched anything (GAIA_WORK_DIR, above) and saved the cold
+      # store under the exact key, so later runs restored it as a hit and never saved a warm one.
       - uses: actions/cache/restore@v4
         id: gaia-store-cache
         with:
           path: ~/.cache/atlas/gaia-store
-          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          key: gaia-store-v2-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
           restore-keys: gaia-store-${{ runner.os }}-
       # The gate's scratch (TMPDIR) goes in the runner's temp dir: a short path, so the test stubs' Unix sockets fit
       # sun_path (gate.sh refuses a TMPDIR that leaves no room; PR G12). The checkout path is too long for that.
@@ -108,7 +118,7 @@ jobs:
         if: always() && steps.gaia-store-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/atlas/gaia-store
-          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          key: gaia-store-v2-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
 
   # The real build of ONE product, by hand only (scripts/build-product.sh): Gaia at the locked commit builds the OS,
   # the kernel, the components and the image, and the image files are kept as the run's artifact with their sizes
@@ -137,7 +147,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/atlas/gaia-store
-          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          key: gaia-store-v2-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
           restore-keys: gaia-store-${{ runner.os }}-
       # check-devices.sh builds Gaia at the pin when the cache has none, and fetches its recipes.
       - run: ./scripts/check-devices.sh
