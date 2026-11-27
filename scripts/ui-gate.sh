@@ -90,9 +90,8 @@ mkdir -p $app/dist
 rsync -r --checksum --delete "$built/" "$app/dist/"
 # Two things run beside the steps after them, each in its own process group: the type-check
 # (UI sources only), and the app's Rust side with the simulated devices (clippy, then its tests).
-# The click tests need only the bridge binary, so they start as soon as it is built, without
-# waiting for the type-check. A failing step
-# ends the gate; the groups still running go with it (by their recorded PIDs).
+# The click tests need only the built UI and the bridge binary, so they do not wait for the
+# type-check. A failing step ends the gate; the groups still running go with it (by their recorded PIDs).
 bg_pids=()
 trap 'for p in "${bg_pids[@]}"; do kill -TERM -- "-$p" 2>/dev/null || true; done' EXIT
 check_log=$target/ui-check.log
@@ -106,11 +105,34 @@ else
   bg_pids+=("$check_pid")
 fi
 
+# The click tests start before the bridge is built: Playwright's start, its workers and Chromium
+# (7-8 s at load ~110) overlap the bridge's build and link, and each test's bridge waits for the
+# file $ATLAS_UI_BRIDGE_READY, which is written only once this run's bridge is in place. The file
+# is removed first, so no test ever runs a bridge from an earlier run.
+stage "click tests (they start now and wait for the bridge)"
+export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwright}
+if ! compgen -G "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-*" >/dev/null; then
+  [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium in $PLAYWRIGHT_BROWSERS_PATH" >&2; exit 1; }
+  (cd $app && node node_modules/@playwright/test/cli.js install --only-shell chromium)
+fi
+mkdir -p "$target/ui-bridge"
+export ATLAS_UI_BRIDGE=$target/ui-bridge/atlas-ui-bridge
+export ATLAS_UI_BRIDGE_READY=$target/ui-bridge/ready
+rm -f "${ATLAS_UI_BRIDGE_READY:?}"
+export ATLAS_E2E_OUT=$target/ui-gate
+[ -z "$screens" ] || export ATLAS_SCREENS_DIR=$screens
+setsid bash -c 'cd "$1" && shift && exec node node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts "$@"' \
+  ui-clicks "$app" "${pw_args[@]+"${pw_args[@]}"}" &
+pw_pid=$!
+bg_pids+=("$pw_pid")
+
 stage "the UI bridge with the simulated devices"
 cargo build --locked -p atlas-app --features sim --bin atlas-ui-bridge
-# The click tests run a copy: `cargo test` below rebuilds the package's binaries in target/debug while they run.
-mkdir -p "$target/ui-bridge"
-cp -f "$target/debug/atlas-ui-bridge" "$target/ui-bridge/atlas-ui-bridge"
+# The click tests run a copy: `cargo test` below rebuilds the package's binaries in target/debug
+# while they run. It is moved into place whole, then said to be ready.
+cp -f "$target/debug/atlas-ui-bridge" "$ATLAS_UI_BRIDGE.new"
+mv -f "$ATLAS_UI_BRIDGE.new" "$ATLAS_UI_BRIDGE"
+echo "$SECONDS" >"$ATLAS_UI_BRIDGE_READY"
 
 stage "the app's Rust side with the simulated devices (beside the click tests; log $target/ui-rust.log)"
 rust_log=$target/ui-rust.log
@@ -119,16 +141,11 @@ setsid bash -c 'cargo clippy --locked -p atlas-app --features sim --all-targets 
 rust_pid=$!
 bg_pids+=("$rust_pid")
 
-stage "click tests"
-export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwright}
-if ! compgen -G "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-*" >/dev/null; then
-  [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium in $PLAYWRIGHT_BROWSERS_PATH" >&2; exit 1; }
-  (cd $app && node node_modules/@playwright/test/cli.js install --only-shell chromium)
+stage "waiting for the click tests"
+if ! wait "$pw_pid"; then
+  echo "ui-gate: the click tests failed (above)" >&2
+  exit 1
 fi
-export ATLAS_UI_BRIDGE=$target/ui-bridge/atlas-ui-bridge
-export ATLAS_E2E_OUT=$target/ui-gate
-[ -z "$screens" ] || export ATLAS_SCREENS_DIR=$screens
-(cd $app && node node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts "${pw_args[@]+"${pw_args[@]}"}")
 
 # The type-check ran beside the bridge's build and the clicks: they need only the built UI, not
 # its types (8 s of svelte-check no longer waits in front of them).

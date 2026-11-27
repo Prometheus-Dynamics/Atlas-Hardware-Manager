@@ -2,11 +2,15 @@
 // so every test sees the simulated devices from the beginning and no test sees another's state.
 import { test as base, expect, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const BRIDGE = process.env.ATLAS_UI_BRIDGE ?? "";
+// Set by scripts/ui-gate.sh, which starts the tests while it still builds the bridge: the file
+// appears once this run's bridge is in place.
+const READY = process.env.ATLAS_UI_BRIDGE_READY ?? "";
 const DIST = resolve(import.meta.dirname, "../dist");
 
 export type Bridge = {
@@ -60,12 +64,22 @@ export async function startBridge(dataDir: string, scene: Scene = "demo", reques
   };
 }
 
-export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }>({
+export const test = base.extend<{ scene: Scene; bridge: Bridge; app: Page }, { bridgeBuilt: void }>({
+  // Once per worker: waits until the gate says this run's bridge is built. No timeout of its own:
+  // a build that fails ends the gate, and the tests with it.
+  bridgeBuilt: [
+    async ({}, use) => {
+      while (READY && !existsSync(READY)) await sleep(50);
+      await use();
+    },
+    { scope: "worker", timeout: 0 },
+  ],
   // The simulated world a test runs in: `test.use({ scene: "empty" })` for nothing plugged in.
   scene: ["demo", { option: true }],
   // A test that fails keeps, beside its output (and its trace), the bridge's request log and the
   // app's own log; a test that passes keeps neither.
-  bridge: async ({ scene }, use, testInfo) => {
+  bridge: async ({ scene, bridgeBuilt }, use, testInfo) => {
+    void bridgeBuilt;
     const dataDir = mkdtempSync(join(tmpdir(), "atlas-e2e-"));
     const requestLog = testInfo.outputPath("bridge-requests.log");
     const bridge = await startBridge(dataDir, scene, requestLog);
