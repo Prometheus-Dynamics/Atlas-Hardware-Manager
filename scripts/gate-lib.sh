@@ -61,4 +61,13 @@ gate_build_env() {
   if [ -z "${CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS:-}" ] && command -v mold >/dev/null 2>&1; then
     export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=mold"
   fi
+  # The app's version, fixed for the gate: from a checkout it names the commit, so every commit
+  # reran the app's build script and recompiled atlas-app in each lane and profile (the bridge
+  # build alone 7-8 s on the ui lane's path, 2026-11-27). Nothing the gate runs reads the real
+  # one; the simulated update feed is newer than any version. A release or a .deb sets its own.
+  if [ -z "${ATLAS_VERSION:-}" ]; then
+    local release
+    release=$(sed -n '/^\[workspace.metadata.atlas\]/,/^\[/s/^release *= *"\(.*\)"/\1/p' Cargo.toml)
+    export ATLAS_VERSION="${release:-0.0.0}-dev.0+gate"
+  fi
 }
