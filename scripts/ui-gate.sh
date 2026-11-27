@@ -115,12 +115,27 @@ export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwrigh
 # older Playwright (CI restores one in target/) passed a name-only check, nothing was fetched, and
 # every click test failed to launch it (2026-11-27). Playwright names the directory it wants and
 # writes INSTALLATION_COMPLETE in it last.
-shell_dir=$(cd $app && node node_modules/@playwright/test/cli.js install --dry-run --only-shell chromium \
-  | sed -n 's/^ *Install location: *\(.*\/chromium_headless_shell-[0-9][0-9]*\)$/\1/p' | head -n 1)
+plan=$(cd $app && node node_modules/@playwright/test/cli.js install --dry-run --only-shell chromium)
+shell_dir=$(sed -n 's/^ *Install location: *\(.*\/chromium_headless_shell-[0-9][0-9]*\)$/\1/p' <<<"$plan" | head -n 1)
 [ -n "$shell_dir" ] || { echo "ui-gate: Playwright named no headless Chromium directory (install --dry-run)" >&2; exit 1; }
+# Where the browser came from is kept beside it when it is fetched (the source URL, the revision and the
+# SHA-256 of the executable), and said on every run.
+source_record=$shell_dir.atlas-source
 if [ ! -f "$shell_dir/INSTALLATION_COMPLETE" ]; then
   [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium at $shell_dir" >&2; exit 1; }
   (cd $app && node node_modules/@playwright/test/cli.js install --only-shell chromium)
+  url=$(awk -v dir="$shell_dir" '$1 == "Install" && $3 == dir { want = 1; next } want && $1 == "Download" { print $3; exit }' <<<"$plan")
+  {
+    echo "revision ${shell_dir##*-}"
+    echo "url ${url:-unknown}"
+    echo "sha256 $(sha256sum "$shell_dir/chrome-headless-shell-linux64/chrome-headless-shell" | cut -d' ' -f1)"
+    echo "fetched $(date -u +%FT%TZ)"
+  } >"$source_record"
+fi
+if [ -f "$source_record" ]; then
+  echo "    headless Chromium: $(tr '\n' ' ' <"$source_record")"
+else
+  echo "    headless Chromium: $shell_dir (fetched before its source was recorded)"
 fi
 mkdir -p "$target/ui-bridge"
 export ATLAS_UI_BRIDGE=$target/ui-bridge/atlas-ui-bridge
