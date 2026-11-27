@@ -68,16 +68,33 @@ fn online(core: &Core) -> usize {
         .count()
 }
 
-/// The demo world as it settles: seven records, the old board unplugged once it was seen, and
-/// the node followed over USB. The node is found on the LAN first and taken over by its USB link
-/// just after; a test that acted before that saw "now followed over usb-1-2" land after its own
-/// change (2026-11-24, docs/flakes.md `scan-settled-node-link`).
+/// The demo world's names, by record: the world names each record a moment after it is found.
+const NAMES: [(&str, &str); 6] = [
+    (NODE, "bench-a"),
+    ("rockchip-maskrom:usb-1-3", "bench-b"),
+    (RECOVERY, "bench-c"),
+    (OLD, "old-bench"),
+    ("systemcore:9999", "sc-practice"),
+    ("frc-radio:9999", "field-radio"),
+];
+
+/// The demo world as it settles: seven records, each named, the old board unplugged once it was
+/// seen, and the node followed over USB. A test that acted before the last of these saw it land
+/// after its own change: the node's "now followed over usb-1-2", or its "renamed to bench-a"
+/// (2026-11-24 and 2026-11-27, docs/flakes.md `scan-settled-node-link`).
 async fn settled(core: &Core) {
     until(core, |core| {
-        devices(core).len() == 7
+        let devices = devices(core);
+        let named = NAMES.iter().all(|(id, name)| {
+            devices
+                .iter()
+                .any(|device| device["id"] == *id && device["name"] == *name)
+        });
+        devices.len() == 7
             && online(core) == 6
+            && named
             && presence(core, OLD).as_deref() == Some("offline")
-            && devices(core)
+            && devices
                 .iter()
                 .any(|device| device["id"] == NODE && device["identity"]["link"] == "usb-1-2")
     })
