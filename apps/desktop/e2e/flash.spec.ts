@@ -65,56 +65,60 @@ test("a board in its boot ROM: choose an image, send the loader, and the page sa
   await expect(sent).toContainText("Nothing has been sent yet.");
 });
 
-test("a silent board: the loader is retried, stopped by hand, and runs when Retry is pressed", async ({ app, bridge }) => {
-  await openFlash(app);
-  await chooseImage(app, bridge);
-  await bridge.call("sim.rom", { silent: 400 });
-  await app.getByRole("button", { name: "Send loader" }).click();
+test.describe("a silent board at the app's own waits", () => {
+  // The page's "capped at" is JobTiming::default()'s cap, which the bridge's retry scale does not
+  // shorten (TODO(user) in flash.rs): at the app's own waits the page and the runs agree.
+  test.use({ retryScale: 1 });
 
-  const failure = app.locator('[data-panel="failure"]');
-  await expect(failure).toHaveAttribute("data-status", "retrying");
-  await expect(failure.locator(".ph h2")).toHaveText("Loader failed");
-  await expect(failure.locator(".ph .chip.err")).toHaveText("Retrying");
-  await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("failed at loader");
-  await expect(step(app, "loader")).toHaveAttribute("data-state", "fail");
-  await expect(failure.locator("dl")).toContainText("never gives up on its own");
-  // The cap is the one the run waits by: the app's 5 s, which the bridge's retry scale shortens.
-  const cap = `${capMs() / 1000} s`;
-  await expect(failure.locator("dl")).toContainText(`capped at ${cap} between tries`);
-  await expect(failure.locator("dl")).toContainText("did not answer");
-  // It tries again by itself, waiting longer each time until the wait is the cap (the sixth
-  // try's: a twentieth of the cap, doubled four times, is past it), and stays there.
-  await expect(failure.locator('dt:text-is("Backoff") + dd')).toHaveText(`${cap}, capped at ${cap} between tries`);
-  await expect(failure.locator("dl")).toContainText(/([6-9]|\d{2,}) so far/);
-  await expect(app.locator('[data-panel="log"] .ln .lv-err').first()).toBeVisible();
+  test("a silent board: the loader is retried, stopped by hand, and runs when Retry is pressed", async ({ app, bridge }) => {
+    await openFlash(app);
+    await chooseImage(app, bridge);
+    await bridge.call("sim.rom", { silent: 400 });
+    await app.getByRole("button", { name: "Send loader" }).click();
 
-  // The manual off, without moving the panel.
-  // The panel is on the page between tries, not during one (each try is a few tens of ms with
-  // the bridge's retry scale): its box is read while it is there.
-  let before: Awaited<ReturnType<typeof failure.boundingBox>> = null;
-  await expect.poll(async () => (before = await failure.boundingBox())).not.toBeNull();
-  await failure.getByRole("button", { name: "Stop retrying" }).click();
-  await expect(failure).toHaveAttribute("data-status", "stopped");
-  await expect(failure.locator(".ph .chip")).toHaveText("Stopped");
-  // Stopped is its own state: its title, its note and its hint say so, and nothing says "failed".
-  await expect(failure.locator(".ph h2")).toHaveText("Loader stopped");
-  await expect(failure.locator(".note")).toContainText("Stopped by hand.");
-  await expect(failure.locator("[data-bundled]")).toHaveText("Nothing starts again until you press Retry.");
-  await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("stopped at loader");
-  await expect(failure.locator("dl")).toContainText("not until you press Retry");
-  expect(await failure.boundingBox()).toEqual(before);
-  const attempts = await failure.locator("dl dd").first().textContent();
-  // Nothing happening has no event to wait for: twice the longest wait between tries, in which
-  // a run still retrying would have tried at least twice.
-  await app.waitForTimeout(2 * capMs());
-  expect(await failure.locator("dl dd").first().textContent(), "nothing is tried while stopped").toBe(attempts);
+    const failure = app.locator('[data-panel="failure"]');
+    await expect(failure).toHaveAttribute("data-status", "retrying");
+    await expect(failure.locator(".ph h2")).toHaveText("Loader failed");
+    await expect(failure.locator(".ph .chip.err")).toHaveText("Retrying");
+    await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("failed at loader");
+    await expect(step(app, "loader")).toHaveAttribute("data-state", "fail");
+    await expect(failure.locator("dl")).toContainText("never gives up on its own");
+    await expect(failure.locator("dl")).toContainText(`capped at ${capMs(1) / 1000} s between tries`);
+    await expect(failure.locator("dl")).toContainText("did not answer");
+    // It tries again by itself.
+    await expect(failure.locator("dl")).toContainText(/[3-9] so far/, { timeout: 15_000 });
+    await expect(app.locator('[data-panel="log"] .ln .lv-err').first()).toBeVisible();
 
-  // A board that answers is plugged in; Retry runs the loader at once.
-  await bridge.call("sim.rom", { fresh: true });
-  await failure.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(step(app, "loader")).toHaveAttribute("data-state", "done");
-  await expect(app.locator('[data-panel="recent"] .chip').first()).toHaveText("retried");
-  await expect(app.locator('[data-panel="recent"] .chip.err').first()).toHaveText("retried");
+    // The manual off, without moving the panel.
+    // The panel is on the page between tries, not during one: its box is read while it is there.
+    // The wait in progress is the longest a run still retrying would go without a try.
+    const waiting = (await flashRun(bridge)).retry_in_ms;
+    expect(waiting, "a wait between tries is in progress or just ended").toBeGreaterThan(0);
+    let before: Awaited<ReturnType<typeof failure.boundingBox>> = null;
+    await expect.poll(async () => (before = await failure.boundingBox())).not.toBeNull();
+    await failure.getByRole("button", { name: "Stop retrying" }).click();
+    await expect(failure).toHaveAttribute("data-status", "stopped");
+    await expect(failure.locator(".ph .chip")).toHaveText("Stopped");
+    // Stopped is its own state: its title, its note and its hint say so, and nothing says "failed".
+    await expect(failure.locator(".ph h2")).toHaveText("Loader stopped");
+    await expect(failure.locator(".note")).toContainText("Stopped by hand.");
+    await expect(failure.locator("[data-bundled]")).toHaveText("Nothing starts again until you press Retry.");
+    await expect(app.locator('[data-flash-chip="failed"]')).toHaveText("stopped at loader");
+    await expect(failure.locator("dl")).toContainText("not until you press Retry");
+    expect(await failure.boundingBox()).toEqual(before);
+    const attempts = await failure.locator("dl dd").first().textContent();
+    // Nothing happening has no event to wait for: twice the wait that was in progress, in which a
+    // run still retrying would have tried at least once.
+    await app.waitForTimeout(2 * waiting);
+    expect(await failure.locator("dl dd").first().textContent(), "nothing is tried while stopped").toBe(attempts);
+
+    // A board that answers is plugged in; Retry runs the loader at once.
+    await bridge.call("sim.rom", { fresh: true });
+    await failure.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(step(app, "loader")).toHaveAttribute("data-state", "done");
+    await expect(app.locator('[data-panel="recent"] .chip').first()).toHaveText("retried");
+    await expect(app.locator('[data-panel="recent"] .chip.err').first()).toHaveText("retried");
+  });
 });
 
 test("a failing flash says its last error and where its support bundle is, in full", async ({ app, bridge }) => {

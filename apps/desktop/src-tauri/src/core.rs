@@ -305,7 +305,6 @@ impl Core {
             roms,
             disk_writer,
             dirs.as_ref().map(|dirs| dirs.data.as_path()),
-            timing.backoff.cap,
         );
         job_kinds.push(flashes.kind());
         let app_update = crate::update::Updates::new(
