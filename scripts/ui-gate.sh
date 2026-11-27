@@ -70,7 +70,11 @@ stage "the UI builds and type-checks"
 ui_key() {  # <path...> under apps/desktop: the key of those files and of bun
   (cd $app && { bun --version; git ls-files -co --exclude-standard -z -- "$@" | sort -z | xargs -0 -r sha256sum; } | sha256sum | cut -c1-32)
 }
-ui_sources=(bun.lock index.html package.json src svelte.config.js tsconfig.json vite.config.ts)
+# Everything vite reads: the lockfile (bun install is frozen to it), the page, the package, the
+# sources, the configs, and the files vite would pick up if they were there (public/, .env*,
+# a PostCSS config). The UI reads no environment variable (no import.meta.env, no define).
+ui_sources=(bun.lock index.html package.json src svelte.config.js tsconfig.json vite.config.ts public '.env*'
+  'postcss.config.*')
 build_key=$(ui_key "${ui_sources[@]}")
 check_key=$(ui_key "${ui_sources[@]}" e2e)
 built=$target/ui-dist
