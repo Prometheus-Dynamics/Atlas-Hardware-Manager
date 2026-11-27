@@ -271,6 +271,7 @@ static_checks() {
   [ -f scripts/check-board-ids.py ] && s+=("board ids agree|python3 scripts/check-board-ids.py")
   # What must build on Windows and macOS (PR G9): the Orion-bound list against the graph.
   [ -x scripts/check-portable.sh ] && s+=("portable crates classification|scripts/check-portable.sh --classify")
+  [ -f scripts/bin-key.py ] && s+=("a test program's key: what it loads, and its whole bytes when it is no well-formed ELF|python3 -I scripts/bin-key.py --self-test")
   if compgen -G "crates/*/*/src" > /dev/null; then
     s+=("the socket path room check refuses a TMPDIR too long for sun_path|socket_room_self_test")
     s+=("the grep guard refuses a match even with a missing directory|no_match_self_test")
@@ -279,6 +280,10 @@ static_checks() {
     s+=("a lane's key holds the scripts it runs and not a person's tools|lane_keys_self_test")
     s+=("no build, test or app reads a script outside the code lanes' key|. scripts/gate-lib.sh && python3 -I scripts/check-script-reads.py --self-test >/dev/null && python3 -I scripts/check-script-reads.py \"\${GATE_CODE_LANE_SCRIPTS[@]}\"")
     s+=("no board or product names in code|no_match -rn -i -E '\\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\\b' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
+    # The tests lane and the ui lane key a built test program on what it loads plus every file but the Rust sources
+    # (gate_data_key): a test that read a .rs file when it ran would not run again when that file changed alone. A
+    # build script reads them at build time (its outputs are keyed), and #[path] and include_str! compile them in.
+    s+=("no test reads a Rust source when it runs|no_match -rnP '(?<!#\\[path = )\"[^\" ]*\\.rs\"|\"rs\"' -- 'crates/*/*/src' 'crates/*/*/tests' 'apps/*/src-tauri/src' 'apps/*/src-tauri/tests'")
     s+=("no shell-outs to ssh for board jobs|no_match -rn -E 'Command::new\\(\"(ssh|scp|sftp)\"\\)' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
   fi
   local pids=() names=() logs=() i item rc failed=0
@@ -346,6 +351,48 @@ doctests() {
   step doctests cargo test --locked "${args[@]}" --doc
 }
 export -f doctests
+
+# The tests lane runs only the test programs whose key has no pass (scripts/bin-key.py): a program's key is what it
+# loads, what its package's programs load (a test can run them), every build script's output, and the data key (every
+# file but the Rust sources). A change that leaves a program's loaded code and data as they were runs none of its
+# tests again (an unused function: none of the 83 programs moved; 2026-11-27 probe); a change to a fixture, a script or
+# Cargo.lock runs them all. The programs are built and listed first; a pass is recorded per program, and only when the
+# whole run passed. A key that cannot be made (a program missing or unreadable) runs every program.
+tests_by_program() {
+  local listing keys data selected=() filter=() key id
+  listing=$TMPDIR/nextest-list.json
+  step "test programs (build and list)" bash -c 'cargo nextest list --locked --workspace --list-type binaries-only --message-format json >"$1"' list "$listing" || return
+  data=$(gate_data_key) || return
+  keys=$(python3 -I scripts/bin-key.py nextest "$listing" "$data") || keys=""
+  local total=0
+  while read -r key id; do
+    [ -n "$id" ] || continue
+    total=$((total + 1))
+    gate_known tests-program "$key" || selected+=("$key $id")
+  done <<<"$keys"
+  if [ "$total" -eq 0 ]; then
+    echo "    no test program could be keyed: every one runs"
+    step tests cargo nextest run --locked --workspace --no-fail-fast
+    return
+  fi
+  if [ ${#selected[@]} -eq 0 ]; then
+    echo "    tests: all $total test programs load what they loaded when they passed (data $data): none runs"
+    return 0
+  fi
+  for key in "${selected[@]}"; do
+    id=${key#* }
+    [ ${#filter[@]} -eq 0 ] || filter+=("|")
+    filter+=("binary_id(=$id)")
+  done
+  if [ ${#selected[@]} -le 12 ]; then
+    echo "    tests: ${#selected[@]} of $total test programs run (their loaded code or data moved): ${selected[*]#* }"
+  else
+    echo "    tests: ${#selected[@]} of $total test programs run (their loaded code or data moved)"
+  fi
+  step tests cargo nextest run --locked --workspace --no-fail-fast --no-tests=pass -E "${filter[*]}" || return
+  for key in "${selected[@]}"; do gate_mark tests-program "${key%% *}"; done
+}
+export -f tests_by_program
 export -f devices_then_config_only cached gate_tree_key gate_known gate_mark gate_known_since gate_pass_dir
 
 # Each cargo lane builds in its own target directory under this worktree's target, so the lanes run at once instead
@@ -379,7 +426,7 @@ lane_cmd() {  # the body of a lane, by name
       # cargo-nextest runs every test as its own process, all binaries at once; doctests run after it. Tests that share
       # something across processes take a lock for it (atlas-sim-node::ports reserves ports by file lock).
       if cargo nextest --version >/dev/null 2>&1; then
-        CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code bash -c 'step tests cargo nextest run --locked --workspace --no-fail-fast && doctests'
+        CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code bash -c '. scripts/gate-lib.sh && tests_by_program && doctests'
       else
         CARGO_TARGET_DIR=$(lane_target tests) run_cached tests code step tests cargo test --locked --workspace
       fi ;;

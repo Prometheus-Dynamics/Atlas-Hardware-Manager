@@ -25,6 +25,10 @@ set -euo pipefail
 stage() { echo "==> ui gate: $* (+$SECONDS s)"; }
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
+# The result cache and the data key (scripts/gate-lib.sh): the click run and the Rust side's tests are skipped when
+# what they run is what passed (scripts/bin-key.py).
+# shellcheck source=scripts/gate-lib.sh
+. scripts/gate-lib.sh
 
 screens="" fetch=1 pw_args=()
 while [ $# -gt 0 ]; do
@@ -156,17 +160,67 @@ cp -f "$target/debug/atlas-ui-bridge" "$ATLAS_UI_BRIDGE.new"
 mv -f "$ATLAS_UI_BRIDGE.new" "$ATLAS_UI_BRIDGE"
 echo "$SECONDS" >"$ATLAS_UI_BRIDGE_READY"
 
+# The click run is keyed on what it runs: the bridge's loaded sections, the built UI's bytes, the browser's revision,
+# and the data key (the specs and every other file but the Rust sources). A run that already passed with this key is
+# stopped (it started before the bridge was built) and not run again. A run with arguments or pictures is never kept.
+clicks_key=""
+if [ ${#pw_args[@]} -eq 0 ] && [ -z "$screens" ]; then
+  if data_key=$(gate_data_key) \
+    && clicks_key=$(python3 -I scripts/bin-key.py key "clicks ${shell_dir##*/}" "$data_key" --dir "$built" -- "$ATLAS_UI_BRIDGE"); then
+    if gate_known clicks "$clicks_key"; then
+      kill -TERM -- "-$pw_pid" 2>/dev/null || true
+      wait "$pw_pid" 2>/dev/null || true
+      pw_pid=""
+      echo "    the click run's bridge, UI and specs are those of a passing run ($clicks_key): stopped, not run"
+    fi
+  else
+    clicks_key=""
+  fi
+fi
+
 stage "the app's Rust side with the simulated devices (beside the click tests; log $target/ui-rust.log)"
 rust_log=$target/ui-rust.log
-setsid bash -c 'cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings && cargo test --locked -p atlas-app --features sim' \
+# Its tests are keyed as the tests lane keys its programs: what the test programs load, what the package's programs
+# load (the bridge test runs atlas-ui-bridge), the build scripts' output and the data key. Clippy always runs.
+sim_tests() {
+  local built programs=() outs=() args=() data key d
+  built=$(cargo test --locked -p atlas-app --features sim --no-run --message-format json) || return
+  mapfile -t programs < <(python3 -I -c 'import json, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("reason") == "compiler-artifact" and m.get("executable"):
+        print(m["executable"])' <<<"$built" | sort -u)
+  mapfile -t outs < <(python3 -I -c 'import json, sys
+for line in sys.stdin:
+    m = json.loads(line)
+    if m.get("reason") == "build-script-executed" and m.get("out_dir"):
+        print(m["out_dir"])' <<<"$built" | sort -u)
+  for d in "${outs[@]}"; do args+=(--dir "$d"); done
+  data=$(gate_data_key) || return
+  if [ ${#programs[@]} -gt 0 ] && key=$(python3 -I scripts/bin-key.py key "sim tests" "$data" "${args[@]}" -- "${programs[@]}"); then
+    if gate_known sim-tests "$key"; then
+      echo "    the sim tests' ${#programs[@]} programs load what they loaded when they passed ($key): not run"
+      return 0
+    fi
+  else
+    key=""
+  fi
+  cargo test --locked -p atlas-app --features sim || return
+  [ -z "$key" ] || gate_mark sim-tests "$key"
+}
+export -f sim_tests
+setsid bash -c '. scripts/gate-lib.sh && cargo clippy --locked -p atlas-app --features sim --all-targets -- -D warnings && sim_tests' \
   ui-rust >"$rust_log" 2>&1 &
 rust_pid=$!
 bg_pids+=("$rust_pid")
 
-stage "waiting for the click tests"
-if ! wait "$pw_pid"; then
-  echo "ui-gate: the click tests failed (above)" >&2
-  exit 1
+if [ -n "$pw_pid" ]; then
+  stage "waiting for the click tests"
+  if ! wait "$pw_pid"; then
+    echo "ui-gate: the click tests failed (above)" >&2
+    exit 1
+  fi
+  [ -z "$clicks_key" ] || gate_mark clicks "$clicks_key"
 fi
 
 # The type-check ran beside the bridge's build and the clicks: they need only the built UI, not

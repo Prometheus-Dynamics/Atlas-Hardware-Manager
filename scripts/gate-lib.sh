@@ -19,7 +19,7 @@ unset _tool
 # scripts only in comments). A code lane's key is the tree without the other scripts, so a change to a data lane's
 # check (check-devices.sh, the kernel and u-boot checks) does not rerun the code lanes.
 GATE_CODE_LANE_SCRIPTS=(scripts/gate.sh scripts/gate-lib.sh scripts/ui-gate.sh scripts/doc-crates.py scripts/cargo-seed.sh
-  scripts/seed-strip-members.py)
+  scripts/seed-strip-members.py scripts/bin-key.py)
 
 gate_paths() {  # <code|data> <array name>: sets the array to that kind of lane's pathspecs
   local -n _out=$2
@@ -57,6 +57,17 @@ gate_tree_key() {  # <label> <pathspec...>: prints the key of the files those pa
   find "$dir" -maxdepth 1 -type f -name '[0-9a-f]*' -printf '%T@ %p\n' | sort -rn | tail -n +65 | cut -d' ' -f2- \
     | while IFS= read -r old; do rm -f -- "$old"; done
   printf '%s\n' "$key"
+}
+
+# The data key: every file the code lanes' key reads but the Rust sources. A built test program holds what its Rust
+# sources compile to (scripts/bin-key.py keys that); anything else a test may read when it runs (fixtures, devices/,
+# the scripts, Cargo.toml and Cargo.lock, the UI and its specs) is in this key, so a change there runs every keyed step
+# again. That holds while no test reads a .rs file when it runs: the static check "no test reads a Rust source when
+# it runs" (scripts/gate.sh) refuses a path literal ending in .rs, or the extension "rs", in crate code.
+gate_data_key() {
+  local paths
+  gate_paths code paths
+  gate_tree_key "data: the code lanes' files but the Rust sources" "${paths[@]}" ':(exclude)*.rs'
 }
 
 # Kept in the worktree's own target (GATE_TARGET, set by the gate), whatever target a lane builds in.
