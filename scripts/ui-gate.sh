@@ -111,8 +111,15 @@ fi
 # is removed first, so no test ever runs a bridge from an earlier run.
 stage "click tests (they start now and wait for the bridge)"
 export PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-$target/ms-playwright}
-if ! compgen -G "$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-*" >/dev/null; then
-  [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium in $PLAYWRIGHT_BROWSERS_PATH" >&2; exit 1; }
+# The headless shell of the revision this Playwright runs, not any revision: a directory left by an
+# older Playwright (CI restores one in target/) passed a name-only check, nothing was fetched, and
+# every click test failed to launch it (2026-11-27). Playwright names the directory it wants and
+# writes INSTALLATION_COMPLETE in it last.
+shell_dir=$(cd $app && node node_modules/@playwright/test/cli.js install --dry-run --only-shell chromium \
+  | sed -n 's/^ *Install location: *\(.*\/chromium_headless_shell-[0-9][0-9]*\)$/\1/p' | head -n 1)
+[ -n "$shell_dir" ] || { echo "ui-gate: Playwright named no headless Chromium directory (install --dry-run)" >&2; exit 1; }
+if [ ! -f "$shell_dir/INSTALLATION_COMPLETE" ]; then
+  [ "$fetch" -eq 1 ] || { echo "ui-gate: no headless Chromium at $shell_dir" >&2; exit 1; }
   (cd $app && node node_modules/@playwright/test/cli.js install --only-shell chromium)
 fi
 mkdir -p "$target/ui-bridge"
