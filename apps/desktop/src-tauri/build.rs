@@ -10,13 +10,18 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-env-changed=ATLAS_VERSION");
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    for file in commit_files(&root) {
-        println!("cargo:rerun-if-changed={}", file.display());
-    }
-    let version = std::env::var("ATLAS_VERSION")
+    let given = std::env::var("ATLAS_VERSION")
         .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| checkout_version(&root));
+        .filter(|v| !v.is_empty());
+    // A given version does not change with a commit, so the commit files are watched only when the
+    // version is read from the checkout: watched always, every commit recompiled this crate (the
+    // gate gives one, scripts/gate-lib.sh).
+    if given.is_none() {
+        for file in commit_files(&root) {
+            println!("cargo:rerun-if-changed={}", file.display());
+        }
+    }
+    let version = given.unwrap_or_else(|| checkout_version(&root));
     println!("cargo:rustc-env=ATLAS_APP_VERSION={version}");
     // Tauri reads the built UI (`../dist`) when this crate compiles. A checkout where the UI has
     // not been built yet (clippy and the tests run before scripts/ui-gate.sh builds it) gets a
