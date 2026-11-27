@@ -10,6 +10,31 @@
 # What a test can read: the whole tree but the prose. Markdown is not read by any build or test (include_str! names
 # none), so a docs-only change (docs/, TODO.md, a PR brief) changes no lane's key.
 GATE_CODE=(. ':(exclude)*.md' ':(exclude)docs/prs' ':(exclude).github')
+# Scripts no lane runs (a person's tools: the area, the installers, the first-boot check, the PR summary): in no key,
+# so a change to one reruns nothing (2026-11-27: an area.sh change reran every lane cold, g17 68 s at load 67-94).
+GATE_TOOLS_ONLY=(scripts/area.sh scripts/bundle.sh scripts/deb-fast.sh scripts/first-boot-check.sh scripts/pr-status.py)
+for _tool in "${GATE_TOOLS_ONLY[@]}"; do GATE_CODE+=(":(exclude)$_tool"); done
+unset _tool
+# The scripts a code lane (clippy, alone, tests, ui) runs; no build or test reads any other script (the crates name
+# scripts only in comments). A code lane's key is the tree without the other scripts, so a change to a data lane's
+# check (check-devices.sh, the kernel and u-boot checks) does not rerun the code lanes.
+GATE_CODE_LANE_SCRIPTS=(scripts/gate.sh scripts/gate-lib.sh scripts/ui-gate.sh scripts/doc-crates.py scripts/cargo-seed.sh
+  scripts/seed-strip-members.py)
+
+gate_paths() {  # <code|data> <array name>: sets the array to that kind of lane's pathspecs
+  local -n _out=$2
+  local file keep
+  if [ "$1" = data ]; then
+    _out=(devices scripts ':(exclude)*.md')
+    for file in "${GATE_TOOLS_ONLY[@]}"; do _out+=(":(exclude)$file"); done
+    return
+  fi
+  _out=("${GATE_CODE[@]}")
+  while IFS= read -r file; do
+    for keep in "${GATE_CODE_LANE_SCRIPTS[@]}"; do [ "$file" = "$keep" ] && continue 2; done
+    _out+=(":(exclude)$file")
+  done < <(git ls-files -co --exclude-standard -- scripts)
+}
 
 # Each key's inputs (one line per tool and file, with its hash) are kept under "$(gate_pass_dir)/inputs/<key>", the
 # newest 64, so a lane that ran when nothing seemed changed is explained by a diff, not a guess:

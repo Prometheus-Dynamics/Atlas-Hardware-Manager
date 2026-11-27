@@ -194,6 +194,21 @@ lane_failure_self_test() {
 }
 # The devices lane fails when either of its checks fails, run beside each other or one after the other: stand-in
 # scripts in a scratch tree, the lane's own function read from this file.
+lane_keys_self_test() {
+  # The files each kind of lane's key reads: a code lane holds the gate's own scripts but no data check and no tool;
+  # a data lane holds every check but no tool.
+  local code=() data=() listed
+  . scripts/gate-lib.sh
+  gate_paths code code
+  gate_paths data data
+  listed=$(git ls-files -co --exclude-standard -- "${code[@]}")
+  grep -qx scripts/gate.sh <<<"$listed" && grep -qx scripts/ui-gate.sh <<<"$listed" && grep -qx Cargo.lock <<<"$listed" || return 1
+  ! grep -qx -e scripts/area.sh -e scripts/check-devices.sh -e scripts/check-kernel-fragments.sh <<<"$listed" || return 1
+  listed=$(git ls-files -co --exclude-standard -- "${data[@]}")
+  grep -qx scripts/check-devices.sh <<<"$listed" && grep -qx scripts/gate.sh <<<"$listed" || return 1
+  ! grep -qx -e scripts/area.sh -e scripts/deb-fast.sh <<<"$listed"
+}
+
 devices_lane_self_test() {
   local d body dv co rc want
   body=$(awk '/^step\(\) \{/,/^}/; /^devices_then_config_only\(\) \{/,/^}/' scripts/gate.sh)
@@ -213,7 +228,7 @@ devices_lane_self_test() {
     done
   done
 }
-export -f no_match socket_room_ok socket_room_self_test no_match_self_test lane_failure_self_test devices_lane_self_test step cached
+export -f no_match socket_room_ok socket_room_self_test no_match_self_test lane_failure_self_test devices_lane_self_test lane_keys_self_test step cached
 export SUN_PATH_BYTES SOCKET_SUFFIX_BYTES
 
 static_checks() {
@@ -261,6 +276,7 @@ static_checks() {
     s+=("the grep guard refuses a match even with a missing directory|no_match_self_test")
     s+=("a failing step fails its lane and records no pass|lane_failure_self_test")
     s+=("the devices lane fails when either of its checks fails|devices_lane_self_test")
+    s+=("a lane's key holds the scripts it runs and not a person's tools|lane_keys_self_test")
     s+=("no board or product names in code|no_match -rn -i -E '\\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\\b' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
     s+=("no shell-outs to ssh for board jobs|no_match -rn -E 'Command::new\\(\"(ssh|scp|sftp)\"\\)' -- 'crates/*/*/src' 'apps/*/src-tauri/src'")
   fi
@@ -340,7 +356,7 @@ run_cached() {  # <lane> <kind: data|code> <command...> (in a lane's subshell)
   local name=$1 kind=$2
   shift 2
   local paths
-  if [ "$kind" = data ]; then paths=(devices scripts ':(exclude)*.md'); else paths=("${GATE_CODE[@]}"); fi
+  gate_paths "$kind" paths
   cached "$name" paths "$@"
 }
 export -f run_cached lane_target
