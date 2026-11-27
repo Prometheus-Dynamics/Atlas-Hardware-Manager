@@ -670,6 +670,8 @@ impl Drop for SimNode {
             let _ = node.join();
         }
         if let Some(proxy) = self.proxy.take() {
+            // Wakes the proxy's blocking accept, which then sees `stop`.
+            let _ = TcpStream::connect(self.link);
             let _ = proxy.join();
         }
     }
@@ -897,7 +899,12 @@ impl Node {
     fn run(&mut self) {
         let mut last_tick = Instant::now();
         while !self.shared.stop.load(Ordering::SeqCst) && !self.reopen {
-            let wait = Duration::from_millis(5);
+            // Up to the next tick: a request ends the wait at once, so nothing is answered later.
+            // A fixed 5 ms woke the node 200 times a second with nothing to do (2026-11-27: an
+            // idle demo bridge used 7% of a CPU, these loops most of it).
+            let wait = TICK
+                .saturating_sub(last_tick.elapsed())
+                .max(Duration::from_millis(1));
             let request = match requests(&mut self.devices) {
                 Some(registration) => registration.wait(wait).map_err(|_| ()),
                 // No device is listed, so nothing can be asked: the session is still served.
@@ -1594,12 +1601,15 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
 /// The loopback link: accepts connections and carries each one to the comm core, with the
 /// fault queued for it, if any.
 fn proxy(listener: &TcpListener, upstream: SocketAddr, shared: &Shared) {
-    let _ = listener.set_nonblocking(true);
+    // A blocking accept: the node's drop connects once to wake it after setting `stop`. Polling
+    // every 5 ms woke this thread 200 times a second for the node's whole life.
     while !shared.stop.load(Ordering::SeqCst) {
         match listener.accept() {
             Ok((client, _)) => {
+                if shared.stop.load(Ordering::SeqCst) {
+                    break;
+                }
                 let fault = lock(&shared.script).take_link();
-                let _ = client.set_nonblocking(false);
                 if let Ok(server) = TcpStream::connect(upstream) {
                     splice(client, server, fault);
                 }
