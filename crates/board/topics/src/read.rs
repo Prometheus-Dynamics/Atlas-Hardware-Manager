@@ -179,6 +179,13 @@ impl Live {
                 continue;
             }
             let mut topics = Vec::new();
+            // TODO(user): a topic subscribed in this pass is read in the same pass, before its
+            // first sample has arrived. So for about 1 s after a board opens (until the app's next
+            // read, READ_EVERY in apps/desktop/src-tauri/src/board.rs), its page says "This board
+            // reports no readings" (measured 2026-11-27: tiles at 1.4-1.5 s after open, the first
+            // read at 0.3 s showed none). Proposed: read again early after a pass that made new
+            // subscriptions, once their first sample is in, not a full READ_EVERY later. A product
+            // change, held for the user.
             for name in &resource.topics {
                 if !self.topics.contains_key(name) {
                     let subscriber = orion.subscribe(name)?;
