@@ -1044,7 +1044,7 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
                 remove_device: Option<String>,
             }
             let hook: Hook = args(name, arguments)?;
-            tokio::task::spawn_blocking(move || {
+            let answer = tokio::task::spawn_blocking(move || {
                 world.with_node(|node| {
                     if let Some(healthy) = hook.healthy {
                         node.slot_set_healthy(healthy);
@@ -1080,7 +1080,10 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
             })
             .await
             .map_err(|error| CallError(error.to_string()))?
-            .ok_or_else(|| CallError::from("the simulated node is not running"))
+            .ok_or_else(|| CallError::from("the simulated node is not running"));
+            // The board's page reads the change now, not at its next tick (up to a second on).
+            crate::board::wake_readers(core);
+            answer
         }
         // Queues a first-flash image as the next file the person chooses. `broken` queues a
         // file that is not an image.

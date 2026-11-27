@@ -897,3 +897,14 @@ pub async fn call(core: &Core, name: &str, arguments: Value) -> CallResult {
         _ => Err(CallError(format!("no call named `{name}` in this build"))),
     }
 }
+
+/// Wakes every open board's reader at once: the simulated world calls this after a test hook
+/// changed the board (`sim.node`), so the page shows the change at the next read instead of up
+/// to [`READ_EVERY`] later. Only in a build with the simulated devices; a real board's changes
+/// wait for the next read as before.
+#[cfg(feature = "sim")]
+pub(crate) fn wake_readers(core: &Core) {
+    for entry in lock(&core.boards().open).values() {
+        entry.dirty.notify_one();
+    }
+}
