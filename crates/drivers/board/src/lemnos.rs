@@ -11,7 +11,7 @@ use orion::node::Node;
 /// How long the probe may take before it counts as not answering.
 pub const PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
 
-// board: Lemnos 214c0ca7 engine/client/src/error.rs:123 (LayoutMismatch, the client's words) and
+// board: Lemnos 98fbe0c2 engine/client/src/error.rs:123 (LayoutMismatch, the client's words) and
 // engine/wire/src/protocol.rs:135 (the wire's words). The bridge has no typed kind for it: calls.rs:1057-1060
 // turns the client's error into the run's detail text, so the text is what reaches the probe.
 /// The start of the detail a layout mismatch carries: the two sides were built from different core

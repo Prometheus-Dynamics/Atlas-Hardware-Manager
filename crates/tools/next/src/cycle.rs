@@ -29,8 +29,8 @@ use crate::pins::Pin;
 use crate::report::Report;
 use crate::{Env, parse_address};
 
-// board: Lemnos 214c0ca7 drivers/system-slots/src/attempt.rs:176 (the boot id, written in `last_attempt` by `info`)
-/// Whether the Lemnos this build pins publishes `info.last_attempt.boot`. It does at 214c0ca7: the
+// board: Lemnos 98fbe0c2 drivers/system-slots/src/attempt.rs:176 (the boot id, written in `last_attempt` by `info`)
+/// Whether the Lemnos this build pins publishes `info.last_attempt.boot`. It does at 98fbe0c2: the
 /// boot id is read before and after a restart, and checked.
 pub const INFO_IN_PIN: bool = true;
 
@@ -259,7 +259,7 @@ fn slots_of(link: &Link) -> Result<BoardSlots, Refusal> {
     ))
 }
 
-/// The action that reads Lemnos's `system.slots` `info` (Lemnos 214c0ca7). Read with no arguments.
+/// The action that reads Lemnos's `system.slots` `info` (Lemnos 98fbe0c2). Read with no arguments.
 fn info_action() -> Action {
     Action {
         name: "system.slots.info".to_owned(),
@@ -270,7 +270,7 @@ fn info_action() -> Action {
     }
 }
 
-/// The board's boot id, from `info.last_attempt.boot` (Lemnos 214c0ca7: present in every state). This is
+/// The board's boot id, from `info.last_attempt.boot` (Lemnos 98fbe0c2: present in every state). This is
 /// the ONLY place the boot id is read. A build whose pin does not publish it (`INFO_IN_PIN` false) reads
 /// nothing. An absent field is not checked: never a pass.
 async fn boot_id(ctx: &Ctx<'_>) -> BootRead {

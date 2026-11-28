@@ -7,7 +7,7 @@ description = "the Lemnos command-line client, lemnos-ctl (service profile; the 
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "214c0ca74b736c0218a75ac62ffc323a6163714e"  # Lemnos 214c0ca7 (next: BOOT-FAT-LABEL, the boot volume is labelled LEMNOS-BOOT; SLOTS-REBIND-LOOP; GADGET-REBIND-VISIBLE; RING-ONE-WRITER; LOCATE-APP-LAYER; PUSHES-NOT-STALE; on e199fcb9), coordinator 2026-11-23, pin move 15; before: e199fcb9
+ref = "98fbe0c2fdf5ee79db03e7ae25155ace4f82a79e"  # Lemnos 98fbe0c2 (next: shm-fdpass, a frame cut short by a hang-up is ShortRead, not WouldBlock; GADGET-KEEP, the USB gadget and the Orion lend kept across a restart of lemnosd; lemnosd writes each error line whole; SPIN-SWEEP, every wait bounded by the clock; on 214c0ca7), coordinator 2026-11-27, pin move 16; before: 214c0ca7
 
 # The Rust release the build uses (Gaia 08e71181): rustc, cargo and each target's std, the official files pinned by the
 # lock. The build machine's rustup is never read. Every board here is aarch64 (static musl).

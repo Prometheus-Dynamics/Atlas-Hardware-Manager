@@ -7,7 +7,7 @@
 #   view MALFORMED (any other)  -> exit 1: ON (corrupt is on; docs/slots.md "The security switch")
 #   view exactly "off" + gen N  -> exit 0: off, the console is open
 # The view is /etc/board/security: two lines, `on` or `off`, then `generation N` (docs/slots.md). LOCK: Lemnos S2
-# (LOCK: Lemnos 214c0ca7 drivers/system-security/src/flow.rs:499 renders it when the security driver runs; whether the view is there on a booted board is checked on the board).
+# (LOCK: Lemnos 98fbe0c2 drivers/system-security/src/flow.rs:499 renders it when the security driver runs; whether the view is there on a booted board is checked on the board).
 # LEMNOS_SECURITY_VIEW overrides the path for the off-board check (scripts/check-console-gate.py).
 VIEW=${LEMNOS_SECURITY_VIEW:-/etc/board/security}
 

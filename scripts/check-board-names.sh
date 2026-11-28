@@ -16,7 +16,7 @@
 #       Orion, and its block: that line and the comment lines after it. The block must name at least one rev, as
 #       `Lemnos <hex>`, `Orion <hex>` or `rev <hex>`, and every rev it names must be pinned for that repo (or, with
 #       no repo word, pinned for either).
-#   (b) A `board:` citation names a pinned rev: `// board: Lemnos 214c0ca7 path:line`. A citation with no rev, or a
+#   (b) A `board:` citation names a pinned rev: `// board: Lemnos 98fbe0c2 path:line`. A citation with no rev, or a
 #       rev that is not pinned for that repo, fails.
 #   (c) A board-facing string constant is cited or imported. Board-facing: a Rust `const` or `static` of type &str
 #       whose literal value starts with `lemnos.`, `lemnos/`, `system.`, `/data/`, `/etc/lemnos`, `/run/orion` or

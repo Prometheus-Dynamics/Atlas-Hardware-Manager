@@ -26,8 +26,8 @@ atlas-trial = { path = "../../core/trial" }
 atlas-types = { path = "../../core/types" }
 fatfs = "0.3"
 orion = { workspace = true, features = ["topics", "provider"] }
-orion-msg-topics = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "ae6eb669fb55258a37e23f6ddfe6a0df7fd0a978" }
-orion-wire = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "ae6eb669fb55258a37e23f6ddfe6a0df7fd0a978" }
+orion-msg-topics = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d361b592009dae9533dbfcdb7378d66588bb655a" }
+orion-wire = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d361b592009dae9533dbfcdb7378d66588bb655a" }
 serde_json = "1"
 sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "signal"] }

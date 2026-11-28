@@ -1547,7 +1547,7 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
     let found = words(args);
     match name {
         // A reply over the bridge's bound is refused, never sent in part: BUFFER_TOO_SMALL with the words
-        // the pinned wire gives (board: Lemnos 214c0ca7 engine/wire/src/text.rs:298-308, `too_small`, and
+        // the pinned wire gives (board: Lemnos 98fbe0c2 engine/wire/src/text.rs:298-308, `too_small`, and
         // service/orion/src/calls.rs:1073-1080, `refused_reply`).
         names::SLOTS_LIST => {
             let listing = model.slots.list_json();

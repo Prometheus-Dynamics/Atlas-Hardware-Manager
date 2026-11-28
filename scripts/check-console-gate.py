@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Raze's console follows the board's security switch (LOCK: Lemnos 214c0ca7 drivers/system-security/src/flow.rs:499).
+"""The Raze's console follows the board's security switch (LOCK: Lemnos 98fbe0c2 drivers/system-security/src/flow.rs:499).
 
 Runs the component's shipped script, devices/components/raze-base-files/files/console-allowed, against a view file
 (LEMNOS_SECURITY_VIEW). The script is the ExecCondition= of the getty drop-ins: exit 0 starts the getty, exit 1 skips it.

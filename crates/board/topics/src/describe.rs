@@ -27,7 +27,7 @@ use crate::description::DescriptionState;
 /// How long the bridge has to answer one description (the session's wait: see `atlas_session::lemnos`).
 pub const DESCRIBE_WAIT: Duration = lemnos::DESCRIBE_WAIT;
 
-// LOCK: Lemnos 214c0ca7 (service/orion/src/calls.rs:1138-1142): `describe` is still refused whole. The paged
+// LOCK: Lemnos 98fbe0c2 (service/orion/src/calls.rs:1138-1142): `describe` is still refused whole. The paged
 // form (`list_page`, a cursor in and a `next` cursor out) exists only for `system.slots`, not for `describe`. The bridge refuses a description over 60 KiB whole, by name; this reader never sees
 // a cut text, so nothing here walks pages yet.
 

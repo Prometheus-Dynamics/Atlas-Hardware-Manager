@@ -20,7 +20,7 @@ mode = "0644"
 # usb-gadget device; scripts/check-lemnos-gadget.py enforces that pairing both ways.
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "214c0ca74b736c0218a75ac62ffc323a6163714e"  # Lemnos 214c0ca7 (next: BOOT-FAT-LABEL, the boot volume is labelled LEMNOS-BOOT; SLOTS-REBIND-LOOP; GADGET-REBIND-VISIBLE; RING-ONE-WRITER; LOCATE-APP-LAYER; PUSHES-NOT-STALE; on e199fcb9), coordinator 2026-11-23, pin move 15; before: e199fcb9
+ref = "98fbe0c2fdf5ee79db03e7ae25155ace4f82a79e"  # Lemnos 98fbe0c2 (next: shm-fdpass, a frame cut short by a hang-up is ShortRead, not WouldBlock; GADGET-KEEP, the USB gadget and the Orion lend kept across a restart of lemnosd; lemnosd writes each error line whole; SPIN-SWEEP, every wait bounded by the clock; on 214c0ca7), coordinator 2026-11-27, pin move 16; before: 214c0ca7
 
 # The image lemnos-ctl is built in, and the generator runs in (Gaia #100: a [generate] tool is built for the build
 # machine and run in the image its component's `root` source names). The same image lemnos-ctl's own component uses.
@@ -199,7 +199,7 @@ mode = "0644"
 unit = "lemnos-board-security.service"
 enable = true
 
-# The bridge's settings and its unit's grant, both written by the generator from the board file (Lemnos 214c0ca7,
+# The bridge's settings and its unit's grant, both written by the generator from the board file (Lemnos 98fbe0c2,
 # `lemnos-ctl tree --bridge-env` and `--bridge-dropin`): the USB link's line (LEMNOS_ORION_LINKS=<gadget>=<link>), each
 # file-taking device's directory (LEMNOS_ORION_FILES=slots=<data>/slots/.incoming) and ReadWritePaths=-<dir> for each.
 # The env lines are this component's part of /etc/lemnos/lemnos-orion.env (after Lemnos's own example: the product's

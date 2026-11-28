@@ -273,7 +273,7 @@ impl Guard {
         io::Error::other(reason)
     }
 
-    // LOCK kept (Orion ae6eb669, crates/client/files/src/push.rs:118-122: `start_push` takes `Known { digest, size }`). The digest
+    // LOCK kept (Orion d361b592, crates/client/files/src/push.rs:118-122: `start_push` takes `Known { digest, size }`). The digest
     // is known from the first attempt, so a resend could skip this hashing pass. It stays in A17:
     // a changed source on a resend would then be caught by the board's digest check at commit
     // ("Rejected(digest)") rather than by this guard's "source changed" refusal, a change of the

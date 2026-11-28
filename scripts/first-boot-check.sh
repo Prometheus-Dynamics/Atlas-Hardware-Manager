@@ -92,7 +92,7 @@ fi
 if wanted files-fact; then
   ctl node show > "$out/node-show.txt" 2>&1
   # The board publishes the `files` fact only where files cannot be opened, and it says why:
-  # board: Orion ae6eb669 crates/node/node-app/src/lib.rs:545 ("Where files cannot be opened, the board says so in its hello")
+  # board: Orion d361b592 crates/node/node-app/src/lib.rs:545 ("Where files cannot be opened, the board says so in its hello")
   if ! grep -q '^node ' "$out/node-show.txt"; then fail files-fact "\`orion node show\` did not answer: $(first "$out/node-show.txt" 3)"
   elif grep -q '^files ' "$out/node-show.txt"; then fail files-fact "the board says files fail: $(grep '^files ' "$out/node-show.txt")"
   else pass files-fact "the hello has no \`files\` fact, so files are open (facts: $(sed -n 's/^\([a-z_.-]*\) .*/\1/p' "$out/node-show.txt" | tr '\n' ' '))"; fi

@@ -48,7 +48,7 @@ pub struct Verified {
 /// A `slot.sig` that is not Lemnos's record is refused as malformed (-22). A record whose key is on
 /// the board's list must verify, or the bundle is refused by name (-1). A key the board does not
 /// hold, or a board with no list, is not checked.
-// board: Lemnos 214c0ca7 drivers/slot-store/src/signing.rs:67 (parse_record: 108 bytes, LMNSSIG1, algorithm 1)
+// board: Lemnos 98fbe0c2 drivers/slot-store/src/signing.rs:67 (parse_record: 108 bytes, LMNSSIG1, algorithm 1)
 fn signature_of(
     members: &BTreeMap<String, Vec<u8>>,
     manifest_bytes: &[u8],

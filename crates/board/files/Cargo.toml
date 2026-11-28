@@ -19,7 +19,7 @@ tokio = { version = "1", features = ["sync", "time"] }
 atlas-sim-node = { path = "../../testing/sim-node" }
 # The per-call test runs an action on the test board while a push is held.
 orion = { workspace = true, features = ["actions", "files"] }
-orion-test-board = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "ae6eb669fb55258a37e23f6ddfe6a0df7fd0a978" }
+orion-test-board = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "d361b592009dae9533dbfcdb7378d66588bb655a" }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 

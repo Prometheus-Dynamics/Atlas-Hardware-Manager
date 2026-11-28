@@ -6,7 +6,7 @@ The Lemnos bridge offers the gadget's endpoints under `LEMNOS_ORION_LINKS=<devic
 SAME <name>, and <device id> must be a usb-gadget device of the Raze's board file. Checked here:
   - devices/components/orion/files/orion.conf: `links.usb` is exactly one name, and it is the one the bridge offers;
   - the bridge's `LEMNOS_ORION_LINKS=<device id>=<name>`, which the generator writes from the board file since pin move
-    13 (`lemnos-ctl tree --bridge-env`, Lemnos 214c0ca7): the usb-gadget device's id, and the name on the first
+    13 (`lemnos-ctl tree --bridge-env`, Lemnos 98fbe0c2): the usb-gadget device's id, and the name on the first
     `interface` line of its composition (`orion-link` for the default composition). Worked out here by the same rule;
   - the device id is a `usb-gadget` device in devices/boards/raze/lemnos-board.toml;
   - the gadget's `interfaces` text, if it gives one, puts <name> on interface 0 (the link must be first);
@@ -30,7 +30,7 @@ import tomllib
 
 ORION_CONF = "devices/components/orion/files/orion.conf"
 BRIDGE_CONF = "the generated lemnos-orion.env (lemnos-ctl tree --bridge-env)"
-# board: Lemnos 214c0ca7 drivers/usb-gadget/src/lib.rs:130 (DEFAULT_INTERFACES: `interface 0xff 0 0 orion-link`)
+# board: Lemnos 98fbe0c2 drivers/usb-gadget/src/lib.rs:130 (DEFAULT_INTERFACES: `interface 0xff 0 0 orion-link`)
 DEFAULT_LINK = "orion-link"
 PEER_DROP_IN = "devices/components/orion/files/orion-comm-peer.conf"
 BOARD = "devices/boards/raze/lemnos-board.toml"

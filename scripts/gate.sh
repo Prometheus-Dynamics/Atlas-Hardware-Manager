@@ -274,7 +274,7 @@ static_checks() {
     s+=("board names at the pin|scripts/check-board-names.sh")
     s+=("board names self-test|scripts/check-board-names.sh --self-test")
   fi
-  # The Raze's console follows the board's security switch (LOCK: Lemnos 214c0ca7 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
+  # The Raze's console follows the board's security switch (LOCK: Lemnos 98fbe0c2 drivers/system-security/src/flow.rs:499): the getty's ExecCondition reads the view.
   [ -f scripts/check-console-gate.py ] && s+=("console follows the security view|python3 scripts/check-console-gate.py")
   # The Raze's Orion USB link: one name in orion.conf and in the bridge's LEMNOS_ORION_LINKS, from a usb-gadget device.
   [ -f scripts/check-orion-link.py ] && s+=("orion usb link: one name on both sides|python3 scripts/check-orion-link.py")

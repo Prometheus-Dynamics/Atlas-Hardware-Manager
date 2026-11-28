@@ -34,14 +34,14 @@ use orion::{ClientError, Error as OrionError, Orion};
 use tokio::sync::watch;
 
 /// The lease period the bridge keeps per caller identity, until a describe reply gives its own.
-// board: Lemnos 214c0ca7 service/orion/src/config.rs:224 (LEASE, the default when LEMNOS_ORION_LEASE is unset).
+// board: Lemnos 98fbe0c2 service/orion/src/config.rs:224 (LEASE, the default when LEMNOS_ORION_LEASE is unset).
 // The board's own period is read from the device record's `lease_seconds` (see `lease_seconds_of`).
 pub const LEASE: Duration = Duration::from_secs(60);
 
 /// Whether the board's bridge keeps a lease for each caller. At the pin it does: the bridge drops a
 /// silent caller's holds after the lease period, and says so in its next reply (`LEASE_ENDED_NOTE`).
 /// A session with holds renews the lease, and records a lapse when it was silent past the period.
-// board: Lemnos 214c0ca7 service/orion/src/config.rs:84 (LEMNOS_ORION_LEASE, unset is the lease) and
+// board: Lemnos 98fbe0c2 service/orion/src/config.rs:84 (LEMNOS_ORION_LEASE, unset is the lease) and
 // service/orion/src/calls.rs:440-463 (expire: a caller silent for the lease is released).
 pub const LEASE_IN_FORCE: bool = true;
 
@@ -55,9 +55,9 @@ pub const LEASE_RENEW: Duration = Duration::from_secs(20);
 pub const RENEW_WAIT: Duration = Duration::from_secs(2);
 
 /// The prefix of the resources a node's bridge lists its devices under.
-// board: Lemnos 214c0ca7 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
+// board: Lemnos 98fbe0c2 service/orion/src/lib.rs:52 (RESOURCE_PREFIX)
 const DEVICE_PREFIX: &str = "lemnos.";
-// board: Lemnos 214c0ca7 service/orion/src/lib.rs:54 (RESOURCE_KIND)
+// board: Lemnos 98fbe0c2 service/orion/src/lib.rs:54 (RESOURCE_KIND)
 const DEVICE_KIND: &str = "lemnos.device";
 
 /// The clock the lease is measured on. A session reads it for every silence, renewal and lapse. The
@@ -313,7 +313,7 @@ pub fn lapse_words(period: Duration, what: &str) -> String {
 
 /// The `lease_seconds` a describe reply carries on its device record (`device generation=... lease_seconds=60`),
 /// when the board gives one. The record is the reply's `device` line, after its `describe 1` version line.
-// board: Lemnos 214c0ca7 service/orion/src/description.rs:246 (`number(&mut out, "lease_seconds", ...)`, written only when the lease is on).
+// board: Lemnos 98fbe0c2 service/orion/src/description.rs:246 (`number(&mut out, "lease_seconds", ...)`, written only when the lease is on).
 #[must_use]
 pub fn lease_seconds_of(description: &str) -> Option<Duration> {
     // The reply's first line is its version (`describe 1`); the device record follows it.
