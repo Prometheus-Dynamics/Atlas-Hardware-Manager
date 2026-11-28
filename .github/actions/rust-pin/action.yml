@@ -1,0 +1,41 @@
+name: The pinned Rust toolchain, alone
+description: >-
+  Installs rust-toolchain.toml's channel with its components and targets, makes it the default, uninstalls every
+  other toolchain, and stops the job when the active rustc (in the checkout and outside it) is not the pin or another
+  toolchain is left.
+# `dtolnay/rust-toolchain@stable` installed and defaulted the current stable beside the pin. No build used it (the
+# pin overrides it in the checkout: "the toolchain '1.99.0-x86_64-unknown-linux-gnu' is currently in use"), yet
+# rust-cache hashes every installed rustc into its key: stable's 1.100.0 -> 1.100.1 moved the environment hash
+# (ad1f3913 -> 047e4e37) and run 46109604646 found no cache, a cold 978 s gate against 232 s. The runner image's
+# preinstalled stable is uninstalled for the same reason. The key now moves only with the pin, the lock or the
+# manifests (as Styx did, next 6773387a and 6752385b).
+runs:
+  using: composite
+  steps:
+    - name: Rust toolchain (the pin in rust-toolchain.toml, and nothing else)
+      shell: bash
+      run: |
+        list() { sed -n "s/^$1 *= *\[\(.*\)\].*/\1/p" rust-toolchain.toml | tr -d ' "'; }
+        pin=$(sed -n 's/^channel *= *"\(.*\)".*/\1/p' rust-toolchain.toml)
+        [ -n "$pin" ] || { echo "::error::rust-toolchain.toml names no channel"; exit 1; }
+        components=$(list components); targets=$(list targets)
+        args=(--profile minimal --no-self-update)
+        [ -z "$components" ] || args+=(--component "$components")
+        [ -z "$targets" ] || args+=(--target "$targets")
+        rustup toolchain install "$pin" "${args[@]}"
+        rustup default "$pin"
+        rustup toolchain list | awk '{print $1}' | while read -r tc; do
+          case "$tc" in "$pin"-*) ;; *) rustup toolchain uninstall "$tc" ;; esac
+        done
+        echo "RUST_PIN=$pin" >> "$GITHUB_ENV"
+    - name: The active rustc is the pin, and the only toolchain
+      shell: bash
+      run: |
+        here=$(rustc -vV | sed -n 's/^release: //p')
+        default=$(cd / && rustc -vV | sed -n 's/^release: //p')
+        rustc -vV
+        rustup toolchain list
+        [ "$here" = "$RUST_PIN" ] && [ "$default" = "$RUST_PIN" ] || {
+          echo "::error::active rustc $here (default $default), rust-toolchain.toml pins $RUST_PIN"; exit 1; }
+        others=$(rustup toolchain list | awk '{print $1}' | grep -v "^$RUST_PIN-" || true)
+        [ -z "$others" ] || { echo "::error::toolchains beside the pin $RUST_PIN: $others"; exit 1; }

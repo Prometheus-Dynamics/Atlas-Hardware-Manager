@@ -42,8 +42,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # rust-toolchain.toml selects the toolchain and its components.
-      - uses: dtolnay/rust-toolchain@stable
+      # rust-toolchain.toml's pin, alone: rust-cache's key hashes every installed rustc (.github/actions/rust-pin).
+      - uses: ./.github/actions/rust-pin
       # The key adds the root Cargo.toml: its [profile.*] sections change every dependency's build, and rust-cache's
       # own key does not cover them. Without it a stale cache matched in full (and a full match is never saved again):
       # every run restored it and still compiled all 202 dependencies (counted in the logs of five runs, 2026-11-18).
@@ -130,7 +130,7 @@ jobs:
     timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-pin
       # A Buildroot system and a kernel need more room than a fresh runner has: the preinstalled SDKs this job
       # never uses are removed first, and the free space is printed before and after.
       - run: |
@@ -188,7 +188,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/rust-pin
       # Keyed on the root Cargo.toml too, as in the gate job (its profiles change every dependency's build).
       - uses: Swatinem/rust-cache@v2
         with:
