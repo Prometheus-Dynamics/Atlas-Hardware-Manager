@@ -8,6 +8,8 @@
 #                                          (with --root DIR, the same for that tree)
 #   scripts/check-devices.sh --self-test   the verbose form: the good fixtures must pass, broken must
 #                                          fail
+#   scripts/check-devices.sh --gaia-only   build the pinned gaia when its build is missing, print its path
+#                                          (scripts/cargo-home.sh, before the gate's lanes: online)
 #
 # The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set, else a build
 # from that commit cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
@@ -46,8 +48,9 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --root) [[ $# -ge 2 ]] || die "--root needs a directory"; root=$2; root_given=1; shift 2 ;;
     --self-test) mode=self-test; shift ;;
+    --gaia-only) mode=gaia-only; shift ;;
     --write-locks) write_locks=1; shift ;;
-    -h|--help) sed -n '2,15p' "$self"; exit 0 ;;
+    -h|--help) sed -n '2,17p' "$self"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -1699,6 +1702,7 @@ else
   ensure_bin
   gaia=$dir/bin/gaia
 fi
+if [[ $mode == gaia-only ]]; then echo "$gaia"; exit 0; fi
 # The binary must be a build of the pinned commit: it prints `gaia <version> (<commit>)`, and that
 # commit must be devices/gaia.lock's. A binary that prints no commit (an old Gaia) is refused too.
 gaia_line=$("$gaia" --version 2>&1 | head -1 || true)

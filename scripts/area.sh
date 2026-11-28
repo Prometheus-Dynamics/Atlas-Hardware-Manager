@@ -9,7 +9,8 @@
 #                      on btrfs its own subvolume, as are tmp/<name> and cache/gaia-store (see make_dir)
 #     tmp/<name>       its TMPDIR outside the gate (the gate's own scratch root is on tmpfs, see scratch_fast)
 #     logs/<name>      the logs of its runs, each with the load at start and end
-#     cache/           shared caches: gaia-store (GAIA_STORE), downloads (sccache stays in its own default, shared)
+#     cache/           shared caches: gaia-store (GAIA_STORE), downloads (sccache stays in its own default, shared),
+#                      cargo-home (ATLAS_CARGO_HOME: the gate's own offline CARGO_HOME, scripts/cargo-home.sh)
 #
 # Usage:
 #   scripts/area.sh setup                         make the layout and say which tools are missing
@@ -56,6 +57,7 @@ name_ok() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "a name is letters, 
 setup() {
   mkdir -p "$area"/{wt,target,tmp,logs} "$area"/cache/downloads
   make_dir "$area/cache/gaia-store"
+  make_dir "$area/cache/cargo-home"
   local t missing=0
   for t in cargo rustc cargo-nextest sccache mold bun python3 git systemd-run taskset; do
     if ! command -v "$t" >/dev/null 2>&1; then
@@ -93,6 +95,7 @@ export CARGO_TARGET_DIR=$area/target/$name
 export TMPDIR=$area/tmp/$name
 export ATLAS_SCRATCH_ROOT=$scratch_fast/atlas-$name-scratch
 export GAIA_STORE=$area/cache/gaia-store
+export ATLAS_CARGO_HOME=$area/cache/cargo-home
 export CARGO_BUILD_JOBS=$jobs
 export ATLAS_NICE=$nice_level
 export ATLAS_BENCH_SEED_FILE=$key_dir/bench.seed

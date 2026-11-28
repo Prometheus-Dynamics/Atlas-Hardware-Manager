@@ -12,7 +12,10 @@
 GATE_CODE=(. ':(exclude)*.md' ':(exclude)docs/prs' ':(exclude).github')
 # Scripts no lane runs (a person's tools: the area, the installers, the first-boot check, the PR summary): in no key,
 # so a change to one reruns nothing (2026-11-27: an area.sh change reran every lane cold, g17 68 s at load 67-94).
-GATE_TOOLS_ONLY=(scripts/area.sh scripts/bundle.sh scripts/deb-fast.sh scripts/first-boot-check.sh scripts/pr-status.py)
+# scripts/cargo-home.sh runs before the lanes, not in one: it fills the gate's CARGO_HOME, and a lane's result does not
+# depend on where its crates came from (a missing crate fails the lane offline).
+GATE_TOOLS_ONLY=(scripts/area.sh scripts/bundle.sh scripts/deb-fast.sh scripts/first-boot-check.sh scripts/pr-status.py
+  scripts/cargo-home.sh)
 for _tool in "${GATE_TOOLS_ONLY[@]}"; do GATE_CODE+=(":(exclude)$_tool"); done
 unset _tool
 # The scripts a code lane (clippy, alone, tests, ui) runs; no build or test reads any other script (the crates name

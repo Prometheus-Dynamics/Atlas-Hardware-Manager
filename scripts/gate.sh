@@ -68,6 +68,17 @@ if gate_known gate "$gate_key"; then
   exit 0
 fi
 
+# The gate's own CARGO_HOME (scripts/cargo-home.sh; area.sh sets ATLAS_CARGO_HOME): filled online from every committed
+# lock file before any lane, then every cargo the gate runs is offline in it and never waits on another program's lock
+# on ~/.cargo's package cache. Unset (CI, a developer's shell), cargo uses the caller's CARGO_HOME.
+# Each cargo lane runs in its own copy of that home (GATE_LANE_HOMES/<lane>, lane_cmd): lanes sharing one home wait on
+# each other's resolves for cargo's package-cache lock, even offline. The static checks before the lanes use the home.
+GATE_CARGO_LANES=(devices clippy alone tests ui)
+if [ -n "${ATLAS_CARGO_HOME:-}" ]; then
+  scripts/cargo-home.sh fetch "${GATE_CARGO_LANES[@]}" || exit 1
+  export CARGO_HOME=$ATLAS_CARGO_HOME GATE_LANE_HOMES=$ATLAS_CARGO_HOME.lanes
+fi
+
 # Every lane runs in the background in its own process group, with its log kept apart, and is waited for below. A lane
 # that fails stops the gate: the other lanes' process groups are stopped by the PIDs recorded here (never by name)
 # and the failing lane's log is printed.
@@ -302,6 +313,9 @@ static_checks() {
       echo "==> ${names[$i]}: FAILED (exit $rc)"; cat "${logs[$i]}"; failed=1
     else
       echo "    ${names[$i]}: ok ($(cat "$gate_tmp/static-$i.secs" 2>/dev/null || echo '?') s)"
+      # A check's log is shown only when it fails, so its waits on a cargo lock are named here (the gate's own
+      # CARGO_HOME is meant to leave none: scripts/cargo-home.sh).
+      grep -h 'Blocking waiting for file lock' "${logs[$i]}" | while IFS= read -r line; do echo "    ${names[$i]}: ${line#"${line%%[! ]*}"}"; done
     fi
   done
   return "$failed"
@@ -410,6 +424,9 @@ run_cached() {  # <lane> <kind: data|code> <command...> (in a lane's subshell)
 export -f run_cached lane_target
 
 lane_cmd() {  # the body of a lane, by name
+  if [ -n "${GATE_LANE_HOMES:-}" ] && [ -d "$GATE_LANE_HOMES/$1" ]; then
+    export CARGO_HOME=$GATE_LANE_HOMES/$1
+  fi
   case $1 in
     devices) run_cached devices data devices_then_config_only ;;
     kernel) if [ -x scripts/check-kernel-fragments.sh ]; then run_cached kernel data step "kernel fragments (the check, then its self-test)" scripts/check-kernel-fragments.sh --self-test; fi ;;
