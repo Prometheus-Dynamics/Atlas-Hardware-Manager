@@ -58,6 +58,10 @@ app=apps/desktop
 start=$SECONDS
 
 if [ "$build" -eq 1 ]; then
+  # No path of the builder's CARGO_HOME in the programs (scripts/shipped-paths.sh).
+  # shellcheck source=scripts/shipped-paths.sh
+  source scripts/shipped-paths.sh
+  shipped_paths_env
   if [ "$profile" = fast ]; then
     export CARGO_PROFILE_RELEASE_LTO=false CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 CARGO_PROFILE_RELEASE_INCREMENTAL=true
   fi

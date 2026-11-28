@@ -48,6 +48,11 @@ thread_local! {
     static LIVE: RefCell<BTreeMap<String, Live>> = const { RefCell::new(BTreeMap::new()) };
 }
 
+/// How long after its subscription a topic with no sample yet makes a read say that its first samples
+/// are due ([`Read::first_samples_due`]). The sim node's and a board's topics publish at least once a
+/// second; a topic quiet for longer is read at the app's usual pace.
+pub(crate) const FIRST_SAMPLE_WAIT: Duration = Duration::from_secs(1);
+
 /// What one read of a node found, as plain data the caller takes off the thread.
 #[derive(Debug)]
 pub(crate) struct Read {
@@ -59,6 +64,9 @@ pub(crate) struct Read {
     pub logs: Vec<(u64, String)>,
     /// How many log lines were lost to the subscriber since the last read.
     pub logs_missed: u64,
+    /// Whether a topic subscribed less than [`FIRST_SAMPLE_WAIT`] ago has no sample yet: its first
+    /// one is on its way, and the caller reads again soon instead of a whole read interval later.
+    pub first_samples_due: bool,
 }
 
 /// The subscriptions, identity and descriptions one session holds.
@@ -70,7 +78,8 @@ struct Live {
     /// `atlas_session::lemnos`). Zero when none.
     number: u64,
     identity: Option<Identity>,
-    topics: BTreeMap<String, Subscriber>,
+    /// Each topic's subscriber, with when it was subscribed.
+    topics: BTreeMap<String, (Subscriber, Instant)>,
     logs: Option<Subscriber>,
     /// The descriptions asked for on this connection, by device resource name. Only a complete description
     /// or a device that is off is kept here; a refusal of a device that is on is in `retry`.
@@ -174,25 +183,27 @@ impl Live {
 
         let mut devices = Vec::new();
         let mut listed = BTreeSet::new();
+        let mut first_samples_due = false;
         for resource in orion.resources(RESOURCE_PREFIX)? {
             if resource.kind != RESOURCE_KIND {
                 continue;
             }
             let mut topics = Vec::new();
-            // TODO(user): a topic subscribed in this pass is read in the same pass, before its
-            // first sample has arrived. So for about 1 s after a board opens (until the app's next
-            // read, READ_EVERY in apps/desktop/src-tauri/src/board.rs), its page says "This board
-            // reports no readings" (measured 2026-11-27: tiles at 1.4-1.5 s after open, the first
-            // read at 0.3 s showed none). Proposed: read again early after a pass that made new
-            // subscriptions, once their first sample is in, not a full READ_EVERY later. A product
-            // change, held for the user.
+            // A topic subscribed in this pass is read in the same pass, before its first sample has
+            // arrived, so a board just opened showed "This board reports no readings" until the
+            // app's next read (measured 2026-11-27: tiles at 1.4-1.5 s after open, the first read
+            // at 0.3 s showed none). The read says so (`first_samples_due`), and the app reads again
+            // soon while it holds (user approval 2026-11-27).
             for name in &resource.topics {
                 if !self.topics.contains_key(name) {
                     let subscriber = orion.subscribe(name)?;
-                    self.topics.insert(name.clone(), subscriber);
+                    self.topics
+                        .insert(name.clone(), (subscriber, Instant::now()));
                 }
-                if let Some(subscriber) = self.topics.get_mut(name) {
-                    topics.push(read_topic(name, subscriber));
+                if let Some((subscriber, since)) = self.topics.get_mut(name) {
+                    let topic = read_topic(name, subscriber);
+                    first_samples_due |= since.elapsed() < FIRST_SAMPLE_WAIT && !has_sample(&topic);
+                    topics.push(topic);
                 }
             }
             // The topics are subscribed before the description is asked for, so a change made
@@ -238,6 +249,7 @@ impl Live {
             devices,
             logs,
             logs_missed,
+            first_samples_due,
         }))
     }
 
@@ -428,6 +440,11 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
         live,
         fields,
     }
+}
+
+/// Whether a topic read has had a sample: it is not waiting for its publisher, and a field has a value.
+fn has_sample(topic: &RawTopic) -> bool {
+    topic.live != TopicLive::Waiting && topic.fields.iter().any(|field| field.value.is_some())
 }
 
 /// The log lines the subscriber has not returned yet, at most one ring's worth per read.

@@ -59,6 +59,10 @@ pub struct Snapshot {
     pub logs: Vec<LogLine>,
     /// How many log lines were lost before this app read them.
     pub logs_missed: u64,
+    /// Whether the last read found a topic subscribed less than a second ago with no sample yet: its
+    /// first one is on its way, so the caller reads again soon rather than a whole interval later
+    /// (the "no readings" of a board just opened). False when the read was not made.
+    pub first_samples_due: bool,
 }
 
 /// The node's hardware, read over its session. One per node: the session keeps the node's
@@ -101,6 +105,7 @@ struct State {
     devices: BTreeMap<String, Held>,
     logs: LogRing,
     logs_missed: u64,
+    first_samples_due: bool,
 }
 
 impl Hardware {
@@ -140,6 +145,7 @@ impl Hardware {
                 devices: BTreeMap::new(),
                 logs: LogRing::default(),
                 logs_missed: 0,
+                first_samples_due: false,
             }),
         }
     }
@@ -257,6 +263,7 @@ impl State {
         self.last_live = Some(now);
         self.identity = Some(read.identity);
         self.logs_missed = self.logs_missed.saturating_add(read.logs_missed);
+        self.first_samples_due = read.first_samples_due;
         self.absorb_logs(read.logs);
         self.observe_devices(read.devices, now, grace);
     }
@@ -301,6 +308,7 @@ impl State {
     fn lose(&mut self, reason: String, now: Instant) {
         let since = self.last_live.unwrap_or(now);
         self.connection = Connection::Stale { since, reason };
+        self.first_samples_due = false;
     }
 
     fn snapshot(&self) -> Snapshot {
@@ -326,6 +334,7 @@ impl State {
             devices,
             logs: self.logs.iter().cloned().collect(),
             logs_missed: self.logs_missed,
+            first_samples_due: self.first_samples_due,
         }
     }
 }
@@ -362,6 +371,7 @@ mod tests {
             devices: BTreeMap::new(),
             logs: LogRing::default(),
             logs_missed: 0,
+            first_samples_due: false,
         }
     }
 

@@ -118,6 +118,41 @@ fn item<'a>(device: &'a Device, name: &str) -> &'a Reading {
         .unwrap_or_else(|| panic!("{} has no item {name}", device.name))
 }
 
+/// A board just opened: a read made before its topics' first samples arrived says they are due (the app
+/// then reads again soon, not a whole second later, so the page does not say "no readings"), and once
+/// every reading is in, the reads stop saying so.
+#[tokio::test]
+async fn a_read_before_the_first_samples_says_they_are_due_and_stops_once_they_are_in() {
+    let dir = scratch("first-samples");
+    let node = start(&dir, None);
+    let sessions = Sessions::with_call_wait(Arc::new(NoPause), Duration::from_secs(5));
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+    let hardware = Hardware::new(handle, link());
+
+    let first = hardware.snapshot().await;
+    let missing = first
+        .devices
+        .iter()
+        .any(|device| device.readings.iter().any(|item| item.value.is_none()));
+    assert!(
+        !missing || first.first_samples_due,
+        "a read that shows a reading with no value, its topic just subscribed, says the first samples are due: {first:?}"
+    );
+
+    let settled = read_until(
+        &hardware,
+        "every reading, and no first samples due",
+        |snapshot| all_read(snapshot) && !snapshot.first_samples_due,
+    )
+    .await;
+    assert_eq!(settled.connection, Connection::Live);
+    // Every topic is subscribed now, and has had its first sample: the next read is at the usual pace.
+    assert!(!hardware.snapshot().await.first_samples_due);
+}
+
 #[tokio::test]
 async fn a_device_the_crate_has_never_heard_of_shows_its_readings_with_their_units() {
     let dir = scratch("unknown");

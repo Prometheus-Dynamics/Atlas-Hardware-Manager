@@ -36,6 +36,11 @@ export ATLAS_VERSION
 triple=$(rustc -vV | sed -n 's/^host: //p')
 target=${CARGO_TARGET_DIR:-$root/target}
 case $target in /*) ;; *) target=$root/$target ;; esac
+# No path of the builder's CARGO_HOME in any program a package carries (scripts/shipped-paths.sh): Tauri's bundler
+# runs cargo with this environment too.
+# shellcheck source=scripts/shipped-paths.sh
+source scripts/shipped-paths.sh
+shipped_paths_env
 app=apps/desktop
 
 case $triple in

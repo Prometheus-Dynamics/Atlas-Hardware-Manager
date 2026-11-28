@@ -73,7 +73,8 @@ fi
 # on ~/.cargo's package cache. Unset (CI, a developer's shell), cargo uses the caller's CARGO_HOME.
 # Each cargo lane runs in its own copy of that home (GATE_LANE_HOMES/<lane>, lane_cmd): lanes sharing one home wait on
 # each other's resolves for cargo's package-cache lock, even offline. The static checks before the lanes use the home.
-GATE_CARGO_LANES=(devices clippy alone tests ui)
+# The shipped-paths static check builds a probe beside the portable classification's cargo metadata: its own home too.
+GATE_CARGO_LANES=(devices clippy alone tests ui shipped-paths)
 if [ -n "${ATLAS_CARGO_HOME:-}" ]; then
   scripts/cargo-home.sh fetch "${GATE_CARGO_LANES[@]}" || exit 1
   export CARGO_HOME=$ATLAS_CARGO_HOME GATE_LANE_HOMES=$ATLAS_CARGO_HOME.lanes
@@ -282,6 +283,9 @@ static_checks() {
   [ -f scripts/check-board-ids.py ] && s+=("board ids agree|python3 scripts/check-board-ids.py")
   # What must build on Windows and macOS (PR G9): the Orion-bound list against the graph.
   [ -x scripts/check-portable.sh ] && s+=("portable crates classification|scripts/check-portable.sh --classify")
+  # SHIPPED-PATHS: the release and installer builds remap CARGO_HOME out of the programs; a probe built from two homes
+  # is one program (a few seconds the first time, then cached in the target).
+  [ -x scripts/shipped-paths.sh ] && s+=("shipped programs hold no CARGO_HOME path (two homes, one program)|if [ -n \"\${GATE_LANE_HOMES:-}\" ]; then export CARGO_HOME=\$GATE_LANE_HOMES/shipped-paths; fi; scripts/shipped-paths.sh check")
   [ -f scripts/bin-key.py ] && s+=("a test program's key: what it loads, and its whole bytes when it is no well-formed ELF|python3 -I scripts/bin-key.py --self-test")
   if compgen -G "crates/*/*/src" > /dev/null; then
     s+=("the socket path room check refuses a TMPDIR too long for sun_path|socket_room_self_test")

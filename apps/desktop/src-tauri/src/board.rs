@@ -41,6 +41,9 @@ use crate::core::{Core, now_ms};
 
 /// How often an open board is read.
 const READ_EVERY: Duration = Duration::from_secs(1);
+/// The next read while a read says topics' first samples are due (`Snapshot::first_samples_due`):
+/// a board just opened shows its readings as they arrive, not a whole [`READ_EVERY`] later.
+const READ_SOON: Duration = Duration::from_millis(100);
 /// A reader with nobody asking for this long stops.
 const KEEP_FOR: Duration = Duration::from_secs(12);
 /// Samples kept per reading: the last minute at one read a second.
@@ -463,6 +466,8 @@ async fn read(core: Core, first: Target) {
     let mut slots: Value = Value::Null;
     let mut tick: u64 = 0;
     loop {
+        // Set by a read whose topics' first samples are on their way: the next read comes soon.
+        let mut soon = false;
         let (dirty, said, following) = {
             let mut open = lock(&core.boards().open);
             let Some(entry) = open.get(&id) else { break };
@@ -509,6 +514,7 @@ async fn read(core: Core, first: Target) {
                     }),
             );
             let snapshot = reader.snapshot().await;
+            soon = snapshot.first_samples_due;
             let live = snapshot.connection == Connection::Live;
             view["connection"] = match &snapshot.connection {
                 Connection::Live => json!({ "live": true }),
@@ -586,9 +592,12 @@ async fn read(core: Core, first: Target) {
             }
         }
         core.publish(&topic, view);
-        tick += 1;
+        // A soon read is not a tick: the slots' every-other-read pace stays at READ_EVERY's.
+        if !soon {
+            tick += 1;
+        }
         tokio::select! {
-            () = tokio::time::sleep(READ_EVERY) => {}
+            () = tokio::time::sleep(if soon { READ_SOON } else { READ_EVERY }) => {}
             () = dirty.notified() => { slots = Value::Null; }
         }
     }
